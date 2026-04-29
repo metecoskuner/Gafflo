@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import rooms from '../data/rooms'
 import { calculateRoomMatch } from '../utils/calculateRoomMatch'
 import AppStateContext from './AppStateContext'
@@ -36,6 +36,10 @@ export function AppStateProvider({ children }) {
     [reviewedRoomIds, roomsWithMatch],
   )
 
+  const dismissToast = useCallback(() => {
+    setToast(null)
+  }, [])
+
   const value = {
     rooms: roomsWithMatch,
     availableRooms,
@@ -44,7 +48,7 @@ export function AppStateProvider({ children }) {
     savedRoomIds,
     reviewedRoomIds,
     toast,
-    dismissToast: () => setToast(null),
+    dismissToast,
     saveTenantProfile(profile) {
       setTenantProfile(profile)
       setTenantProfileState(profile)
@@ -57,18 +61,19 @@ export function AppStateProvider({ children }) {
       const reviewed = reviewedRoomIds.includes(roomId) ? reviewedRoomIds : [...reviewedRoomIds, roomId]
       setReviewedRoomIds(reviewed)
       setReviewedRoomIdsState(reviewed)
-      setToast({ type: 'success', message: 'Room saved to your shortlist.' })
+      setToast({ type: 'success', message: 'Saved to your rooms.' })
     },
     passRoom(roomId) {
       const next = reviewedRoomIds.includes(roomId) ? reviewedRoomIds : [...reviewedRoomIds, roomId]
       setReviewedRoomIds(next)
       setReviewedRoomIdsState(next)
+      setToast({ type: 'info', message: 'Passed.' })
     },
     removeSavedRoom(roomId) {
       const next = savedRoomIds.filter((id) => id !== roomId)
       setSavedRoomIds(next)
       setSavedRoomIdsState(next)
-      setToast({ type: 'info', message: 'Room removed from saved.' })
+      setToast({ type: 'info', message: 'Removed from saved rooms.' })
     },
     startOver() {
       setReviewedRoomIds([])

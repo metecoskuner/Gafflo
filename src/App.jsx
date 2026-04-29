@@ -15,9 +15,9 @@ function AppLayout() {
 
   return (
     <>
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-28 md:px-6 md:pb-10">
+      <div className="page-shell mx-auto flex min-h-screen w-full max-w-[1120px] flex-col px-4 pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
         <Navbar />
-        <main className="flex-1 py-4 md:py-6">
+        <main className="flex-1 py-4 md:py-7">
           <Routes location={routeLocation}>
             <Route path="/" element={<Home />} />
             <Route path="/profile" element={<TenantProfile />} />

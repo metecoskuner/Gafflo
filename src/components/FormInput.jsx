@@ -5,8 +5,8 @@ export default function FormInput({
   textarea = false,
   ...props
 }) {
-  const baseClassName = `w-full rounded-2xl border px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 ${
-    error ? 'border-rose-300 bg-rose-50/40' : 'border-orange-100 bg-white'
+  const baseClassName = `min-h-12 w-full rounded-[18px] border px-4 py-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-emerald-50/20 focus:ring-4 focus:ring-emerald-100 md:text-sm ${
+    error ? 'border-rose-300 bg-rose-50/40 focus:border-rose-300 focus:ring-rose-100' : 'border-orange-100 bg-white'
   } ${className}`
 
   return (
