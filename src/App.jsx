@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import BottomNav from './components/BottomNav'
+import Footer from './components/Footer'
 import Navbar from './components/Navbar'
 import RoomDetailsModal from './components/RoomDetailsModal'
 import { AppStateProvider } from './context/AppState'
@@ -26,6 +27,7 @@ function AppLayout() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
+        <Footer />
       </div>
       <BottomNav />
 

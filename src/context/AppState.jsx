@@ -26,14 +26,28 @@ export function AppStateProvider({ children }) {
     [tenantProfile],
   )
 
+  const validRoomIds = useMemo(() => new Set(roomsWithMatch.map((room) => room.id)), [roomsWithMatch])
+  const normalizedSavedRoomIds = useMemo(
+    () => [...new Set(savedRoomIds)].filter((id) => validRoomIds.has(id)),
+    [savedRoomIds, validRoomIds],
+  )
+  const normalizedReviewedRoomIds = useMemo(
+    () => [...new Set(reviewedRoomIds)].filter((id) => validRoomIds.has(id)),
+    [reviewedRoomIds, validRoomIds],
+  )
+
   const savedRooms = useMemo(
-    () => roomsWithMatch.filter((room) => savedRoomIds.includes(room.id)),
-    [roomsWithMatch, savedRoomIds],
+    () => roomsWithMatch.filter((room) => normalizedSavedRoomIds.includes(room.id)),
+    [roomsWithMatch, normalizedSavedRoomIds],
   )
 
   const availableRooms = useMemo(
-    () => roomsWithMatch.filter((room) => !reviewedRoomIds.includes(room.id)),
-    [reviewedRoomIds, roomsWithMatch],
+    () =>
+      roomsWithMatch.filter(
+        (room) =>
+          !normalizedSavedRoomIds.includes(room.id) && !normalizedReviewedRoomIds.includes(room.id),
+      ),
+    [normalizedReviewedRoomIds, normalizedSavedRoomIds, roomsWithMatch],
   )
 
   const dismissToast = useCallback(() => {
@@ -45,8 +59,8 @@ export function AppStateProvider({ children }) {
     availableRooms,
     savedRooms,
     tenantProfile,
-    savedRoomIds,
-    reviewedRoomIds,
+    savedRoomIds: normalizedSavedRoomIds,
+    reviewedRoomIds: normalizedReviewedRoomIds,
     toast,
     dismissToast,
     saveTenantProfile(profile) {
@@ -55,24 +69,33 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'success', message: 'Profile saved. Your room matches are ready.' })
     },
     saveRoom(roomId) {
-      const next = savedRoomIds.includes(roomId) ? savedRoomIds : [...savedRoomIds, roomId]
+      const next = normalizedSavedRoomIds.includes(roomId)
+        ? normalizedSavedRoomIds
+        : [...normalizedSavedRoomIds, roomId]
       setSavedRoomIds(next)
       setSavedRoomIdsState(next)
-      const reviewed = reviewedRoomIds.includes(roomId) ? reviewedRoomIds : [...reviewedRoomIds, roomId]
+      const reviewed = normalizedReviewedRoomIds.includes(roomId)
+        ? normalizedReviewedRoomIds
+        : [...normalizedReviewedRoomIds, roomId]
       setReviewedRoomIds(reviewed)
       setReviewedRoomIdsState(reviewed)
       setToast({ type: 'success', message: 'Saved to your rooms.' })
     },
     passRoom(roomId) {
-      const next = reviewedRoomIds.includes(roomId) ? reviewedRoomIds : [...reviewedRoomIds, roomId]
+      const next = normalizedReviewedRoomIds.includes(roomId)
+        ? normalizedReviewedRoomIds
+        : [...normalizedReviewedRoomIds, roomId]
       setReviewedRoomIds(next)
       setReviewedRoomIdsState(next)
       setToast({ type: 'info', message: 'Passed.' })
     },
     removeSavedRoom(roomId) {
-      const next = savedRoomIds.filter((id) => id !== roomId)
+      const next = normalizedSavedRoomIds.filter((id) => id !== roomId)
       setSavedRoomIds(next)
       setSavedRoomIdsState(next)
+      const reviewedNext = normalizedReviewedRoomIds.filter((id) => id !== roomId)
+      setReviewedRoomIds(reviewedNext)
+      setReviewedRoomIdsState(reviewedNext)
       setToast({ type: 'info', message: 'Removed from saved rooms.' })
     },
     startOver() {
