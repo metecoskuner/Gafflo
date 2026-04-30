@@ -1,16 +1,16 @@
 import { NavLink } from 'react-router-dom'
 
 const items = [
-  { to: '/', label: 'Home', icon: '⌂' },
   { to: '/profile', label: 'Profile', icon: '◎' },
   { to: '/rooms', label: 'Rooms', icon: '⇄' },
   { to: '/saved', label: 'Saved', icon: '♥' },
+  { to: '/messages', label: 'Messages', icon: '✉' },
 ]
 
 export default function BottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.85rem)] pt-3 md:hidden">
-      <div className="card-surface card-shadow mx-auto grid max-w-md grid-cols-4 gap-2 rounded-[28px] px-2 py-2 backdrop-blur-xl">
+    <nav className="fixed inset-x-0 bottom-0 z-40 px-0 pb-[env(safe-area-inset-bottom)] pt-0 md:hidden">
+      <div className="card-surface card-shadow mx-auto grid max-w-none grid-cols-4 gap-1 rounded-none border-x-0 border-b-0 px-2 py-2 backdrop-blur-xl">
         {items.map((item) => (
           <NavLink
             key={item.to}

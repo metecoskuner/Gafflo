@@ -8,7 +8,9 @@ import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 import MatchBadge from '../components/MatchBadge'
 
-const GESTURE_THRESHOLD = 10
+const GESTURE_LOCK_THRESHOLD = 18
+const HORIZONTAL_INTENT_RATIO = 1.35
+const VELOCITY_THRESHOLD = 0.9
 
 export default function SwipeRooms() {
   const navigate = useNavigate()
@@ -31,6 +33,7 @@ export default function SwipeRooms() {
   const [exitingRoomId, setExitingRoomId] = useState(null)
   const [gestureMode, setGestureMode] = useState(null)
   const dragStartRef = useRef({ x: 0, y: 0 })
+  const dragStartTimeRef = useRef(0)
   const lastDragXRef = useRef(0)
   const activePointerIdRef = useRef(null)
 
@@ -50,12 +53,16 @@ export default function SwipeRooms() {
   )
   const totalRooms = unsavedRooms.length
   const currentPosition = renderedRoom ? reviewedUnsavedCount + 1 : totalRooms
+  const isMobileViewport = typeof window !== 'undefined' ? window.innerWidth < 768 : true
   const swipeThreshold =
     typeof window !== 'undefined'
-      ? Math.min(132, Math.max(96, window.innerWidth * 0.24))
-      : 100
+      ? isMobileViewport
+        ? Math.max(150, window.innerWidth * 0.42)
+        : 120
+      : 150
   const swipeDirection = dragX > 0 ? 'save' : dragX < 0 ? 'pass' : null
-  const overlayOpacity = Math.min(1, Math.abs(dragX) / swipeThreshold)
+  const swipeProgress = Math.min(1, Math.abs(dragX) / swipeThreshold)
+  const overlayOpacity = Math.max(0, Math.min(1, (swipeProgress - 0.12) / 0.88))
 
   useEffect(() => {
     if (!toast) return undefined
@@ -64,9 +71,12 @@ export default function SwipeRooms() {
   }, [toast, dismissToast])
 
   const scrollPageTop = () => {
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    const shell = document.getElementById('app-shell-scroll')
+    if (shell) {
+      shell.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      return
     }
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }
 
   const triggerSwipeAction = (direction) => {
@@ -118,6 +128,7 @@ export default function SwipeRooms() {
     if (isAnimatingOut || !renderedRoom) return
 
     dragStartRef.current = { x: event.clientX, y: event.clientY }
+    dragStartTimeRef.current = performance.now()
     lastDragXRef.current = 0
     activePointerIdRef.current = event.pointerId
     setIsDragging(true)
@@ -131,9 +142,12 @@ export default function SwipeRooms() {
     const deltaY = event.clientY - dragStartRef.current.y
 
     if (!gestureMode) {
-      if (Math.abs(deltaX) < GESTURE_THRESHOLD && Math.abs(deltaY) < GESTURE_THRESHOLD) return
+      if (Math.abs(deltaX) < GESTURE_LOCK_THRESHOLD && Math.abs(deltaY) < GESTURE_LOCK_THRESHOLD) return
 
-      if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      if (
+        Math.abs(deltaX) >= GESTURE_LOCK_THRESHOLD &&
+        Math.abs(deltaX) > Math.abs(deltaY) * HORIZONTAL_INTENT_RATIO
+      ) {
         setGestureMode('horizontal')
         if (event.currentTarget.setPointerCapture) {
           event.currentTarget.setPointerCapture(event.pointerId)
@@ -158,8 +172,15 @@ export default function SwipeRooms() {
     }
 
     const finalX = lastDragXRef.current
+    const elapsedMs = Math.max(1, performance.now() - dragStartTimeRef.current)
+    const dragVelocity = Math.abs(finalX) / elapsedMs
+    const passedDistanceThreshold = Math.abs(finalX) >= swipeThreshold
+    const passedVelocityThreshold =
+      Math.abs(finalX) >= swipeThreshold * 0.55 &&
+      dragVelocity >= VELOCITY_THRESHOLD &&
+      gestureMode === 'horizontal'
 
-    if (gestureMode === 'horizontal' && Math.abs(finalX) >= swipeThreshold) {
+    if (gestureMode === 'horizontal' && (passedDistanceThreshold || passedVelocityThreshold)) {
       triggerSwipeAction(finalX > 0 ? 'save' : 'pass')
       return
     }
@@ -171,33 +192,36 @@ export default function SwipeRooms() {
     const allRoomsSaved = rooms.length > 0 && savedRoomIds.length >= rooms.length
 
     return (
-      <EmptyState
-        eyebrow={allRoomsSaved ? 'Saved rooms complete' : 'Room stack complete'}
-        title={allRoomsSaved ? 'You’ve saved all available rooms.' : 'You’ve reviewed all rooms for now.'}
-        description={
-          allRoomsSaved
-            ? 'Your current room deck is empty because every available room is already in your saved list.'
-            : 'Reset the room stack to swipe again, or jump into your saved shortlist.'
-        }
-        actions={
-          <>
-            <Button onClick={() => navigate('/saved')}>View saved rooms</Button>
-            {!allRoomsSaved ? (
-              <Button variant="secondary" onClick={startOver}>
-                Start over
-              </Button>
-            ) : null}
-          </>
-        }
-      />
+      <div className="mx-auto w-full max-w-[480px] pb-[calc(10rem+env(safe-area-inset-bottom))]">
+        <EmptyState
+          eyebrow={allRoomsSaved ? 'Saved rooms complete' : 'Room stack complete'}
+          title={allRoomsSaved ? 'You’ve saved all available rooms.' : 'You’ve reviewed all rooms for now.'}
+          description={
+            allRoomsSaved
+              ? 'Your current room deck is empty because every available room is already in your saved list.'
+              : 'Reset the room stack to swipe again, or jump into your saved shortlist.'
+          }
+          actions={
+            <>
+              <Button onClick={() => navigate('/saved')}>View saved rooms</Button>
+              {!allRoomsSaved ? (
+                <Button variant="secondary" onClick={startOver}>
+                  Start over
+                </Button>
+              ) : null}
+            </>
+          }
+        />
+      </div>
     )
   }
 
   return (
-    <div className="mx-auto w-full max-w-[480px] pb-[calc(11.5rem+env(safe-area-inset-bottom))]">
+    <div className="mx-auto w-full max-w-[480px] pb-[calc(13.5rem+env(safe-area-inset-bottom))]">
       {toast ? (
-        <div className="sticky top-3 z-40 mb-3 px-1">
-          <div className="toast-enter card-shadow rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-sm font-medium text-emerald-900">
+        <div className="pointer-events-none sticky top-[calc(env(safe-area-inset-top)+4.9rem)] z-40 mb-3">
+          <div className="toast-enter pointer-events-auto">
+            <div className="card-shadow rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-sm font-medium text-emerald-900">
             <div className="flex items-center justify-between gap-3">
               <span>{toast.message}</span>
               <button type="button" onClick={dismissToast} className="text-emerald-700 hover:text-emerald-800">
@@ -205,6 +229,7 @@ export default function SwipeRooms() {
               </button>
             </div>
           </div>
+        </div>
         </div>
       ) : null}
 
@@ -218,7 +243,11 @@ export default function SwipeRooms() {
           onPointerCancel={handlePointerEnd}
           style={{
             transform: `translateX(${dragX}px) rotate(${dragX * 0.032}deg)`,
-            transition: gestureMode === 'horizontal' ? 'none' : 'transform 170ms ease-out',
+            transition: isAnimatingOut
+              ? 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)'
+              : gestureMode === 'horizontal'
+                ? 'none'
+                : 'transform 200ms ease-out',
           }}
         >
           <RoomHero
@@ -228,12 +257,14 @@ export default function SwipeRooms() {
             showDemoScore={!tenantProfile}
             swipeDirection={swipeDirection}
             overlayOpacity={overlayOpacity}
+            swipeProgress={swipeProgress}
           />
         </div>
       </section>
 
-      <div className="sticky bottom-[calc(5.4rem+env(safe-area-inset-bottom))] z-30 mt-4 px-1">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-40 flex justify-center px-4 md:px-6">
         <SwipeActions
+          className="pointer-events-auto"
           isSaved={savedRoomIds.includes(renderedRoom.id)}
           onPass={() => triggerSwipeAction('pass')}
           onSave={() => triggerSwipeAction('save')}
@@ -322,7 +353,7 @@ export default function SwipeRooms() {
   )
 }
 
-function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirection, overlayOpacity }) {
+function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirection, overlayOpacity, swipeProgress }) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [failedImages, setFailedImages] = useState([])
   const images = room.images?.length ? room.images : ['']
@@ -345,7 +376,7 @@ function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirec
 
   return (
     <div key={room.id} className="card-surface card-shadow overflow-hidden rounded-[34px]">
-      <div className="relative h-[78dvh] min-h-[34rem] max-h-[52rem]">
+      <div className="relative h-[80dvh] min-h-[32rem] max-h-[46rem] md:h-[42rem]">
         {activeImageFailed ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
             Gafflo room preview
@@ -362,12 +393,15 @@ function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirec
         <div
           className={`pointer-events-none absolute inset-0 transition duration-150 ${
             swipeDirection === 'save'
-              ? 'bg-emerald-500/18 backdrop-blur-[3px]'
+              ? 'bg-emerald-500/18'
               : swipeDirection === 'pass'
-                ? 'bg-rose-500/18 backdrop-blur-[3px]'
-                : 'bg-transparent backdrop-blur-none'
+                ? 'bg-rose-500/18'
+                : 'bg-transparent'
           }`}
-          style={{ opacity: overlayOpacity }}
+          style={{
+            opacity: overlayOpacity,
+            backdropFilter: swipeProgress > 0.45 ? `blur(${2 + swipeProgress * 3}px)` : 'blur(0px)',
+          }}
         />
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
           <div

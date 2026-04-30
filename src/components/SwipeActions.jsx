@@ -1,6 +1,6 @@
-export default function SwipeActions({ onPass, onSave, isSaved }) {
+export default function SwipeActions({ className = '', onPass, onSave, isSaved }) {
   return (
-    <div className="flex items-center justify-center gap-5">
+    <div className={`flex items-center justify-center gap-5 ${className}`}>
       <button
         type="button"
         onClick={onPass}

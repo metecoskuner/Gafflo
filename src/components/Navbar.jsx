@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router-dom'
 
 const links = [
-  { to: '/', label: 'Home' },
   { to: '/profile', label: 'Profile' },
   { to: '/rooms', label: 'Rooms' },
   { to: '/saved', label: 'Saved' },
+  { to: '/messages', label: 'Messages' },
 ]
 
 export default function Navbar() {

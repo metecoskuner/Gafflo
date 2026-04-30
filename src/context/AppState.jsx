@@ -16,6 +16,8 @@ export function AppStateProvider({ children }) {
   const [savedRoomIds, setSavedRoomIdsState] = useState(() => getSavedRoomIds())
   const [reviewedRoomIds, setReviewedRoomIdsState] = useState(() => getReviewedRoomIds())
   const [toast, setToast] = useState(null)
+  const [lastAction, setLastAction] = useState(null)
+  const [priorityRoomId, setPriorityRoomId] = useState(null)
 
   const roomsWithMatch = useMemo(
     () =>
@@ -42,12 +44,21 @@ export function AppStateProvider({ children }) {
   )
 
   const availableRooms = useMemo(
-    () =>
-      roomsWithMatch.filter(
+    () => {
+      const filtered = roomsWithMatch.filter(
         (room) =>
           !normalizedSavedRoomIds.includes(room.id) && !normalizedReviewedRoomIds.includes(room.id),
-      ),
-    [normalizedReviewedRoomIds, normalizedSavedRoomIds, roomsWithMatch],
+      )
+
+      if (!priorityRoomId) return filtered
+
+      const priorityIndex = filtered.findIndex((room) => room.id === priorityRoomId)
+      if (priorityIndex <= 0) return filtered
+
+      const priorityRoom = filtered[priorityIndex]
+      return [priorityRoom, ...filtered.slice(0, priorityIndex), ...filtered.slice(priorityIndex + 1)]
+    },
+    [normalizedReviewedRoomIds, normalizedSavedRoomIds, priorityRoomId, roomsWithMatch],
   )
 
   const dismissToast = useCallback(() => {
@@ -61,6 +72,7 @@ export function AppStateProvider({ children }) {
     tenantProfile,
     savedRoomIds: normalizedSavedRoomIds,
     reviewedRoomIds: normalizedReviewedRoomIds,
+    canUndo: Boolean(lastAction),
     toast,
     dismissToast,
     saveTenantProfile(profile) {
@@ -69,6 +81,7 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'success', message: 'Profile saved. Your room matches are ready.' })
     },
     saveRoom(roomId) {
+      setPriorityRoomId(null)
       const next = normalizedSavedRoomIds.includes(roomId)
         ? normalizedSavedRoomIds
         : [...normalizedSavedRoomIds, roomId]
@@ -79,14 +92,17 @@ export function AppStateProvider({ children }) {
         : [...normalizedReviewedRoomIds, roomId]
       setReviewedRoomIds(reviewed)
       setReviewedRoomIdsState(reviewed)
+      setLastAction({ roomId, action: 'save' })
       setToast({ type: 'success', message: 'Saved to your rooms.' })
     },
     passRoom(roomId) {
+      setPriorityRoomId(null)
       const next = normalizedReviewedRoomIds.includes(roomId)
         ? normalizedReviewedRoomIds
         : [...normalizedReviewedRoomIds, roomId]
       setReviewedRoomIds(next)
       setReviewedRoomIdsState(next)
+      setLastAction({ roomId, action: 'pass' })
       setToast({ type: 'info', message: 'Passed.' })
     },
     removeSavedRoom(roomId) {
@@ -96,12 +112,32 @@ export function AppStateProvider({ children }) {
       const reviewedNext = normalizedReviewedRoomIds.filter((id) => id !== roomId)
       setReviewedRoomIds(reviewedNext)
       setReviewedRoomIdsState(reviewedNext)
+      setPriorityRoomId(roomId)
       setToast({ type: 'info', message: 'Removed from saved rooms.' })
     },
     startOver() {
+      setPriorityRoomId(null)
+      setLastAction(null)
       setReviewedRoomIds([])
       setReviewedRoomIdsState([])
       setToast({ type: 'info', message: 'Room stack reset.' })
+    },
+    undoLastAction() {
+      if (!lastAction) return false
+
+      if (lastAction.action === 'save') {
+        const nextSaved = normalizedSavedRoomIds.filter((id) => id !== lastAction.roomId)
+        setSavedRoomIds(nextSaved)
+        setSavedRoomIdsState(nextSaved)
+      }
+
+      const nextReviewed = normalizedReviewedRoomIds.filter((id) => id !== lastAction.roomId)
+      setReviewedRoomIds(nextReviewed)
+      setReviewedRoomIdsState(nextReviewed)
+      setPriorityRoomId(lastAction.roomId)
+      setLastAction(null)
+      setToast({ type: 'info', message: 'Last action undone.' })
+      return true
     },
   }
 
