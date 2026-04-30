@@ -4,7 +4,14 @@ import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 import MatchBadge from './MatchBadge'
 
-export default function RoomCard({ room, compact = false, swipeMode = false, className = '' }) {
+export default function RoomCard({
+  room,
+  compact = false,
+  swipeMode = false,
+  progressLabel = '',
+  showDemoScore = false,
+  className = '',
+}) {
   const [imageFailed, setImageFailed] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [failedImages, setFailedImages] = useState([])
@@ -33,7 +40,7 @@ export default function RoomCard({ room, compact = false, swipeMode = false, cla
   if (swipeMode) {
     return (
       <article
-        className={`card-surface card-shadow flex h-[calc(100dvh-14rem-env(safe-area-inset-bottom))] min-h-[36rem] flex-col overflow-hidden rounded-[34px] ${className}`}
+        className={`card-surface card-shadow flex h-[calc(100dvh-10.75rem-env(safe-area-inset-bottom))] min-h-[38rem] flex-col overflow-hidden rounded-[34px] ${className}`}
       >
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="relative h-[58%] min-h-[20rem]">
@@ -73,7 +80,21 @@ export default function RoomCard({ room, compact = false, swipeMode = false, cla
             ) : null}
 
             <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
+              <div className="flex items-center gap-2">
+                {progressLabel ? (
+                  <span className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-soft">
+                    {progressLabel}
+                  </span>
+                ) : null}
+                {showDemoScore ? (
+                  <span className="rounded-full bg-slate-950/52 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
+                    Demo scores
+                  </span>
+                ) : null}
+              </div>
               <MatchBadge score={room.match.score} />
+            </div>
+            <div className="absolute inset-x-0 top-14 flex justify-end px-4">
               <div className="flex items-center gap-2">
                 {images.length > 1 ? (
                   <span className="rounded-full bg-slate-950/52 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">

@@ -48,7 +48,6 @@ export default function SwipeRooms() {
   )
   const totalRooms = unsavedRooms.length
   const currentPosition = renderedRoom ? reviewedUnsavedCount + 1 : totalRooms
-  const progressWidth = totalRooms > 0 ? (currentPosition / totalRooms) * 100 : 0
   const swipeThreshold =
     typeof window !== 'undefined'
       ? Math.min(132, Math.max(96, window.innerWidth * 0.24))
@@ -186,7 +185,7 @@ export default function SwipeRooms() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-9.5rem-env(safe-area-inset-bottom))] w-full max-w-[480px] flex-col gap-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+    <div className="mx-auto flex min-h-[calc(100dvh-7.25rem-env(safe-area-inset-bottom))] w-full max-w-[480px] flex-col gap-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-0">
       {toast ? (
         <div className="toast-enter card-shadow rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-sm font-medium text-emerald-900">
           <div className="flex items-center justify-between gap-3">
@@ -197,31 +196,6 @@ export default function SwipeRooms() {
           </div>
         </div>
       ) : null}
-
-      <section className="card-surface card-shadow rounded-[28px] px-4 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-600">Gafflo rooms</div>
-            <div className="mt-1 text-sm font-medium text-slate-600">
-              <span className="font-semibold text-slate-900">Room {currentPosition}</span> of {totalRooms}
-            </div>
-          </div>
-          <div className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-            {availableRooms.length} left
-          </div>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all"
-            style={{ width: `${Math.min(100, progressWidth)}%` }}
-          />
-        </div>
-        {!tenantProfile ? (
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            Create your profile for sharper match scores. Demo browsing still works without it.
-          </p>
-        ) : null}
-      </section>
 
       <section className="relative flex-1">
         {availableRooms.slice(1, 2).map((room) => (
@@ -265,7 +239,12 @@ export default function SwipeRooms() {
             </div>
           </div>
 
-          <RoomCard room={renderedRoom} swipeMode />
+          <RoomCard
+            room={renderedRoom}
+            swipeMode
+            progressLabel={`${currentPosition} / ${totalRooms}`}
+            showDemoScore={!tenantProfile}
+          />
         </div>
       </section>
 
