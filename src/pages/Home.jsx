@@ -160,11 +160,11 @@ function HeroPreviewCard({ room, onBrowse }) {
   const [imageFailed, setImageFailed] = useState(false)
 
   return (
-    <div className="relative rounded-[30px] border border-white/10 bg-white/8 p-3 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] backdrop-blur-md">
-      <div className="absolute -left-5 top-8 hidden rounded-full bg-emerald-400/16 px-3 py-2 text-xs font-semibold text-emerald-100 ring-1 ring-white/10 md:block">
+    <div className="relative rounded-[30px] border border-white/10 bg-white/8 p-3 pt-16 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] backdrop-blur-md md:pt-14">
+      <div className="absolute left-3 top-3 hidden rounded-full bg-emerald-400/16 px-3 py-2 text-xs font-semibold text-emerald-100 ring-1 ring-white/10 lg:block">
         Profile-aware matching
       </div>
-      <div className="absolute -right-4 bottom-18 hidden rounded-full bg-white/12 px-3 py-2 text-xs font-semibold text-white ring-1 ring-white/10 md:block">
+      <div className="absolute right-3 top-3 hidden rounded-full bg-white/12 px-3 py-2 text-xs font-semibold text-white ring-1 ring-white/10 lg:block">
         Shortlist faster
       </div>
 

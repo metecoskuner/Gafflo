@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
-import RoomCard from '../components/RoomCard'
 import SwipeActions from '../components/SwipeActions'
 import useAppState from '../context/useAppState'
+import { formatCurrency } from '../utils/formatCurrency'
+import { formatDate } from '../utils/dateUtils'
+import MatchBadge from '../components/MatchBadge'
 
 const GESTURE_THRESHOLD = 10
 
@@ -61,6 +63,12 @@ export default function SwipeRooms() {
     return () => window.clearTimeout(timeoutId)
   }, [toast, dismissToast])
 
+  const scrollPageTop = () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    }
+  }
+
   const triggerSwipeAction = (direction) => {
     if (!renderedRoom || isAnimatingOut) return
 
@@ -92,6 +100,7 @@ export default function SwipeRooms() {
       setGestureMode(null)
       lastDragXRef.current = 0
       activePointerIdRef.current = null
+      scrollPageTop()
     }, 170)
   }
 
@@ -185,30 +194,24 @@ export default function SwipeRooms() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-7.25rem-env(safe-area-inset-bottom))] w-full max-w-[480px] flex-col gap-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-0">
+    <div className="mx-auto w-full max-w-[480px] pb-[calc(11.5rem+env(safe-area-inset-bottom))]">
       {toast ? (
-        <div className="toast-enter card-shadow rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-sm font-medium text-emerald-900">
-          <div className="flex items-center justify-between gap-3">
-            <span>{toast.message}</span>
-            <button type="button" onClick={dismissToast} className="text-emerald-700 hover:text-emerald-800">
-              Dismiss
-            </button>
+        <div className="sticky top-3 z-40 mb-3 px-1">
+          <div className="toast-enter card-shadow rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-sm font-medium text-emerald-900">
+            <div className="flex items-center justify-between gap-3">
+              <span>{toast.message}</span>
+              <button type="button" onClick={dismissToast} className="text-emerald-700 hover:text-emerald-800">
+                Dismiss
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
 
-      <section className="relative flex-1">
-        {availableRooms.slice(1, 2).map((room) => (
-          <div
-            key={room.id}
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-2 top-3 z-0 h-[calc(100dvh-14rem-env(safe-area-inset-bottom))] min-h-[36rem] scale-[0.98] rounded-[34px] bg-white/75 opacity-70 shadow-[0_24px_60px_-30px_rgba(15,23,42,0.16)]"
-          />
-        ))}
-
+      <section className="relative">
         <div
           key={renderedRoom.id}
-          className={`card-enter no-select relative z-10 ${gestureMode === 'horizontal' || isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className={`card-enter no-select relative rounded-[34px] ${gestureMode === 'horizontal' || isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerEnd}
@@ -218,41 +221,246 @@ export default function SwipeRooms() {
             transition: gestureMode === 'horizontal' ? 'none' : 'transform 170ms ease-out',
           }}
         >
-          <div className="pointer-events-none absolute inset-x-4 top-6 z-20 flex items-center justify-between">
-            <div
-              className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold tracking-[0.18em] text-emerald-700"
-              style={{
-                opacity: swipeDirection === 'save' ? overlayOpacity : 0,
-                transform: `scale(${0.92 + overlayOpacity * 0.08})`,
-              }}
-            >
-              SAVE
-            </div>
-            <div
-              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold tracking-[0.18em] text-rose-600"
-              style={{
-                opacity: swipeDirection === 'pass' ? overlayOpacity : 0,
-                transform: `scale(${0.92 + overlayOpacity * 0.08})`,
-              }}
-            >
-              PASS
-            </div>
-          </div>
-
-          <RoomCard
+          <RoomHero
             room={renderedRoom}
-            swipeMode
-            progressLabel={`${currentPosition} / ${totalRooms}`}
+            currentPosition={currentPosition}
+            totalRooms={totalRooms}
             showDemoScore={!tenantProfile}
+            swipeDirection={swipeDirection}
+            overlayOpacity={overlayOpacity}
           />
         </div>
       </section>
 
-      <SwipeActions
-        isSaved={savedRoomIds.includes(renderedRoom.id)}
-        onPass={() => triggerSwipeAction('pass')}
-        onSave={() => triggerSwipeAction('save')}
-      />
+      <div className="sticky bottom-[calc(5.4rem+env(safe-area-inset-bottom))] z-30 mt-4 px-1">
+        <SwipeActions
+          isSaved={savedRoomIds.includes(renderedRoom.id)}
+          onPass={() => triggerSwipeAction('pass')}
+          onSave={() => triggerSwipeAction('save')}
+        />
+      </div>
+
+      <div className="mt-4 space-y-4">
+        <section className="card-surface card-shadow rounded-[28px] p-5">
+          <h2 className="text-base font-semibold text-slate-900">Overview</h2>
+          <p className="mt-3 text-sm leading-7 text-slate-600">{renderedRoom.description}</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <InfoTile label="Rent" value={`${formatCurrency(renderedRoom.rent)}/mo`} />
+            <InfoTile label="Deposit" value={formatCurrency(renderedRoom.deposit)} />
+            <InfoTile label="Available" value={formatDate(renderedRoom.availableFrom)} />
+            <InfoTile label="Bills" value={renderedRoom.billsIncluded ? 'Included' : 'Separate'} />
+            <InfoTile label="Room type" value={renderedRoom.roomType} />
+            <InfoTile label="Housemates" value={`${renderedRoom.housematesCount}`} />
+            <InfoTile label="Lifestyle" value={renderedRoom.lifestyle} />
+            <InfoTile label="Cleanliness" value={renderedRoom.cleanliness} />
+          </div>
+        </section>
+
+        <section className="card-surface card-shadow rounded-[28px] p-5">
+          <h2 className="text-base font-semibold text-slate-900">Features</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {renderedRoom.features.map((feature) => (
+              <span
+                key={feature}
+                className="rounded-full bg-orange-50 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-orange-100"
+              >
+                {feature}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="card-surface card-shadow rounded-[28px] p-5">
+          <h2 className="text-base font-semibold text-slate-900">House rules</h2>
+          <ul className="mt-3 space-y-2 text-sm text-slate-600">
+            {renderedRoom.houseRules.map((rule) => (
+              <li key={rule} className="flex items-start gap-2">
+                <span className="mt-1.5 h-2 w-2 rounded-full bg-slate-300" />
+                <span>{rule}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="rounded-[28px] border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5">
+          <h2 className="text-base font-semibold text-emerald-950">Why this room matches you</h2>
+          <ul className="mt-3 space-y-2 text-sm text-emerald-950">
+            {renderedRoom.match.reasons.map((reason) => (
+              <li key={reason} className="flex items-start gap-2">
+                <span className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500" />
+                <span>{reason}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="rounded-[28px] border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5">
+          <h2 className="text-base font-semibold text-amber-950">Things to consider</h2>
+          {renderedRoom.match.warnings?.length ? (
+            <ul className="mt-3 space-y-2 text-sm text-amber-950">
+              {renderedRoom.match.warnings.map((warning) => (
+                <li key={warning} className="flex items-start gap-2">
+                  <span className="mt-1.5 h-2 w-2 rounded-full bg-amber-500" />
+                  <span>{warning}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm leading-6 text-amber-950">Looks like a strong fit based on your profile.</p>
+          )}
+        </section>
+
+        <section className="card-surface card-shadow rounded-[28px] p-5">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Listing contact</div>
+          <div className="mt-2 text-base font-semibold text-slate-900">{renderedRoom.landlordName}</div>
+          <p className="mt-2 text-sm text-slate-600">
+            Minimum stay {renderedRoom.minStayMonths} months · Smoking {renderedRoom.smokingAllowed} · Pets {renderedRoom.petsAllowed}
+          </p>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirection, overlayOpacity }) {
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [failedImages, setFailedImages] = useState([])
+  const images = room.images?.length ? room.images : ['']
+  const activeImage = images[selectedImageIndex] || images[0]
+  const activeImageFailed = failedImages.includes(selectedImageIndex)
+
+  const moveImage = (direction) => {
+    if (images.length <= 1) return
+    setSelectedImageIndex((current) => {
+      const next = current + direction
+      if (next < 0) return images.length - 1
+      if (next >= images.length) return 0
+      return next
+    })
+  }
+
+  const markImageFailed = (index) => {
+    setFailedImages((current) => (current.includes(index) ? current : [...current, index]))
+  }
+
+  return (
+    <div key={room.id} className="card-surface card-shadow overflow-hidden rounded-[34px]">
+      <div className="relative h-[78dvh] min-h-[34rem] max-h-[52rem]">
+        {activeImageFailed ? (
+          <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
+            Gafflo room preview
+          </div>
+        ) : (
+          <img
+            src={activeImage}
+            alt={`${room.title} image ${selectedImageIndex + 1}`}
+            className="h-full w-full object-cover"
+            onError={() => markImageFailed(selectedImageIndex)}
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/18 to-transparent" />
+        <div
+          className={`pointer-events-none absolute inset-0 transition duration-150 ${
+            swipeDirection === 'save'
+              ? 'bg-emerald-500/18 backdrop-blur-[3px]'
+              : swipeDirection === 'pass'
+                ? 'bg-rose-500/18 backdrop-blur-[3px]'
+                : 'bg-transparent backdrop-blur-none'
+          }`}
+          style={{ opacity: overlayOpacity }}
+        />
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+          <div
+            className={`flex h-24 w-24 items-center justify-center rounded-full border text-5xl shadow-[0_24px_60px_-28px_rgba(15,23,42,0.45)] transition duration-150 ${
+              swipeDirection === 'save'
+                ? 'border-emerald-200 bg-white/88 text-emerald-600'
+                : 'border-rose-200 bg-white/88 text-rose-600'
+            }`}
+            style={{
+              opacity: swipeDirection ? overlayOpacity : 0,
+              transform: `scale(${0.82 + overlayOpacity * 0.24})`,
+            }}
+          >
+            <span aria-hidden="true">{swipeDirection === 'save' ? '♥' : '✕'}</span>
+          </div>
+        </div>
+
+        {images.length > 1 ? (
+          <>
+            <button
+              type="button"
+              aria-label="Previous room photo"
+              className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-slate-950/36 text-lg text-white backdrop-blur-sm"
+              onClick={() => moveImage(-1)}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="Next room photo"
+              className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-slate-950/36 text-lg text-white backdrop-blur-sm"
+              onClick={() => moveImage(1)}
+            >
+              ›
+            </button>
+          </>
+        ) : null}
+
+        <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+          <div className="max-w-[90%]">
+            <h1 className="text-balance text-[2rem] font-semibold leading-tight tracking-tight">{room.title}</h1>
+            <p className="mt-1 text-sm text-slate-200">
+              {room.area}, {room.city}
+            </p>
+            <div className="mt-2 flex items-center gap-3 text-sm font-medium text-slate-100">
+              <span>{formatCurrency(room.rent)}/mo</span>
+              <span className="h-1 w-1 rounded-full bg-white/70" />
+              <span>{formatDate(room.availableFrom)}</span>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {room.features.slice(0, 3).map((feature) => (
+              <span
+                key={feature}
+                className="rounded-full border border-white/15 bg-white/14 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm"
+              >
+                {feature}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-soft">
+              {currentPosition} / {totalRooms}
+            </span>
+            {showDemoScore ? (
+              <span className="rounded-full bg-slate-950/52 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
+                Demo scores
+              </span>
+            ) : null}
+          </div>
+          <MatchBadge score={room.match.score} />
+        </div>
+
+        <div className="absolute inset-x-0 top-14 flex justify-end px-4">
+          {images.length > 1 ? (
+            <span className="rounded-full bg-slate-950/52 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+              {selectedImageIndex + 1} / {images.length}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InfoTile({ label, value }) {
+  return (
+    <div className="surface-line rounded-[20px] bg-slate-50/78 px-3 py-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
+      <div className="mt-1 text-sm font-medium text-slate-700">{value}</div>
     </div>
   )
 }
