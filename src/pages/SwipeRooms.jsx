@@ -11,13 +11,19 @@ import MatchBadge from '../components/MatchBadge'
 const GESTURE_LOCK_THRESHOLD = 18
 const HORIZONTAL_INTENT_RATIO = 1.35
 const VELOCITY_THRESHOLD = 0.9
+const EXIT_ANIMATION_MS = 210
+const VERTICAL_DRAG_LIMIT = 42
 
 export default function SwipeRooms() {
   const navigate = useNavigate()
   const {
     availableRooms,
+    activeFilterCount,
+    discoveryRooms,
     passRoom,
     rooms,
+    resetRoomFilters,
+    roomFilters,
     saveRoom,
     savedRoomIds,
     startOver,
@@ -28,6 +34,7 @@ export default function SwipeRooms() {
   } = useAppState()
 
   const [dragX, setDragX] = useState(0)
+  const [dragY, setDragY] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [isAnimatingOut, setIsAnimatingOut] = useState(false)
   const [exitingRoomId, setExitingRoomId] = useState(null)
@@ -35,24 +42,30 @@ export default function SwipeRooms() {
   const dragStartRef = useRef({ x: 0, y: 0 })
   const dragStartTimeRef = useRef(0)
   const lastDragXRef = useRef(0)
+  const lastDragYRef = useRef(0)
   const activePointerIdRef = useRef(null)
 
   const currentRoom = availableRooms[0]
+  const nextRoom = availableRooms[1]
   const renderedRoomId = exitingRoomId ?? currentRoom?.id ?? null
   const renderedRoom = useMemo(
     () => rooms.find((room) => room.id === renderedRoomId) ?? currentRoom ?? null,
     [currentRoom, renderedRoomId, rooms],
   )
   const unsavedRooms = useMemo(
-    () => rooms.filter((room) => !savedRoomIds.includes(room.id)),
-    [rooms, savedRoomIds],
+    () => discoveryRooms.filter((room) => !savedRoomIds.includes(room.id)),
+    [discoveryRooms, savedRoomIds],
   )
   const reviewedUnsavedCount = useMemo(
-    () => reviewedRoomIds.filter((id) => !savedRoomIds.includes(id)).length,
-    [reviewedRoomIds, savedRoomIds],
+    () => {
+      const discoveryRoomIds = new Set(discoveryRooms.map((room) => room.id))
+      return reviewedRoomIds.filter((id) => discoveryRoomIds.has(id) && !savedRoomIds.includes(id)).length
+    },
+    [discoveryRooms, reviewedRoomIds, savedRoomIds],
   )
   const totalRooms = unsavedRooms.length
   const currentPosition = renderedRoom ? reviewedUnsavedCount + 1 : totalRooms
+  const selectedFilterLabels = useMemo(() => getFilterLabels(roomFilters), [roomFilters])
   const isMobileViewport = typeof window !== 'undefined' ? window.innerWidth < 768 : true
   const swipeThreshold =
     typeof window !== 'undefined'
@@ -62,7 +75,10 @@ export default function SwipeRooms() {
       : 150
   const swipeDirection = dragX > 0 ? 'save' : dragX < 0 ? 'pass' : null
   const swipeProgress = Math.min(1, Math.abs(dragX) / swipeThreshold)
+  const actionProgress = Math.min(1, Math.abs(dragX) / (swipeThreshold * 0.82))
   const overlayOpacity = Math.max(0, Math.min(1, (swipeProgress - 0.12) / 0.88))
+  const nextCardOpacity = renderedRoom && nextRoom && !isAnimatingOut ? 0.58 + swipeProgress * 0.32 : 0
+  const nextCardTransform = `translate3d(0, ${18 - swipeProgress * 10}px, 0) scale(${0.94 + swipeProgress * 0.035})`
 
   useEffect(() => {
     if (!toast) return undefined
@@ -95,6 +111,7 @@ export default function SwipeRooms() {
     setIsAnimatingOut(true)
     setExitingRoomId(outgoingRoomId)
     setDragX(offscreenX)
+    setDragY((current) => Math.max(-VERTICAL_DRAG_LIMIT, Math.min(VERTICAL_DRAG_LIMIT, current * 1.25)))
 
     window.setTimeout(() => {
       if (direction === 'save') {
@@ -105,20 +122,24 @@ export default function SwipeRooms() {
 
       setExitingRoomId(null)
       setDragX(0)
+      setDragY(0)
       setIsAnimatingOut(false)
       setIsDragging(false)
       setGestureMode(null)
       lastDragXRef.current = 0
+      lastDragYRef.current = 0
       activePointerIdRef.current = null
       scrollPageTop()
-    }, 170)
+    }, EXIT_ANIMATION_MS)
   }
 
   const resetDrag = () => {
     setDragX(0)
+    setDragY(0)
     setIsDragging(false)
     setGestureMode(null)
     lastDragXRef.current = 0
+    lastDragYRef.current = 0
     activePointerIdRef.current = null
   }
 
@@ -130,6 +151,7 @@ export default function SwipeRooms() {
     dragStartRef.current = { x: event.clientX, y: event.clientY }
     dragStartTimeRef.current = performance.now()
     lastDragXRef.current = 0
+    lastDragYRef.current = 0
     activePointerIdRef.current = event.pointerId
     setIsDragging(true)
     setGestureMode(null)
@@ -160,8 +182,11 @@ export default function SwipeRooms() {
 
     if (gestureMode === 'vertical') return
 
+    const dampedY = Math.max(-VERTICAL_DRAG_LIMIT, Math.min(VERTICAL_DRAG_LIMIT, deltaY * 0.16))
     lastDragXRef.current = deltaX
+    lastDragYRef.current = dampedY
     setDragX(deltaX)
+    setDragY(dampedY)
   }
 
   const handlePointerEnd = (event) => {
@@ -189,21 +214,34 @@ export default function SwipeRooms() {
   }
 
   if (!renderedRoom) {
-    const allRoomsSaved = rooms.length > 0 && savedRoomIds.length >= rooms.length
+    const allRoomsSaved = discoveryRooms.length > 0 && discoveryRooms.every((room) => savedRoomIds.includes(room.id))
+    const noFilterResults = activeFilterCount > 0 && discoveryRooms.length === 0
 
     return (
       <div className="mx-auto w-full max-w-[480px] pb-[calc(10rem+env(safe-area-inset-bottom))]">
         <EmptyState
-          eyebrow={allRoomsSaved ? 'Saved rooms complete' : 'Room stack complete'}
-          title={allRoomsSaved ? 'You’ve saved all available rooms.' : 'You’ve reviewed all rooms for now.'}
+          eyebrow={noFilterResults ? 'No matching rooms' : allRoomsSaved ? 'Saved rooms complete' : 'Room stack complete'}
+          title={
+            noFilterResults
+              ? 'No rooms match these filters.'
+              : allRoomsSaved
+                ? 'You’ve saved all available rooms.'
+                : 'You’ve reviewed all rooms for now.'
+          }
           description={
-            allRoomsSaved
+            noFilterResults
+              ? 'Reset filters or loosen your search to bring rooms back into the deck.'
+              : allRoomsSaved
               ? 'Your current room deck is empty because every available room is already in your saved list.'
               : 'Reset the room stack to swipe again, or jump into your saved shortlist.'
           }
           actions={
             <>
-              <Button onClick={() => navigate('/saved')}>View saved rooms</Button>
+              {noFilterResults ? (
+                <Button onClick={resetRoomFilters}>Reset filters</Button>
+              ) : (
+                <Button onClick={() => navigate('/saved')}>View saved rooms</Button>
+              )}
               {!allRoomsSaved ? (
                 <Button variant="secondary" onClick={startOver}>
                   Start over
@@ -233,21 +271,74 @@ export default function SwipeRooms() {
         </div>
       ) : null}
 
-      <section className="relative">
+      {selectedFilterLabels.length ? (
+        <section className="mb-3 rounded-[24px] border border-emerald-100 bg-white/82 px-4 py-3 shadow-soft backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">
+                Filters active
+              </div>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                {selectedFilterLabels.map((label) => (
+                  <span key={label} className="shrink-0 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={resetRoomFilters}
+              className="shrink-0 rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"
+            >
+              Reset
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="relative min-h-[32rem]">
+        {nextRoom ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-3 top-3 origin-top overflow-hidden rounded-[34px] bg-white shadow-[0_22px_54px_-32px_rgba(15,23,42,0.34)]"
+            style={{
+              opacity: nextCardOpacity,
+              transform: nextCardTransform,
+              transition: isDragging ? 'none' : 'opacity 220ms ease, transform 220ms ease',
+            }}
+          >
+            <RoomHero
+              room={nextRoom}
+              currentPosition={Math.min(currentPosition + 1, totalRooms)}
+              totalRooms={totalRooms}
+              showDemoScore={false}
+              swipeDirection={null}
+              overlayOpacity={0}
+              swipeProgress={0}
+              isPreview
+            />
+          </div>
+        ) : null}
+
         <div
           key={renderedRoom.id}
-          className={`card-enter no-select relative rounded-[34px] ${gestureMode === 'horizontal' || isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className={`card-enter no-select relative z-10 touch-pan-y rounded-[34px] will-change-transform ${
+            gestureMode === 'horizontal' || isDragging ? 'cursor-grabbing' : 'cursor-grab'
+          }`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerEnd}
           onPointerCancel={handlePointerEnd}
           style={{
-            transform: `translateX(${dragX}px) rotate(${dragX * 0.032}deg)`,
+            transform: `translate3d(${dragX}px, ${dragY}px, 0) rotate(${dragX * 0.026}deg) scale(${
+              isDragging ? 1.012 : 1
+            })`,
             transition: isAnimatingOut
-              ? 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)'
+              ? `transform ${EXIT_ANIMATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`
               : gestureMode === 'horizontal'
                 ? 'none'
-                : 'transform 200ms ease-out',
+                : 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
           <RoomHero
@@ -258,6 +349,7 @@ export default function SwipeRooms() {
             swipeDirection={swipeDirection}
             overlayOpacity={overlayOpacity}
             swipeProgress={swipeProgress}
+            actionProgress={actionProgress}
           />
         </div>
       </section>
@@ -268,6 +360,9 @@ export default function SwipeRooms() {
           isSaved={savedRoomIds.includes(renderedRoom.id)}
           onPass={() => triggerSwipeAction('pass')}
           onSave={() => triggerSwipeAction('save')}
+          swipeDirection={swipeDirection}
+          swipeProgress={actionProgress}
+          disabled={isAnimatingOut}
         />
       </div>
 
@@ -353,7 +448,17 @@ export default function SwipeRooms() {
   )
 }
 
-function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirection, overlayOpacity, swipeProgress }) {
+function RoomHero({
+  room,
+  currentPosition,
+  totalRooms,
+  showDemoScore,
+  swipeDirection,
+  overlayOpacity,
+  swipeProgress,
+  actionProgress = swipeProgress,
+  isPreview = false,
+}) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [failedImages, setFailedImages] = useState([])
   const images = room.images?.length ? room.images : ['']
@@ -375,7 +480,7 @@ function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirec
   }
 
   return (
-    <div key={room.id} className="card-surface card-shadow overflow-hidden rounded-[34px]">
+    <div key={room.id} className={`card-surface card-shadow overflow-hidden rounded-[34px] ${isPreview ? 'brightness-[0.98]' : ''}`}>
       <div className="relative h-[80dvh] min-h-[32rem] max-h-[46rem] md:h-[42rem]">
         {activeImageFailed ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
@@ -417,6 +522,21 @@ function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirec
           >
             <span aria-hidden="true">{swipeDirection === 'save' ? '♥' : '✕'}</span>
           </div>
+        </div>
+
+        <div className="pointer-events-none absolute inset-x-0 top-24 z-20 flex items-start justify-between px-5">
+          <SwipeStamp
+            label="Pass"
+            tone="pass"
+            active={swipeDirection === 'pass'}
+            progress={actionProgress}
+          />
+          <SwipeStamp
+            label="Save"
+            tone="save"
+            active={swipeDirection === 'save'}
+            progress={actionProgress}
+          />
         </div>
 
         {images.length > 1 ? (
@@ -490,6 +610,25 @@ function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirec
   )
 }
 
+function SwipeStamp({ label, tone, active, progress }) {
+  const colorClass =
+    tone === 'save'
+      ? 'border-emerald-300 bg-emerald-50/92 text-emerald-700'
+      : 'border-rose-300 bg-rose-50/92 text-rose-700'
+
+  return (
+    <div
+      className={`rounded-[18px] border-2 px-4 py-2 text-sm font-black uppercase tracking-[0.22em] shadow-[0_18px_42px_-24px_rgba(15,23,42,0.42)] backdrop-blur-md ${colorClass}`}
+      style={{
+        opacity: active ? Math.min(1, 0.22 + progress * 0.78) : 0,
+        transform: `rotate(${tone === 'save' ? 10 : -10}deg) scale(${0.86 + progress * 0.16})`,
+      }}
+    >
+      {label}
+    </div>
+  )
+}
+
 function InfoTile({ label, value }) {
   return (
     <div className="surface-line rounded-[20px] bg-slate-50/78 px-3 py-3">
@@ -497,4 +636,18 @@ function InfoTile({ label, value }) {
       <div className="mt-1 text-sm font-medium text-slate-700">{value}</div>
     </div>
   )
+}
+
+function getFilterLabels(filters) {
+  return [
+    filters.priceMin ? `From €${filters.priceMin}` : null,
+    filters.priceMax ? `Up to €${filters.priceMax}` : null,
+    filters.location !== 'Any' ? filters.location : null,
+    filters.moveInBy ? `By ${filters.moveInBy}` : null,
+    filters.genderPreference !== 'Any' ? filters.genderPreference : null,
+    filters.occupationType !== 'Any' ? filters.occupationType : null,
+    filters.smokingPreference !== 'Any' ? filters.smokingPreference : null,
+    filters.petFriendliness !== 'Any' ? filters.petFriendliness : null,
+    filters.lifestylePreference !== 'Any' ? filters.lifestylePreference : null,
+  ].filter(Boolean)
 }

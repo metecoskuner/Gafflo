@@ -15,6 +15,8 @@ const rooms = [
     cleanliness: 'Very clean',
     smokingAllowed: 'No',
     petsAllowed: 'Not comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Full-time', 'Remote worker'],
     description: 'Bright double room in a calm shared house close to Rathmines village, cafés and evening bus routes.',
     images: [
       'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80',
@@ -40,6 +42,8 @@ const rooms = [
     cleanliness: 'Average',
     smokingAllowed: 'Outside only',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Full-time', 'Part-time', 'Student'],
     description: 'Compact and tidy room with quick rail access and an easy commute into the city centre.',
     images: [
       'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=1200&q=80',
@@ -65,6 +69,8 @@ const rooms = [
     cleanliness: 'Very clean',
     smokingAllowed: 'No',
     petsAllowed: 'Not comfortable',
+    genderPreference: 'Female preferred',
+    occupationTypes: ['Full-time', 'Remote worker'],
     description: 'Modern room in a well-kept apartment near offices, cafés and central transport links.',
     images: [
       'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=1200&q=80',
@@ -90,6 +96,8 @@ const rooms = [
     cleanliness: 'Average',
     smokingAllowed: 'Outside only',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Student', 'Remote worker', 'Full-time'],
     description: 'Spacious room with good floor space and a practical setup for study or remote work.',
     images: [
       'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80',
@@ -115,6 +123,8 @@ const rooms = [
     cleanliness: 'Very clean',
     smokingAllowed: 'No',
     petsAllowed: 'Not comfortable',
+    genderPreference: 'Female preferred',
+    occupationTypes: ['Full-time', 'Remote worker'],
     description: 'Peaceful room in a tidy house with a calm evening atmosphere and strong transport access.',
     images: [
       'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80',
@@ -140,6 +150,8 @@ const rooms = [
     cleanliness: 'Very clean',
     smokingAllowed: 'Outside only',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Full-time', 'Part-time'],
     description: 'Ensuite room in a central apartment suited to renters who want city access and a lively shared home.',
     images: [
       'https://images.unsplash.com/photo-1460317442991-0ec209397118?auto=format&fit=crop&w=1200&q=80',
@@ -165,6 +177,8 @@ const rooms = [
     cleanliness: 'Average',
     smokingAllowed: 'Outside only',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Student', 'Part-time', 'Full-time'],
     description: 'Affordable room with practical transport access and a straightforward shared-house setup.',
     images: [
       'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80',
@@ -190,6 +204,8 @@ const rooms = [
     cleanliness: 'Very clean',
     smokingAllowed: 'No',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Full-time', 'Remote worker'],
     description: 'Bright room close to the promenade with a calmer pace and a tidy household rhythm.',
     images: [
       'https://images.unsplash.com/photo-1480074568708-e7b720bb3f09?auto=format&fit=crop&w=1200&q=80',
@@ -215,6 +231,8 @@ const rooms = [
     cleanliness: 'Average',
     smokingAllowed: 'Outside only',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Full-time', 'Part-time', 'Student'],
     description: 'Well-finished room close to cafés and tram access, ideal for renters who want city life without Dublin 2 pricing.',
     images: [
       'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80',
@@ -240,6 +258,8 @@ const rooms = [
     cleanliness: 'Very clean',
     smokingAllowed: 'No',
     petsAllowed: 'Not comfortable',
+    genderPreference: 'Male preferred',
+    occupationTypes: ['Full-time', 'Remote worker'],
     description: 'Quiet and polished double room in a mature shared home near offices, parks and bus corridors.',
     images: [
       'https://images.unsplash.com/photo-1502672023488-70e25813eb80?auto=format&fit=crop&w=1200&q=80',
@@ -265,6 +285,8 @@ const rooms = [
     cleanliness: 'Average',
     smokingAllowed: 'Outside only',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Student', 'Part-time', 'Full-time'],
     description: 'Compact but well-run room close to Cork city centre with simple all-in monthly costs.',
     images: [
       'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=1200&q=80',
@@ -290,6 +312,8 @@ const rooms = [
     cleanliness: 'Very clean',
     smokingAllowed: 'No',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Full-time', 'Remote worker'],
     description: 'Bright and tidy room in a quiet Cork suburb with a practical commute and good work-from-home setup.',
     images: [
       'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80',
@@ -315,6 +339,8 @@ const rooms = [
     cleanliness: 'Average',
     smokingAllowed: 'Outside only',
     petsAllowed: 'Comfortable',
+    genderPreference: 'Any',
+    occupationTypes: ['Student', 'Part-time', 'Full-time'],
     description: 'Friendly shared house near Galway Westend with an easy walk into the city and a relaxed social vibe.',
     images: [
       'https://images.unsplash.com/photo-1464890100898-a385f744067f?auto=format&fit=crop&w=1200&q=80',

@@ -2,6 +2,9 @@ const KEYS = {
   profile: 'gaffly.tenant-profile',
   saved: 'gaffly.saved-rooms',
   reviewed: 'gaffly.reviewed-rooms',
+  onboarding: 'gaffly.onboarding',
+  conversations: 'gaffly.conversations',
+  createdListings: 'gaffly.created-listings',
 }
 
 function getJson(key, fallback) {
@@ -39,4 +42,28 @@ export function getReviewedRoomIds() {
 
 export function setReviewedRoomIds(ids) {
   setJson(KEYS.reviewed, ids)
+}
+
+export function getOnboarding() {
+  return getJson(KEYS.onboarding, null)
+}
+
+export function setOnboarding(onboarding) {
+  setJson(KEYS.onboarding, onboarding)
+}
+
+export function getConversations() {
+  return getJson(KEYS.conversations, [])
+}
+
+export function setConversations(conversations) {
+  setJson(KEYS.conversations, conversations)
+}
+
+export function getCreatedListings() {
+  return getJson(KEYS.createdListings, [])
+}
+
+export function setCreatedListings(listings) {
+  setJson(KEYS.createdListings, listings)
 }

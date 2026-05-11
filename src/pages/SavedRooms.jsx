@@ -17,6 +17,10 @@ export default function SavedRooms() {
     () => [...savedRooms].sort((a, b) => b.match.score - a.match.score),
     [savedRooms],
   )
+  const bestMatch = sortedSavedRooms[0]
+  const averageRent = sortedSavedRooms.length
+    ? Math.round(sortedSavedRooms.reduce((total, room) => total + room.rent, 0) / sortedSavedRooms.length)
+    : 0
 
   useEffect(() => {
     if (!toast) return undefined
@@ -30,12 +34,21 @@ export default function SavedRooms() {
 
   if (!sortedSavedRooms.length) {
     return (
-      <EmptyState
-        eyebrow="Saved rooms"
-        title="No saved rooms yet"
-        description="Start swiping and save rooms that feel like a good fit."
-        actions={<Button onClick={() => navigate('/rooms')}>Browse rooms</Button>}
-      />
+      <div className="mx-auto w-full max-w-[480px]">
+        <EmptyState
+          eyebrow="Saved rooms"
+          title="Build your shortlist"
+          description="Save rooms from discovery and they’ll stay here on this device for quick review later."
+          actions={
+            <>
+              <Button onClick={() => navigate('/rooms')}>Browse rooms</Button>
+              <Button variant="secondary" onClick={() => navigate('/profile')}>
+                Update profile
+              </Button>
+            </>
+          }
+        />
+      </div>
     )
   }
 
@@ -52,12 +65,19 @@ export default function SavedRooms() {
         </div>
       ) : null}
 
-      <section className="card-surface card-shadow rounded-[28px] p-5 md:p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Saved rooms</p>
-        <h1 className="text-balance mt-2 text-3xl font-semibold tracking-tight text-slate-900">Saved rooms</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Rooms you’re interested in reviewing later.
-        </p>
+      <section className="card-surface card-shadow overflow-hidden rounded-[30px]">
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 px-5 py-5 text-white">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Saved rooms</p>
+          <h1 className="text-balance mt-2 text-3xl font-semibold tracking-tight">Your shortlist</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            Compare saved rooms, revisit match reasons and remove anything that no longer fits.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 p-3">
+          <SummaryTile label="Saved" value={String(sortedSavedRooms.length)} />
+          <SummaryTile label="Avg rent" value={`${formatCurrency(averageRent)}`} />
+          <SummaryTile label="Best match" value={bestMatch ? `${bestMatch.match.score}%` : '-'} />
+        </div>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
@@ -66,7 +86,12 @@ export default function SavedRooms() {
 
           return (
             <article key={room.id} className="card-surface card-shadow overflow-hidden rounded-[30px]">
-              <div className="relative h-60">
+              <button
+                type="button"
+                onClick={() => navigate(`/rooms/${room.id}`, { state: { backgroundLocation: location } })}
+                className="block w-full text-left"
+              >
+              <div className="relative h-62">
                 {imageFailed ? (
                   <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
                     Gaffly room preview
@@ -82,22 +107,34 @@ export default function SavedRooms() {
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/18 to-transparent" />
                 <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
                   <MatchBadge score={room.match.score} />
-                  <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">
-                    {room.billsIncluded ? 'Bills included' : 'Bills separate'}
-                  </span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className="rounded-full bg-emerald-50/95 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-soft">
+                      Saved
+                    </span>
+                    <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">
+                      {room.billsIncluded ? 'Bills included' : 'Bills separate'}
+                    </span>
+                  </div>
                 </div>
                 <div className="absolute inset-x-0 bottom-0 p-4 text-white">
                   <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight">{room.title}</h2>
                   <p className="mt-1 text-sm text-slate-200">
                     {room.area}, {room.city}
                   </p>
+                  <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-white">
+                    <span>{formatCurrency(room.rent)}/mo</span>
+                    <span className="h-1 w-1 rounded-full bg-white/70" />
+                    <span>{formatDate(room.availableFrom)}</span>
+                  </div>
                 </div>
               </div>
+              </button>
 
               <div className="space-y-4 p-5">
-                <div className="grid grid-cols-2 gap-3 text-sm text-slate-600">
-                  <InfoTile label="Rent" value={`${formatCurrency(room.rent)}/mo`} />
-                  <InfoTile label="Available" value={formatDate(room.availableFrom)} />
+                <div className="grid grid-cols-3 gap-2 text-sm text-slate-600">
+                  <InfoTile label="Deposit" value={formatCurrency(room.deposit)} />
+                  <InfoTile label="Bills" value={room.billsIncluded ? 'Included' : 'Separate'} />
+                  <InfoTile label="Vibe" value={room.lifestyle} />
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -115,14 +152,18 @@ export default function SavedRooms() {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[1.05fr_0.95fr] gap-3">
                   <Button
-                    variant="secondary"
+                    variant="dark"
                     onClick={() => navigate(`/rooms/${room.id}`, { state: { backgroundLocation: location } })}
                   >
                     Details
                   </Button>
-                  <Button variant="ghost" className="bg-slate-100" onClick={() => removeSavedRoom(room.id)}>
+                  <Button
+                    variant="secondary"
+                    className="text-rose-600 hover:border-rose-100 hover:bg-rose-50"
+                    onClick={() => removeSavedRoom(room.id)}
+                  >
                     Remove
                   </Button>
                 </div>
@@ -137,9 +178,18 @@ export default function SavedRooms() {
 
 function InfoTile({ label, value }) {
   return (
-    <div className="surface-line rounded-[20px] bg-slate-50/78 px-3 py-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className="mt-1 text-sm font-medium text-slate-700">{value}</div>
+    <div className="surface-line min-w-0 rounded-[20px] bg-slate-50/78 px-3 py-3">
+      <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-slate-700">{value}</div>
+    </div>
+  )
+}
+
+function SummaryTile({ label, value }) {
+  return (
+    <div className="rounded-[22px] bg-slate-50 px-3 py-3 text-center">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 text-base font-semibold text-slate-900">{value}</div>
     </div>
   )
 }

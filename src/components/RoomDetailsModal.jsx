@@ -8,7 +8,7 @@ import MatchBadge from './MatchBadge'
 
 export default function RoomDetailsModal({ standalone = false }) {
   const { roomId } = useParams()
-  const { rooms, savedRoomIds, saveRoom, removeSavedRoom } = useAppState()
+  const { getOrCreateConversationForRoom, rooms, savedRoomIds, saveRoom, removeSavedRoom } = useAppState()
   const navigate = useNavigate()
   const room = useMemo(() => rooms.find((item) => item.id === roomId), [roomId, rooms])
   const close = useCallback(() => navigate(-1), [navigate])
@@ -30,6 +30,10 @@ export default function RoomDetailsModal({ standalone = false }) {
 
   const isSaved = savedRoomIds.includes(room.id)
   const warnings = room.match.warnings || []
+  const handleMessage = () => {
+    const conversationId = getOrCreateConversationForRoom(room.id)
+    navigate(`/messages/${conversationId}`)
+  }
 
   return (
     <div className="fixed inset-0 z-50">
@@ -48,46 +52,92 @@ export default function RoomDetailsModal({ standalone = false }) {
         <div
           className={`card-surface card-shadow relative flex h-[100dvh] w-full flex-col overflow-hidden bg-white ${standalone ? 'max-w-4xl' : 'md:h-auto md:max-h-[90vh] md:max-w-2xl md:rounded-[32px]'}`}
         >
-          <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/94 px-4 py-3 backdrop-blur md:px-5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Room details
-                </div>
-                <div className="truncate text-sm font-semibold text-slate-900">
-                  {room.area}, {room.city}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={close}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl text-slate-700 transition hover:bg-slate-200"
-                aria-label="Close room details"
-              >
-                ×
-              </button>
-            </div>
-          </header>
-
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <RoomImageGallery room={room} />
+            <RoomImageGallery room={room} isSaved={isSaved} onClose={close} />
 
-            <div className="space-y-5 px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5 md:px-6">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <DetailTile label="Deposit" value={formatCurrency(room.deposit)} />
-                <DetailTile label="Available" value={formatDate(room.availableFrom)} />
-                <DetailTile label="Room type" value={room.roomType} />
-                <DetailTile label="Housemates" value={`${room.housematesCount}`} />
-              </div>
+            <div className="space-y-4 px-4 pb-[calc(env(safe-area-inset-bottom)+7.5rem)] pt-4 md:px-6">
+              <section className="card-surface card-shadow rounded-[28px] p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                      Monthly rent
+                    </p>
+                    <div className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">
+                      {formatCurrency(room.rent)}
+                    </div>
+                  </div>
+                  <MatchBadge score={room.match.score} />
+                </div>
 
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <DetailTile label="Lifestyle" value={room.lifestyle} />
-                <DetailTile label="Cleanliness" value={room.cleanliness} />
-                <DetailTile label="Smoking" value={room.smokingAllowed} />
-                <DetailTile label="Pets" value={room.petsAllowed} />
-              </div>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <DetailTile label="Deposit" value={formatCurrency(room.deposit)} />
+                  <DetailTile label="Bills" value={room.billsIncluded ? 'Included' : 'Separate'} />
+                  <DetailTile label="Move-in" value={formatDate(room.availableFrom)} />
+                </div>
 
-              <div className="rounded-[24px] border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4">
+                <div className="surface-line mt-3 flex items-center justify-between gap-3 rounded-[20px] bg-slate-50/78 px-3 py-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Location
+                    </div>
+                    <div className="mt-1 truncate text-sm font-semibold text-slate-800">
+                      {room.area}, {room.city}
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-soft">
+                    {room.roomType}
+                  </span>
+                </div>
+              </section>
+
+              <DetailSection title="About the room">
+                <p className="text-sm leading-7 text-slate-600">{room.description}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {room.features.map((feature) => (
+                    <span
+                      key={feature}
+                      className="rounded-full bg-orange-50 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-orange-100"
+                    >
+                      {feature}
+                    </span>
+                  ))}
+                </div>
+              </DetailSection>
+
+              <DetailSection title="About the flatmates">
+                <div className="grid grid-cols-2 gap-3">
+                  <DetailTile label="Housemates" value={`${room.housematesCount}`} />
+                  <DetailTile label="Minimum stay" value={`${room.minStayMonths} mo`} />
+                </div>
+                <p className="mt-3 text-sm leading-7 text-slate-600">
+                  {room.flatmateSummary ||
+                    `Shared with ${room.housematesCount} ${
+                      room.housematesCount === 1 ? 'flatmate' : 'flatmates'
+                    } in a ${room.lifestyle.toLowerCase()} household. Contact is handled by ${room.landlordName}.`}
+                </p>
+              </DetailSection>
+
+              <DetailSection title="Lifestyle">
+                <div className="grid grid-cols-2 gap-3">
+                  <DetailTile label="House vibe" value={room.lifestyle} />
+                  <DetailTile label="Cleanliness" value={room.cleanliness} />
+                  <DetailTile label="Smoking" value={room.smokingAllowed} />
+                  <DetailTile label="Pets" value={room.petsAllowed} />
+                </div>
+              </DetailSection>
+
+              <DetailSection title="House rules">
+                <ul className="space-y-2 text-sm text-slate-600">
+                  {room.houseRules.map((rule) => (
+                    <li key={rule} className="flex items-start gap-3 rounded-[18px] bg-slate-50/78 px-3 py-3">
+                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                      <span>{rule}</span>
+                    </li>
+                  ))}
+                </ul>
+              </DetailSection>
+
+              <section className="rounded-[24px] border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-600">
                   Why this room matches you
                 </p>
@@ -99,13 +149,13 @@ export default function RoomDetailsModal({ standalone = false }) {
                     </li>
                   ))}
                 </ul>
-              </div>
+              </section>
 
-              <div className="rounded-[24px] border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">
-                  Things to consider
-                </p>
-                {warnings.length ? (
+              {warnings.length ? (
+                <section className="rounded-[24px] border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">
+                    Things to consider
+                  </p>
                   <ul className="mt-3 space-y-2 text-sm text-amber-950">
                     {warnings.map((warning) => (
                       <li key={warning} className="flex items-start gap-2">
@@ -114,64 +164,22 @@ export default function RoomDetailsModal({ standalone = false }) {
                       </li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="mt-3 text-sm leading-6 text-amber-950">
-                    Looks like a strong fit based on your profile.
-                  </p>
-                )}
-              </div>
+                </section>
+              ) : null}
+            </div>
+          </div>
 
-              <section>
-                <h3 className="text-lg font-semibold text-slate-900">About the room</h3>
-                <p className="mt-2 text-sm leading-7 text-slate-600">{room.description}</p>
-              </section>
-
-              <section className="grid gap-5 md:grid-cols-2">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Features</h3>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {room.features.map((feature) => (
-                      <span
-                        key={feature}
-                        className="rounded-full bg-orange-50 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-orange-100"
-                      >
-                        {feature}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">House rules</h3>
-                  <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                    {room.houseRules.map((rule) => (
-                      <li key={rule} className="flex items-start gap-2">
-                        <span className="mt-1.5 h-2 w-2 rounded-full bg-slate-300" />
-                        <span>{rule}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </section>
-
-              <section className="surface-line rounded-[24px] p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Listing contact
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900">{room.landlordName}</div>
-                <p className="mt-2 text-sm text-slate-600">
-                  Bills {room.billsIncluded ? 'included' : 'not included'} · Minimum stay {room.minStayMonths} months
-                </p>
-              </section>
-
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="secondary" onClick={close}>
-                  Back
-                </Button>
-                <Button onClick={() => (isSaved ? removeSavedRoom(room.id) : saveRoom(room.id))}>
-                  {isSaved ? 'Remove saved' : 'Save room'}
-                </Button>
-              </div>
+          <div className="border-t border-slate-100 bg-white/94 px-4 pb-[calc(env(safe-area-inset-bottom)+0.85rem)] pt-3 backdrop-blur-xl md:px-6">
+            <div className="grid grid-cols-[0.95fr_1.05fr] gap-3">
+              <Button
+                variant={isSaved ? 'secondary' : 'primary'}
+                onClick={() => (isSaved ? removeSavedRoom(room.id) : saveRoom(room.id))}
+              >
+                {isSaved ? 'Remove saved' : 'Save room'}
+              </Button>
+              <Button variant="dark" onClick={handleMessage}>
+                Message
+              </Button>
             </div>
           </div>
         </div>
@@ -180,7 +188,7 @@ export default function RoomDetailsModal({ standalone = false }) {
   )
 }
 
-function RoomImageGallery({ room }) {
+function RoomImageGallery({ room, isSaved, onClose }) {
   const images = room.images?.length ? room.images : ['']
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [failedImageIndexes, setFailedImageIndexes] = useState([])
@@ -189,7 +197,7 @@ function RoomImageGallery({ room }) {
 
   return (
     <>
-      <div className="relative h-80 md:h-96">
+      <div className="relative h-[24rem] overflow-hidden bg-slate-200 md:h-[30rem]">
         {activeImageFailed ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-200 text-sm font-medium text-slate-500">
             Gaffly room preview
@@ -206,18 +214,48 @@ function RoomImageGallery({ room }) {
             }
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/82 via-slate-950/16 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/88 via-slate-950/18 to-slate-950/18" />
+
+        <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.85rem)] md:px-5 md:pt-5">
+          <div className="rounded-full bg-white/16 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/20 backdrop-blur-md">
+            {isSaved ? 'Saved room' : 'Room details'}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/90 text-xl text-slate-800 shadow-soft backdrop-blur transition hover:bg-white"
+            aria-label="Close room details"
+          >
+            ×
+          </button>
+        </div>
+
         <div className="absolute inset-x-0 bottom-0 p-4 text-white md:p-5">
-          <MatchBadge score={room.match.score} />
-          <h2 className="text-balance mt-3 text-3xl font-semibold tracking-tight">{room.title}</h2>
-          <p className="mt-2 text-sm text-slate-200">
-            {room.area}, {room.city} · {formatCurrency(room.rent)}/mo
+          <h2 className="text-balance text-[2rem] font-semibold leading-tight tracking-tight md:text-4xl">{room.title}</h2>
+          <p className="mt-2 text-sm font-medium text-slate-200">
+            {room.area}, {room.city}
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {isSaved ? (
+              <span className="rounded-full border border-emerald-200/40 bg-emerald-400/22 px-3 py-1.5 text-xs font-semibold text-emerald-50 backdrop-blur-sm">
+                Saved
+              </span>
+            ) : null}
+            <span className="rounded-full border border-white/15 bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
+              {formatCurrency(room.rent)}/mo
+            </span>
+            <span className="rounded-full border border-white/15 bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
+              {room.billsIncluded ? 'Bills included' : 'Bills separate'}
+            </span>
+            <span className="rounded-full border border-white/15 bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
+              {formatDate(room.availableFrom)}
+            </span>
+          </div>
         </div>
       </div>
 
       {images.length > 1 ? (
-        <div className="border-b border-slate-100 px-4 py-4 md:px-6">
+        <div className="border-b border-slate-100 bg-white px-4 py-4 md:px-6">
           <div className="flex gap-3 overflow-x-auto pb-1">
             {images.map((image, index) => {
               const thumbFailed = failedImageIndexes.includes(index)
@@ -259,11 +297,20 @@ function RoomImageGallery({ room }) {
   )
 }
 
+function DetailSection({ title, children }) {
+  return (
+    <section className="card-surface card-shadow rounded-[26px] p-4">
+      <h3 className="text-lg font-semibold tracking-tight text-slate-950">{title}</h3>
+      <div className="mt-3">{children}</div>
+    </section>
+  )
+}
+
 function DetailTile({ label, value }) {
   return (
-    <div className="surface-line rounded-[20px] bg-slate-50/78 px-3 py-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className="mt-1 text-sm font-medium text-slate-700">{value}</div>
+    <div className="surface-line min-w-0 rounded-[20px] bg-slate-50/78 px-3 py-3">
+      <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-slate-800">{value}</div>
     </div>
   )
 }
