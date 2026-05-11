@@ -116,7 +116,7 @@ function AppHeader({ canUndo, onUndo, onFilterOpen }) {
           <div className="shadow-pressable flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-base font-semibold text-white">
             ⌂
           </div>
-          <div className="text-lg font-semibold tracking-tight text-slate-950">Gafflo</div>
+          <div className="text-lg font-semibold tracking-tight text-slate-950">Gaffly</div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -153,7 +153,7 @@ function FilterSheet({ isOpen, onClose, onUpdateProfile }) {
           <div className="mx-auto h-1.5 w-12 rounded-full bg-slate-200" />
           <div className="mt-4 text-lg font-semibold text-slate-950">Filters</div>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Filters are coming soon. For now, Gafflo ranks rooms using your profile.
+            Filters are coming soon. For now, Gaffly ranks rooms using your profile.
           </p>
           <div className="mt-4 grid grid-cols-2 gap-2 text-sm text-slate-600">
             {['Budget', 'Area', 'Move-in date', 'House vibe'].map((item) => (

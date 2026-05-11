@@ -1,7 +1,7 @@
 const KEYS = {
-  profile: 'gafflo.tenant-profile',
-  saved: 'gafflo.saved-rooms',
-  reviewed: 'gafflo.reviewed-rooms',
+  profile: 'gaffly.tenant-profile',
+  saved: 'gaffly.saved-rooms',
+  reviewed: 'gaffly.reviewed-rooms',
 }
 
 function getJson(key, fallback) {

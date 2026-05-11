@@ -46,7 +46,7 @@ export default function RoomCard({
           <div className="relative h-[58%] min-h-[20rem]">
             {activeImageFailed ? (
               <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
-                Gafflo room preview
+                Gaffly room preview
               </div>
             ) : (
               <img
@@ -227,7 +227,7 @@ export default function RoomCard({
         <div className={`relative overflow-hidden ${compact ? 'h-30 w-24 shrink-0 rounded-[20px]' : 'h-84'}`}>
           {imageFailed ? (
             <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
-              Gafflo room preview
+              Gaffly room preview
             </div>
           ) : (
             <img

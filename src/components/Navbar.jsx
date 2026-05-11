@@ -16,7 +16,7 @@ export default function Navbar() {
             ⌂
           </div>
           <div>
-            <div className="text-xl font-semibold tracking-tight text-slate-950">Gafflo</div>
+            <div className="text-xl font-semibold tracking-tight text-slate-950">Gaffly</div>
             <p className="text-sm text-slate-500">Swipe rooms. Match smarter. Move better.</p>
           </div>
         </div>

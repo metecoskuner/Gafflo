@@ -54,7 +54,7 @@ export default function Home() {
                 Swipe rooms. Match smarter. Move better.
               </h1>
               <p className="mt-4 max-w-lg text-base leading-7 text-slate-300">
-                Gafflo helps renters in Ireland discover rooms that fit their budget, lifestyle and move-in date.
+                Gaffly helps renters in Ireland discover rooms that fit their budget, lifestyle and move-in date.
               </p>
 
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -88,7 +88,7 @@ export default function Home() {
           Finding a room in Ireland is stressful.
         </h2>
         <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-          Gafflo makes discovery faster, simpler and more personal. Instead of browsing endless generic listings,
+          Gaffly makes discovery faster, simpler and more personal. Instead of browsing endless generic listings,
           renters start with fit: budget, preferred area, move-in timing and house vibe.
         </p>
       </section>
@@ -119,7 +119,7 @@ export default function Home() {
 
       <section className="space-y-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Why Gafflo</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Why Gaffly</p>
           <h2 className="text-balance mt-2 text-2xl font-semibold tracking-tight text-slate-900 md:text-[2rem]">
             Designed around compatibility, not listing overload.
           </h2>
@@ -171,7 +171,7 @@ function HeroPreviewCard({ room, onBrowse }) {
       <div className="overflow-hidden rounded-[28px] bg-white text-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
           <div>
-            <div className="text-sm font-semibold">Gafflo</div>
+            <div className="text-sm font-semibold">Gaffly</div>
             <div className="text-xs text-slate-500">Today’s top room match</div>
           </div>
           <MatchBadge score={room.match.score} />
@@ -180,7 +180,7 @@ function HeroPreviewCard({ room, onBrowse }) {
         <div className="relative h-64">
           {imageFailed ? (
             <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
-              Gafflo room preview
+              Gaffly room preview
             </div>
           ) : (
             <img

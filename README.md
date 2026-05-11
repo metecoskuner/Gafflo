@@ -1,6 +1,6 @@
-# Gafflo
+# Gaffly
 
-Gafflo is a mobile-first room matching web app prototype for renters in Ireland.
+Gaffly is a mobile-first room matching web app prototype for renters in Ireland.
 
 ## Features
 

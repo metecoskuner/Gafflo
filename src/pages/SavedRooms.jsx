@@ -69,7 +69,7 @@ export default function SavedRooms() {
               <div className="relative h-60">
                 {imageFailed ? (
                   <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
-                    Gafflo room preview
+                    Gaffly room preview
                   </div>
                 ) : (
                   <img

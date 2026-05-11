@@ -119,7 +119,7 @@ export default function TenantProfile() {
           Create your renter profile
         </h1>
         <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-          Tell Gafflo what you’re looking for so we can match you with better rooms.
+          Tell Gaffly what you’re looking for so we can match you with better rooms.
         </p>
       </section>
 
@@ -253,7 +253,7 @@ export default function TenantProfile() {
         </div>
 
         <p className="text-sm leading-6 text-slate-500">
-          Gafflo does not ask for PPS numbers, passports, payslips or bank statements in this demo.
+          Gaffly does not ask for PPS numbers, passports, payslips or bank statements in this demo.
         </p>
       </form>
     </div>

@@ -192,7 +192,7 @@ function RoomImageGallery({ room }) {
       <div className="relative h-80 md:h-96">
         {activeImageFailed ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-200 text-sm font-medium text-slate-500">
-            Gafflo room preview
+            Gaffly room preview
           </div>
         ) : (
           <img

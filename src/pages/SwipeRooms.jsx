@@ -379,7 +379,7 @@ function RoomHero({ room, currentPosition, totalRooms, showDemoScore, swipeDirec
       <div className="relative h-[80dvh] min-h-[32rem] max-h-[46rem] md:h-[42rem]">
         {activeImageFailed ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-200 px-4 text-center text-sm font-medium text-slate-500">
-            Gafflo room preview
+            Gaffly room preview
           </div>
         ) : (
           <img
