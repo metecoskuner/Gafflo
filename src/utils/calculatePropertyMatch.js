@@ -97,7 +97,7 @@ export function calculatePropertyMatch(tenantProfile, property) {
   }
 
   if (roomListing) {
-    const needsCoupleRoom = Boolean(tenantProfile.coupleRequirement)
+    const needsCoupleRoom = Boolean(tenantProfile.applyingAsCouple ?? tenantProfile.coupleRequirement)
     const capacityAfterMoveIn = Number(property.currentHouseholdSize || 0) + householdSize
     if (needsCoupleRoom && !property.couplesAccepted) hardStops.push('Couples are not accepted for this room.')
     if (capacityAfterMoveIn > Number(property.maxHouseholdSize || property.currentHouseholdSize || 1)) hardStops.push('Household capacity exceeded.')

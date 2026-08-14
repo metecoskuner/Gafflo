@@ -136,7 +136,8 @@ export default function Applicants() {
                     <Info label="Budget" value={`${formatCurrency(tenant.budgetMin)}-${formatCurrency(tenant.budgetMax)}`} />
                     <Info label="Move-in" value={formatDate(tenant.moveInDate)} />
                     <Info label="Household" value={`${tenant.householdSize}`} />
-                    {roomListing ? <Info label="Room applicants" value={tenant.coupleRequirement ? 'Needs 2-person room' : `${tenant.householdSize}`} /> : null}
+                    {roomListing ? <Info label="Applicants" value={`${tenant.householdSize}`} /> : null}
+                    {roomListing ? <Info label="Couple" value={tenant.applyingAsCouple ?? tenant.coupleRequirement ? 'Yes' : 'No'} /> : null}
                     <Info label="Readiness" value={`${docsReady}/3 ready`} />
                   </div>
 

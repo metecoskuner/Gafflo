@@ -106,6 +106,32 @@ export function normalizeListingForStorage(listing = {}) {
   }
 }
 
+export function normalizeListingDraftForStorage(listing = {}) {
+  const listingCategory = normalizeListingCategory(listing.listingCategory, listing)
+  const isRoom = isRoomListing(listingCategory)
+  const propertyType = isRoom ? normalizeRoomParentPropertyType(listing.parentPropertyType || listing.propertyType) : normalizePropertyType(listing.propertyType)
+  return {
+    ...listing,
+    listingCategory,
+    propertyType,
+    parentPropertyType: isRoom ? propertyType : undefined,
+    roomType: isRoom ? normalizeRoomType(listing.roomType) : undefined,
+    ownerLivesInProperty: listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM,
+    bedrooms: isRoom ? nullablePositiveInteger(listing.bedrooms) : propertyType === 'studio' ? 0 : nullablePositiveInteger(listing.bedrooms),
+    totalBedrooms: isRoom ? nullablePositiveInteger(listing.totalBedrooms) : undefined,
+    bathrooms: nullablePositiveNumber(listing.bathrooms),
+    maxOccupants: nullablePositiveInteger(listing.maxOccupants),
+    currentHouseholdSize: isRoom ? nullableNonNegativeInteger(listing.currentHouseholdSize) : undefined,
+    maxHouseholdSize: isRoom ? nullablePositiveInteger(listing.maxHouseholdSize) : undefined,
+    bathroomArrangement: isRoom ? normalizeBathroomArrangement(listing.bathroomArrangement) : undefined,
+    minStayMonths: nullablePositiveInteger(listing.minStayMonths),
+    furnished: normalizeFurnished(listing.furnished),
+    parking: normalizeParking(listing.parking),
+    smokingAllowed: normalizeSmoking(listing.smokingAllowed),
+    petsAllowed: normalizePetPolicy(listing.petsAllowed),
+  }
+}
+
 export function normalizeListingFormState(form = {}) {
   const listingCategory = normalizeListingCategory(form.listingCategory, form)
   const isRoom = isRoomListing(listingCategory)
@@ -117,9 +143,12 @@ export function normalizeListingFormState(form = {}) {
     parentPropertyType: isRoom ? propertyType : undefined,
     roomType: isRoom ? normalizeRoomType(form.roomType) : undefined,
     ownerLivesInProperty: listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM,
+    rent: stringifyFormNumber(form.rent),
+    deposit: stringifyFormNumber(form.deposit),
     bedrooms: propertyType === 'studio' && !isRoom ? '0' : stringifyFormNumber(form.bedrooms),
     bathrooms: stringifyFormNumber(form.bathrooms),
     maxOccupants: stringifyFormNumber(form.maxOccupants),
+    minStayMonths: stringifyFormNumber(form.minStayMonths),
     totalBedrooms: isRoom ? stringifyFormNumber(form.totalBedrooms) : '',
     currentHouseholdSize: isRoom ? stringifyFormNumber(form.currentHouseholdSize) : '',
     maxHouseholdSize: isRoom ? stringifyFormNumber(form.maxHouseholdSize) : '',
@@ -168,13 +197,7 @@ export function validateListingForReview(listing = {}, today = '', options = {})
 
 export function getListingCompleteness(listing = {}, today = '', options = {}) {
   const { errors } = validateListingForReview(listing, today, options)
-  const category = normalizeListingCategory(listing.listingCategory, listing)
-  const requiredFields =
-    category === LISTING_CATEGORIES.ENTIRE_PROPERTY
-      ? ['rent', 'area', 'availableFrom', 'propertyType', 'description', 'images']
-      : ['roomType', 'rent', 'area', 'availableFrom', 'bathroomArrangement', 'maxOccupants', 'totalBedrooms', 'currentHouseholdSize', 'maxHouseholdSize', 'description', 'images']
-  const missing = requiredFields.filter((field) => errors[field])
-  if (category === LISTING_CATEGORIES.ENTIRE_PROPERTY && normalizePropertyType(listing.propertyType) !== 'studio' && errors.bedrooms) missing.push('bedrooms')
+  const missing = Object.keys(errors)
   return { complete: missing.length === 0, missing, errors }
 }
 
@@ -242,6 +265,24 @@ function positiveInteger(value, fallback = 0) {
 function positiveNumber(value, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function nullablePositiveInteger(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number.parseInt(String(value), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function nullableNonNegativeInteger(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number.parseInt(String(value), 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+function nullablePositiveNumber(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
 function getReviewPhotoCount(listing = {}, options = {}) {

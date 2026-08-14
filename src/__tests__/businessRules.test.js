@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { canTransitionApplication, terminalApplicationStatuses } from '../config/applicationTransitions'
 import { normalizePetPolicy, normalizePropertyType, normalizeLeaseMonths, normalizeSmoking } from '../config/domainOptions'
 import { filterApplicantsByProperty, getValidApplicantPropertyId } from '../config/applicantFilters'
-import { cityOptions, normalizePreferredAreas } from '../config/locationOptions'
+import { cityOptions, normalizePreferredAreas, resetAreasForCityChange } from '../config/locationOptions'
 import { getBrowseFacts, getSmartMatchFacts, shouldShowTenantMatch } from '../config/listingPresentation'
 import { getDurableListingImages, getDurablePhotoMetadata, normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
@@ -12,6 +12,7 @@ import {
   getListingCompleteness,
   inferListingCategory,
   normalizeListingForStorage,
+  normalizeListingDraftForStorage,
   normalizeListingFormState,
   validateListingForReview,
   validateRoomCapacity,
@@ -127,7 +128,7 @@ describe('matching and dates', () => {
       couplesAccepted: false,
       billsIncluded: false,
     }
-    const result = calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, coupleRequirement: true, privateBathroomPreferred: true, billsIncludedPreferred: true }, room)
+    const result = calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, applyingAsCouple: true, privateBathroomPreferred: true, billsIncludedPreferred: true }, room)
     expect(result.hardStops).toContain('Couples are not accepted for this room.')
     expect(result.hardStops).toContain('Household capacity exceeded.')
     expect(result.warnings).toContain('This room has a shared bathroom.')
@@ -143,8 +144,23 @@ describe('matching and dates', () => {
       maxHouseholdSize: 2,
       couplesAccepted: false,
     }
-    const result = calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, coupleRequirement: false }, room)
+    const result = calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, applyingAsCouple: false }, room)
     expect(result.hardStops).not.toContain('Couples are not accepted for this room.')
+  })
+
+  it('separates room applicant count from actual couple status', () => {
+    const room = {
+      ...property,
+      listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
+      maxOccupants: 2,
+      currentHouseholdSize: 0,
+      maxHouseholdSize: 2,
+      couplesAccepted: false,
+    }
+    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, applyingAsCouple: false }, room).hardStops).not.toContain('Couples are not accepted for this room.')
+    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, applyingAsCouple: true }, room).hardStops).toContain('Couples are not accepted for this room.')
+    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, applyingAsCouple: false }, { ...room, maxOccupants: 1 }).hardStops).toContain('This room occupancy is too small for the applicants.')
+    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, applyingAsCouple: false }, { ...room, maxHouseholdSize: 3 }).hardStops).not.toContain('Household capacity exceeded.')
   })
 
   it('treats pets considered as possible fit instead of guaranteed acceptance', () => {
@@ -205,6 +221,7 @@ describe('domain and listing rules', () => {
   it('centralizes cities and canonical preferred areas', () => {
     expect(cityOptions).toEqual(['Dublin', 'Cork', 'Galway', 'Limerick', 'Waterford'])
     expect(normalizePreferredAreas([' rathmines ', 'Rathmines', 'Custom Dock'], 'Dublin')).toEqual(['Rathmines', 'Custom Dock'])
+    expect(resetAreasForCityChange('Dublin', 'Cork')).toEqual({ targetCity: 'Cork', preferredAreas: [], areaDraft: '' })
   })
 })
 
@@ -328,6 +345,15 @@ describe('listing categories', () => {
     expect(getListingCompleteness(entire, '2030-01-01').missing).toContain('images')
   })
 
+  it('marks every review validation error as incomplete', () => {
+    const complete = { ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: 1, maxOccupants: 2 }
+    expect(getListingCompleteness({ ...complete, title: '' }, '2030-01-01', { photoCount: 1 }).complete).toBe(false)
+    expect(getListingCompleteness({ ...complete, bathrooms: '' }, '2030-01-01', { photoCount: 1 }).complete).toBe(false)
+    expect(getListingCompleteness({ ...complete, maxOccupants: '' }, '2030-01-01', { photoCount: 1 }).complete).toBe(false)
+    expect(getListingCompleteness({ ...complete, minStayMonths: '' }, '2030-01-01', { photoCount: 1 }).complete).toBe(false)
+    expect(getListingCompleteness(complete, '2030-01-01').complete).toBe(false)
+  })
+
   it('marks room listings incomplete without a required room photo', () => {
     const room = {
       ...validBase,
@@ -359,6 +385,36 @@ describe('frontend integrity helpers', () => {
     const form = normalizeListingFormState({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', bedrooms: '' })
     expect(form.bedrooms).toBe('0')
     expect(normalizeListingForStorage(form).bedrooms).toBe(0)
+  })
+
+  it('preserves missing numeric values for incomplete saved drafts', () => {
+    const apartmentDraft = normalizeListingDraftForStorage({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: '', bathrooms: '' })
+    expect(apartmentDraft).toMatchObject({
+      bedrooms: null,
+      bathrooms: null,
+    })
+    expect(normalizeListingFormState(apartmentDraft)).toMatchObject({ bedrooms: '', bathrooms: '' })
+
+    const roomDraft = normalizeListingDraftForStorage({ listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM, totalBedrooms: '', currentHouseholdSize: '', maxHouseholdSize: '', maxOccupants: '' })
+    expect(roomDraft).toMatchObject({
+      totalBedrooms: null,
+      currentHouseholdSize: null,
+      maxHouseholdSize: null,
+      maxOccupants: null,
+    })
+    expect(normalizeListingFormState(roomDraft)).toMatchObject({ totalBedrooms: '', currentHouseholdSize: '', maxHouseholdSize: '', maxOccupants: '' })
+    expect(normalizeListingDraftForStorage({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', bedrooms: '' }).bedrooms).toBe(0)
+  })
+
+  it('persists valid completed listings with canonical numeric values', () => {
+    const listing = normalizeListingForStorage({
+      listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY,
+      propertyType: 'apartment',
+      bedrooms: '2',
+      bathrooms: '1.5',
+      maxOccupants: '3',
+    })
+    expect(listing).toMatchObject({ bedrooms: 2, bathrooms: 1.5, maxOccupants: 3 })
   })
 
   it('requires session or durable photos for review without persisting blob URLs', () => {

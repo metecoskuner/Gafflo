@@ -12,7 +12,7 @@ import {
 import { cityOptions, normalizePreferredAreas } from '../config/locationOptions'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
-import { LISTING_CATEGORIES, normalizeListingForStorage } from '../config/listingCategories'
+import { LISTING_CATEGORIES, normalizeListingDraftForStorage, normalizeListingForStorage } from '../config/listingCategories'
 import { getDurableListingImages, getDurablePhotoMetadata } from '../config/photoMetadata'
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
@@ -72,6 +72,7 @@ const defaultTenantProfile = {
   privateBathroomPreferred: false,
   billsIncludedPreferred: false,
   ownerOccupiedAcceptable: true,
+  applyingAsCouple: false,
   coupleRequirement: false,
 }
 
@@ -122,7 +123,8 @@ function normalize(value) {
 
 function normalizeStoredProperty(property) {
   const isLegacyCreatedListing = property.source === 'created' && !property.ownerId
-  const normalizedListing = normalizeListingForStorage(property)
+  const listingStatus = property.listingStatus || (isLegacyCreatedListing ? 'pending_verification' : 'published')
+  const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage(property) : normalizeListingForStorage(property)
   const { propertyType } = normalizedListing
   const viewingSlots = normalizeViewingSlots(property.viewingSlots)
 
@@ -136,8 +138,8 @@ function normalizeStoredProperty(property) {
     maxOccupants: normalizedListing.maxOccupants,
     furnished: normalizeFurnished(normalizedListing.furnished || 'Furnished'),
     parking: normalizeParking(normalizedListing.parking || 'No'),
-    minStayMonths: property.minStayMonths || 6,
-    listingStatus: property.listingStatus || (isLegacyCreatedListing ? 'pending_verification' : 'published'),
+    minStayMonths: listingStatus === 'draft' ? normalizedListing.minStayMonths : property.minStayMonths || 6,
+    listingStatus,
     listingRules: property.listingRules || property.houseRules || [],
     features: property.features || property.amenities || [propertyType],
     images: getDurableListingImages(property.photoMetadata || property.images || [], defaultPropertyImage, normalizedListing.listingCategory),
@@ -236,7 +238,7 @@ function canTenantSendMessage(conversation, enquiry) {
 
 export function AppStateProvider({ children }) {
   const [account, setAccountState] = useState(() => getAccount())
-  const [tenantProfile, setTenantProfileState] = useState(() => ({ ...defaultTenantProfile, ...getTenantProfile(), id: currentTenantId }))
+  const [tenantProfile, setTenantProfileState] = useState(() => normalizeTenantProfile({ ...defaultTenantProfile, ...getTenantProfile(), id: currentTenantId }))
   const [landlordProfile, setLandlordProfileState] = useState(() => ({ ...defaultLandlordProfile, ...getLandlordProfile(), id: currentOwnerId }))
   const [localProperties, setLocalPropertiesState] = useState(() => getLocalProperties())
   const [savedPropertyIds, setSavedPropertyIdsState] = useState(() => getSavedPropertyIds())
@@ -448,7 +450,8 @@ export function AppStateProvider({ children }) {
         privateBathroomPreferred: Boolean(profile.privateBathroomPreferred),
         billsIncludedPreferred: Boolean(profile.billsIncludedPreferred),
         ownerOccupiedAcceptable: profile.ownerOccupiedAcceptable !== false,
-        coupleRequirement: Boolean(profile.coupleRequirement) && Number(profile.householdSize) >= 2,
+        applyingAsCouple: isApplyingAsCouple(profile) && Number(profile.householdSize) >= 2,
+        coupleRequirement: isApplyingAsCouple(profile) && Number(profile.householdSize) >= 2,
         notifications: undefined,
       }
       setTenantProfile(next)
@@ -785,20 +788,22 @@ export function AppStateProvider({ children }) {
     addProperty(property) {
       if (account?.role !== 'landlord') return null
       const now = new Date().toISOString()
+      const listingStatus = property.listingStatus || 'draft'
+      const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage(property) : normalizeListingForStorage(property)
       const nextProperty = {
         ...property,
         id: `property-local-${Date.now()}`,
         ownerId: currentOwnerId,
         ownerName: landlordProfile.displayName,
         ownerType: 'Private landlord',
-        ...normalizeListingForStorage(property),
-        rent: Number(property.rent),
-        rentMonthly: Number(property.rent),
-        deposit: Number(property.deposit),
+        ...normalizedListing,
+        rent: listingStatus === 'draft' ? property.rent : Number(property.rent),
+        rentMonthly: listingStatus === 'draft' ? property.rent : Number(property.rent),
+        deposit: listingStatus === 'draft' ? property.deposit : Number(property.deposit),
         createdAt: now,
         updatedAt: now,
         availabilityConfirmedAt: now,
-        listingStatus: property.listingStatus || 'draft',
+        listingStatus,
         features: property.amenities?.slice(0, 4) || [],
         images: getDurableListingImages(property.photoMetadata || property.images || [], defaultPropertyImage, property.listingCategory),
         photoMetadata: getDurablePhotoMetadata(property.photoMetadata || property.images || [defaultPropertyImage], property.listingCategory),
@@ -822,8 +827,10 @@ export function AppStateProvider({ children }) {
       if (!currentProperty) return null
       const localExists = localProperties.some((property) => property.id === propertyId)
       const fixture = mockProperties.find((property) => property.id === propertyId)
+      const listingStatus = patch.listingStatus || currentProperty.listingStatus
+      const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage({ ...currentProperty, ...patch }) : normalizeListingForStorage({ ...currentProperty, ...patch })
       const normalizedPatch = {
-        ...normalizeListingForStorage({ ...currentProperty, ...patch }),
+        ...normalizedListing,
         furnished: patch.furnished ? normalizeFurnished(patch.furnished) : currentProperty.furnished,
         parking: patch.parking ? normalizeParking(patch.parking) : currentProperty.parking,
         smokingAllowed: patch.smokingAllowed ? normalizeSmoking(patch.smokingAllowed) : currentProperty.smokingAllowed,
@@ -862,4 +869,17 @@ export function AppStateProvider({ children }) {
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
+}
+
+function isApplyingAsCouple(profile = {}) {
+  return profile.applyingAsCouple === true || (profile.applyingAsCouple === undefined && profile.coupleRequirement === true)
+}
+
+function normalizeTenantProfile(profile = {}) {
+  const applyingAsCouple = isApplyingAsCouple(profile) && Number(profile.householdSize || 1) >= 2
+  return {
+    ...profile,
+    applyingAsCouple,
+    coupleRequirement: applyingAsCouple,
+  }
 }

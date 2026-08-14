@@ -17,7 +17,7 @@ import {
   smokingOptions,
   withAny,
 } from '../config/domainOptions'
-import { cityOptions, getAreaOptionsForCity, normalizePreferredAreas } from '../config/locationOptions'
+import { cityOptions, getAreaOptionsForCity, normalizePreferredAreas, resetAreasForCityChange } from '../config/locationOptions'
 import { getTenantProfileCompleteness } from '../config/rentalJourney'
 import { LISTING_CATEGORIES } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
@@ -44,6 +44,7 @@ function TenantProfile() {
     pets: normalizePet(tenantProfile.pets),
     smoking: normalizeSmoking(tenantProfile.smoking),
     parkingNeeded: normalizeParking(tenantProfile.parkingNeeded) === 'none' ? 'no' : 'yes',
+    applyingAsCouple: Boolean(tenantProfile.applyingAsCouple ?? tenantProfile.coupleRequirement),
   }))
   const [errors, setErrors] = useState(() =>
     isPastIsoDate(tenantProfile.moveInDate, today) ? { moveInDate: 'Move-in date cannot be in the past.' } : {},
@@ -69,15 +70,15 @@ function TenantProfile() {
       moveInDate: () => (isPastIsoDate(value, today) ? 'Move-in date cannot be in the past.' : ''),
       householdSize: () => (!Number.isFinite(Number(value)) || Number(value) < 1 ? 'Household size must be at least 1.' : ''),
       bio: () => (String(value || '').length > 600 ? 'Keep your introduction under 600 characters.' : ''),
-      coupleRequirement: () => (value && Number(nextForm.householdSize) < 2 ? 'Set room applicants to 2 people if you are applying as a couple.' : ''),
+      applyingAsCouple: () => (value && Number(nextForm.householdSize) < 2 ? 'Set room applicants to 2 people if you are applying as a couple.' : ''),
     }
     return validators[field]?.() || ''
   }
 
   const update = (field, value) => {
     setForm((current) => {
-      const next = { ...current, [field]: value }
-      if (field === 'targetCity') next.preferredAreas = normalizePreferredAreas(next.preferredAreas, value)
+      const resetAreas = field === 'targetCity' ? resetAreasForCityChange(current.targetCity, value) : null
+      const next = resetAreas ? { ...current, ...resetAreas } : { ...current, [field]: value }
       setErrors((currentErrors) => {
         const nextErrors = { ...currentErrors }
         const error = validateField(field, value, next)
@@ -92,10 +93,10 @@ function TenantProfile() {
           if (maxError) nextErrors.budgetMax = maxError
           else delete nextErrors.budgetMax
         }
-        if (field === 'householdSize' || field === 'coupleRequirement') {
-          const coupleError = validateField('coupleRequirement', next.coupleRequirement, next)
-          if (coupleError) nextErrors.coupleRequirement = coupleError
-          else delete nextErrors.coupleRequirement
+        if (field === 'householdSize' || field === 'applyingAsCouple') {
+          const coupleError = validateField('applyingAsCouple', next.applyingAsCouple, next)
+          if (coupleError) nextErrors.applyingAsCouple = coupleError
+          else delete nextErrors.applyingAsCouple
         }
         return nextErrors
       })
@@ -114,7 +115,7 @@ function TenantProfile() {
 
   const submit = (event) => {
     event.preventDefault()
-    const fields = ['name', 'budgetMin', 'budgetMax', 'moveInDate', 'householdSize', 'coupleRequirement', 'bio']
+    const fields = ['name', 'budgetMin', 'budgetMax', 'moveInDate', 'householdSize', 'applyingAsCouple', 'bio']
     const nextErrors = fields.reduce((acc, field) => {
       const error = validateField(field, form[field], form)
       if (error) acc[field] = error
@@ -187,7 +188,7 @@ function TenantProfile() {
               <div className="mt-3 grid gap-3 min-[430px]:grid-cols-2">
                 <Check label="Private bathroom preferred" checked={Boolean(form.privateBathroomPreferred)} onChange={() => toggle('privateBathroomPreferred')} />
                 <Check label="Bills included preferred" checked={Boolean(form.billsIncludedPreferred)} onChange={() => toggle('billsIncludedPreferred')} />
-                <Check label="Need room for 2 people" checked={Boolean(form.coupleRequirement)} error={errors.coupleRequirement} onChange={() => toggle('coupleRequirement')} />
+                <Check label="Applying as a couple" checked={Boolean(form.applyingAsCouple)} error={errors.applyingAsCouple} onChange={() => toggle('applyingAsCouple')} />
               </div>
             </details>
           ) : null}

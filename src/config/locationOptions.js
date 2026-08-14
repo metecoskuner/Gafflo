@@ -35,3 +35,7 @@ export function normalizePreferredAreas(areas = [], city = '') {
       return true
     })
 }
+
+export function resetAreasForCityChange(currentCity, nextCity) {
+  return currentCity === nextCity ? null : { targetCity: nextCity, preferredAreas: [], areaDraft: '' }
+}

@@ -21,6 +21,7 @@ import {
   isRoomListing,
   listingCategoryLabel,
   listingCategoryOptions,
+  normalizeListingDraftForStorage,
   normalizeListingForStorage,
   normalizeListingFormState,
   validateListingForReview,
@@ -223,7 +224,8 @@ export default function CreateListing() {
     if (listingStatus !== 'draft' && !validate()) return
 
     setIsSaving(true)
-    const normalized = normalizeListingForStorage(form)
+    const isDraft = listingStatus === 'draft'
+    const normalized = isDraft ? normalizeListingDraftForStorage(form) : normalizeListingForStorage(form)
     const durablePhotoMetadata = getDurablePhotoMetadata(listingPhotos, form.listingCategory)
     const payload = {
       ...normalized,
@@ -233,11 +235,11 @@ export default function CreateListing() {
       city: form.city,
       approximateAddress: `${form.area.trim()} area`,
       eircode: '',
-      rent: Number(form.rent || 0),
-      deposit: Number(form.deposit || 0),
+      rent: isDraft ? nullableFormNumber(form.rent) : Number(form.rent),
+      deposit: isDraft ? nullableFormNumber(form.deposit) : Number(form.deposit || 0),
       billsIncluded: Boolean(form.billsIncluded),
       availableFrom: form.availableFrom,
-      minStayMonths: Number(form.minStayMonths || 1),
+      minStayMonths: isDraft ? nullableFormInteger(form.minStayMonths) : Number(form.minStayMonths),
       images: getDurableListingImages(listingPhotos, defaultImage, form.listingCategory),
       viewingType: form.viewingType,
       listingStatus,
@@ -340,6 +342,18 @@ export default function CreateListing() {
       </form>
     </div>
   )
+}
+
+function nullableFormInteger(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number.parseInt(String(value), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function nullableFormNumber(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
 function PhotoSection({ category, error, fallbackImage, onChange, onCover, onLabel, onMove, onRemove, photos }) {
