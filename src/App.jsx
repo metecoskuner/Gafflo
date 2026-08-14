@@ -1,29 +1,35 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import BottomNav from './components/BottomNav'
+import BrandLogo from './components/BrandLogo'
 import Footer from './components/Footer'
 import Navbar from './components/Navbar'
-import RoomDetailsModal from './components/RoomDetailsModal'
+import PropertyDetailsModal from './components/PropertyDetailsModal'
 import Button from './components/Button'
-import { AppStateProvider } from './context/AppState'
+import { AppStateProvider } from './context/MarketplaceState'
 import useAppState from './context/useAppState'
-import Home from './pages/Home'
+import { getTodayIsoDate, isPastIsoDate } from './utils/dateUtils'
+import Dashboard from './pages/Dashboard'
 import CreateListing from './pages/CreateListing'
 import Messages from './pages/Messages'
-import SavedRooms from './pages/SavedRooms'
-import SwipeRooms from './pages/SwipeRooms'
-import TenantProfile from './pages/TenantProfile'
+import SavedProperties from './pages/SavedProperties'
+import DiscoverProperties from './pages/DiscoverProperties'
+import TenantProfile from './pages/Profile'
+import RoleSelection from './pages/RoleSelection'
+import LandlordProperties from './pages/LandlordProperties'
+import Applicants from './pages/Applicants'
 
-const emptyRoomFilters = {
+const emptyPropertyFilters = {
   priceMin: '',
   priceMax: '',
   location: 'Any',
   moveInBy: '',
-  genderPreference: 'Any',
-  occupationType: 'Any',
-  smokingPreference: 'Any',
-  petFriendliness: 'Any',
-  lifestylePreference: 'Any',
+  propertyType: 'Any',
+  furnishedPreference: 'Any',
+  bedrooms: 'Any',
+  pets: 'Any',
+  parking: 'Any',
+  leaseLength: 'Any',
 }
 
 function AppLayout() {
@@ -33,8 +39,9 @@ function AppLayout() {
   const routeLocation = backgroundLocation || location
   const isLandingPage = routeLocation.pathname === '/'
   const isAppRoute = !isLandingPage
-  const { activeFilterCount, canUndo, hasCompletedOnboarding, onboarding, undoLastAction } = useAppState()
+  const { activeFilterCount, hasSelectedRole, role } = useAppState()
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
 
   useEffect(() => {
     if (!isAppRoute) return undefined
@@ -50,11 +57,7 @@ function AppLayout() {
     }
   }, [isAppRoute])
 
-  const handleUndo = () => {
-    if (!undoLastAction()) return
-    const shell = document.getElementById('app-shell-scroll')
-    shell?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-  }
+  if (!hasSelectedRole) return <RoleSelection />
 
   return (
     <>
@@ -62,11 +65,10 @@ function AppLayout() {
         <div className="page-shell relative mx-auto h-[100dvh] w-full max-w-[560px] overflow-hidden md:max-w-[620px]">
           <AppHeader
             activeFilterCount={activeFilterCount}
-            canUndo={canUndo}
-            showCreateAction={onboarding?.userType === 'offering'}
-            onCreateListing={() => navigate('/create')}
-            onFilterOpen={() => setIsFilterOpen(true)}
-            onUndo={handleUndo}
+            homeRoute={homeRoute}
+            showCreateAction={role === 'landlord'}
+            onCreateListing={() => navigate('/listings/new')}
+            onFilterOpen={role === 'tenant' ? () => setIsFilterOpen(true) : null}
           />
           <main
             id="app-shell-scroll"
@@ -74,38 +76,50 @@ function AppLayout() {
           >
             <Routes location={routeLocation}>
               <Route path="/profile" element={<TenantProfile />} />
-              <Route path="/rooms" element={<SwipeRooms />} />
-              <Route path="/create" element={<CreateListing />} />
-              <Route path="/saved" element={<SavedRooms />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/discover" element={<DiscoverProperties />} />
+              <Route path="/properties" element={role === 'landlord' ? <LandlordProperties /> : <DiscoverProperties />} />
+              <Route path="/properties/manage" element={<LandlordProperties />} />
+              <Route path="/rooms" element={<Navigate to="/properties" replace />} />
+              <Route path="/applicants" element={role === 'landlord' ? <Applicants /> : <Navigate to="/discover" replace />} />
+              <Route path="/listings/new" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
+              <Route path="/create" element={<Navigate to="/listings/new" replace />} />
+              <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to={homeRoute} replace />} />
             </Routes>
           </main>
           <BottomNav />
-          <FilterSheet
-            isOpen={isFilterOpen}
-            onClose={() => setIsFilterOpen(false)}
-            onUpdateProfile={() => {
-              setIsFilterOpen(false)
-              navigate('/profile')
-            }}
-          />
-          {!hasCompletedOnboarding ? <OnboardingFlow /> : null}
+          {isFilterOpen ? (
+            <FilterSheet
+              onClose={() => setIsFilterOpen(false)}
+              onUpdateProfile={() => {
+                setIsFilterOpen(false)
+                navigate('/profile')
+              }}
+            />
+          ) : null}
         </div>
       ) : (
         <div className="page-shell mx-auto flex min-h-screen w-full max-w-[1120px] flex-col px-4 pb-10 md:px-6 md:pb-12">
           <Navbar />
           <main className="flex-1 py-4 md:py-7">
             <Routes location={routeLocation}>
-              <Route path="/" element={<Home />} />
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/profile" element={<TenantProfile />} />
-              <Route path="/rooms" element={<SwipeRooms />} />
-              <Route path="/create" element={<CreateListing />} />
-              <Route path="/saved" element={<SavedRooms />} />
+              <Route path="/discover" element={<DiscoverProperties />} />
+              <Route path="/properties" element={role === 'landlord' ? <LandlordProperties /> : <DiscoverProperties />} />
+              <Route path="/properties/manage" element={<LandlordProperties />} />
+              <Route path="/rooms" element={<Navigate to="/properties" replace />} />
+              <Route path="/applicants" element={role === 'landlord' ? <Applicants /> : <Navigate to="/discover" replace />} />
+              <Route path="/listings/new" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
+              <Route path="/create" element={<Navigate to="/listings/new" replace />} />
+              <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to={homeRoute} replace />} />
             </Routes>
           </main>
           <Footer />
@@ -114,11 +128,13 @@ function AppLayout() {
 
       {backgroundLocation ? (
         <Routes>
-          <Route path="/rooms/:roomId" element={<RoomDetailsModal />} />
+          <Route path="/properties/:propertyId" element={<PropertyDetailsModal />} />
+          <Route path="/rooms/:propertyId" element={<NavigateToPropertyDetails />} />
         </Routes>
       ) : (
         <Routes>
-          <Route path="/rooms/:roomId" element={<RoomDetailsModal standalone />} />
+          <Route path="/properties/:propertyId" element={<PropertyDetailsModal standalone />} />
+          <Route path="/rooms/:propertyId" element={<NavigateToPropertyDetails />} />
         </Routes>
       )}
     </>
@@ -133,21 +149,24 @@ export default function App() {
   )
 }
 
-function AppHeader({ activeFilterCount, canUndo, showCreateAction, onCreateListing, onUndo, onFilterOpen }) {
+function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateListing, onFilterOpen }) {
+  const navigate = useNavigate()
+
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.7rem)] md:px-6">
-      <div className="pointer-events-auto flex w-full items-center justify-between rounded-[24px] border border-white/70 bg-[rgba(255,247,237,0.82)] px-4 py-3 shadow-[0_18px_38px_-26px_rgba(15,23,42,0.34)] backdrop-blur-xl">
-        <div className="flex items-center gap-3">
-          <div className="shadow-pressable flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-base font-semibold text-white">
-            ⌂
-          </div>
-          <div className="text-lg font-semibold tracking-tight text-slate-950">Gaffly</div>
-        </div>
+      <div className="pointer-events-auto flex w-full items-center justify-between gap-3 rounded-[22px] border border-white/75 bg-white/90 px-3 py-3 shadow-[0_18px_38px_-26px_rgba(30,27,75,0.34)] backdrop-blur-xl min-[375px]:px-4">
+        <button
+          type="button"
+          aria-label="Go to Gafflo home"
+          onClick={() => navigate(homeRoute)}
+          className="rounded-2xl outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
+        >
+          <BrandLogo size="sm" className="max-w-[112px] min-[375px]:max-w-none" />
+        </button>
 
         <div className="flex items-center gap-2">
           {showCreateAction ? <HeaderIconButton ariaLabel="Create listing" icon="+" onClick={onCreateListing} /> : null}
-          <HeaderIconButton ariaLabel="Undo last swipe" disabled={!canUndo} icon="↶" onClick={onUndo} />
-          <HeaderIconButton ariaLabel="Open filters" badge={activeFilterCount} icon="☷" onClick={onFilterOpen} />
+          {onFilterOpen ? <HeaderIconButton ariaLabel="Open filters" badge={activeFilterCount} icon="☷" onClick={onFilterOpen} /> : null}
         </div>
       </div>
     </div>
@@ -173,38 +192,68 @@ function HeaderIconButton({ ariaLabel, badge = 0, disabled = false, icon, onClic
   )
 }
 
-function FilterSheet({ isOpen, onClose }) {
-  const { activeFilterCount, discoveryRooms, roomFilters, rooms, resetRoomFilters, setRoomFilters } = useAppState()
-  const [draftFilters, setDraftFilters] = useState(roomFilters)
+function NavigateToPropertyDetails() {
+  const { propertyId } = useParams()
+  return <Navigate to={`/properties/${propertyId}`} replace />
+}
 
-  useEffect(() => {
-    if (isOpen) setDraftFilters(roomFilters)
-  }, [isOpen, roomFilters])
-
-  if (!isOpen) return null
+function FilterSheet({ onClose }) {
+  const {
+    activeFilterCount,
+    discoveryProperties,
+    properties,
+    propertyFilters,
+    resetPropertyFilters,
+    setPropertyFilters,
+  } = useAppState()
+  const [draftFilters, setDraftFilters] = useState(propertyFilters)
+  const [filterErrors, setFilterErrors] = useState({})
+  const today = getTodayIsoDate()
 
   const locations = [
     'Any',
-    ...Array.from(new Set(rooms.flatMap((room) => [room.city, room.area]))).sort((a, b) => a.localeCompare(b)),
+    ...Array.from(new Set(properties.flatMap((property) => [property.city, property.area]))).sort((a, b) => a.localeCompare(b)),
   ]
-  const genderOptions = ['Any', 'Female preferred', 'Male preferred']
-  const occupationOptions = ['Any', 'Full-time', 'Part-time', 'Student', 'Remote worker']
-  const smokingOptions = ['Any', 'No smoking', 'Outside ok', 'Smoking friendly']
-  const petOptions = ['Any', 'Comfortable', 'Not comfortable']
-  const lifestyleOptions = ['Any', 'Quiet', 'Balanced', 'Social']
+  const propertyTypeOptions = ['Any', ...Array.from(new Set(properties.map((property) => property.propertyType))).filter(Boolean).sort()]
+  const furnishedOptions = ['Any', 'Furnished', 'Part-furnished', 'Unfurnished']
+  const bedroomOptions = ['Any', '1', '2', '3', '4']
+  const petOptions = ['Any', 'Required']
+  const parkingOptions = ['Any', 'Required']
+  const leaseOptions = ['Any', '6 months', '12 months', '18 months']
 
   const updateDraft = (field, value) => {
     setDraftFilters((current) => ({ ...current, [field]: value }))
+    setFilterErrors((current) => {
+      if (!current[field] && !current.priceRange) return current
+      const next = { ...current }
+      delete next[field]
+      delete next.priceRange
+      return next
+    })
+  }
+
+  const validateFilters = () => {
+    const nextErrors = {}
+    const min = Number(draftFilters.priceMin)
+    const max = Number(draftFilters.priceMax)
+    if (draftFilters.priceMin && (!Number.isFinite(min) || min < 0)) nextErrors.priceMin = 'Use a positive minimum rent.'
+    if (draftFilters.priceMax && (!Number.isFinite(max) || max < 0)) nextErrors.priceMax = 'Use a positive maximum rent.'
+    if (draftFilters.priceMin && draftFilters.priceMax && Number.isFinite(min) && Number.isFinite(max) && min > max) nextErrors.priceRange = 'Minimum rent cannot be higher than maximum rent.'
+    if (isPastIsoDate(draftFilters.moveInBy, today)) nextErrors.moveInBy = 'Move-in date cannot be in the past.'
+    setFilterErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
   const applyFilters = () => {
-    setRoomFilters(draftFilters)
+    if (!validateFilters()) return
+    setPropertyFilters(draftFilters)
     onClose()
   }
 
   const resetFilters = () => {
-    resetRoomFilters()
-    setDraftFilters(emptyRoomFilters)
+    resetPropertyFilters()
+    setDraftFilters(emptyPropertyFilters)
+    setFilterErrors({})
   }
 
   const selectedFilters = getFilterLabels(draftFilters)
@@ -220,11 +269,11 @@ function FilterSheet({ isOpen, onClose }) {
               <div>
                 <div className="text-lg font-semibold text-slate-950">Filters</div>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
-                  Narrow the room deck without changing your profile.
+                  Narrow the property deck without changing your renter profile.
                 </p>
               </div>
               <div className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                {discoveryRooms.length} rooms
+                {discoveryProperties.length} properties
               </div>
             </div>
 
@@ -249,18 +298,25 @@ function FilterSheet({ isOpen, onClose }) {
                 <FilterInput
                   label="Min"
                   type="number"
+                  min="0"
+                  inputMode="numeric"
                   placeholder="800"
                   value={draftFilters.priceMin}
+                  error={filterErrors.priceMin}
                   onChange={(event) => updateDraft('priceMin', event.target.value)}
                 />
                 <FilterInput
                   label="Max"
                   type="number"
+                  min="0"
+                  inputMode="numeric"
                   placeholder="1400"
                   value={draftFilters.priceMax}
+                  error={filterErrors.priceMax}
                   onChange={(event) => updateDraft('priceMax', event.target.value)}
                 />
               </div>
+              {filterErrors.priceRange ? <p className="mt-2 text-xs font-medium text-rose-500">{filterErrors.priceRange}</p> : null}
             </FilterGroup>
 
             <FilterGroup title="Search details">
@@ -274,43 +330,51 @@ function FilterSheet({ isOpen, onClose }) {
                 <FilterInput
                   label="Move-in by"
                   type="date"
+                  min={today}
                   value={draftFilters.moveInBy}
+                  error={filterErrors.moveInBy}
                   onChange={(event) => updateDraft('moveInBy', event.target.value)}
                 />
               </div>
             </FilterGroup>
 
-            <FilterGroup title="Household fit">
+            <FilterGroup title="Property fit">
               <div className="grid gap-3">
                 <FilterSelect
-                  label="Gender preference"
-                  value={draftFilters.genderPreference}
-                  onChange={(event) => updateDraft('genderPreference', event.target.value)}
-                  options={genderOptions}
+                  label="Property type"
+                  value={draftFilters.propertyType}
+                  onChange={(event) => updateDraft('propertyType', event.target.value)}
+                  options={propertyTypeOptions}
                 />
                 <FilterSelect
-                  label="Occupation type"
-                  value={draftFilters.occupationType}
-                  onChange={(event) => updateDraft('occupationType', event.target.value)}
-                  options={occupationOptions}
+                  label="Furnished"
+                  value={draftFilters.furnishedPreference}
+                  onChange={(event) => updateDraft('furnishedPreference', event.target.value)}
+                  options={furnishedOptions}
                 />
                 <FilterSelect
-                  label="Smoking"
-                  value={draftFilters.smokingPreference}
-                  onChange={(event) => updateDraft('smokingPreference', event.target.value)}
-                  options={smokingOptions}
+                  label="Minimum bedrooms"
+                  value={draftFilters.bedrooms}
+                  onChange={(event) => updateDraft('bedrooms', event.target.value)}
+                  options={bedroomOptions}
                 />
                 <FilterSelect
                   label="Pets"
-                  value={draftFilters.petFriendliness}
-                  onChange={(event) => updateDraft('petFriendliness', event.target.value)}
+                  value={draftFilters.pets}
+                  onChange={(event) => updateDraft('pets', event.target.value)}
                   options={petOptions}
                 />
                 <FilterSelect
-                  label="Lifestyle"
-                  value={draftFilters.lifestylePreference}
-                  onChange={(event) => updateDraft('lifestylePreference', event.target.value)}
-                  options={lifestyleOptions}
+                  label="Parking"
+                  value={draftFilters.parking}
+                  onChange={(event) => updateDraft('parking', event.target.value)}
+                  options={parkingOptions}
+                />
+                <FilterSelect
+                  label="Lease length"
+                  value={draftFilters.leaseLength}
+                  onChange={(event) => updateDraft('leaseLength', event.target.value)}
+                  options={leaseOptions}
                 />
               </div>
             </FilterGroup>
@@ -327,7 +391,7 @@ function FilterSheet({ isOpen, onClose }) {
                 Reset
               </Button>
               <Button className="flex-1" onClick={applyFilters}>
-                Show rooms
+                Show properties
               </Button>
             </div>
           </div>
@@ -347,13 +411,16 @@ function FilterGroup({ title, children }) {
 }
 
 function FilterInput({ label, ...props }) {
+  const { error, ...inputProps } = props
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</span>
       <input
-        className="min-h-12 w-full rounded-[18px] border border-orange-100 bg-white px-4 py-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-emerald-50/20 focus:ring-4 focus:ring-emerald-100"
-        {...props}
+        className={`min-h-12 w-full rounded-[18px] border bg-white px-4 py-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-emerald-50/20 focus:ring-4 focus:ring-emerald-100 ${error ? 'border-rose-300 bg-rose-50/40 focus:border-rose-300 focus:ring-rose-100' : 'border-indigo-100'}`}
+        aria-invalid={error ? 'true' : undefined}
+        {...inputProps}
       />
+      {error ? <span className="mt-2 block text-xs font-medium text-rose-500">{error}</span> : null}
     </label>
   )
 }
@@ -363,7 +430,7 @@ function FilterSelect({ label, options, ...props }) {
     <label className="block">
       <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</span>
       <select
-        className="min-h-12 w-full rounded-[18px] border border-orange-100 bg-white px-4 py-3 text-base text-slate-700 outline-none transition focus:border-emerald-400 focus:bg-emerald-50/20 focus:ring-4 focus:ring-emerald-100"
+        className="min-h-12 w-full rounded-[18px] border border-indigo-100 bg-white px-4 py-3 text-base text-slate-700 outline-none transition focus:border-emerald-400 focus:bg-emerald-50/20 focus:ring-4 focus:ring-emerald-100"
         {...props}
       >
         {options.map((option) => (
@@ -382,171 +449,11 @@ function getFilterLabels(filters) {
     filters.priceMax ? `Up to €${filters.priceMax}` : null,
     filters.location !== 'Any' ? filters.location : null,
     filters.moveInBy ? `By ${filters.moveInBy}` : null,
-    filters.genderPreference !== 'Any' ? filters.genderPreference : null,
-    filters.occupationType !== 'Any' ? filters.occupationType : null,
-    filters.smokingPreference !== 'Any' ? filters.smokingPreference : null,
-    filters.petFriendliness !== 'Any' ? filters.petFriendliness : null,
-    filters.lifestylePreference !== 'Any' ? filters.lifestylePreference : null,
+    filters.propertyType !== 'Any' ? filters.propertyType : null,
+    filters.furnishedPreference !== 'Any' ? filters.furnishedPreference : null,
+    filters.bedrooms !== 'Any' ? `${filters.bedrooms}+ bedrooms` : null,
+    filters.pets !== 'Any' ? 'Pets needed' : null,
+    filters.parking !== 'Any' ? 'Parking required' : null,
+    filters.leaseLength !== 'Any' ? `${filters.leaseLength}+ lease` : null,
   ].filter(Boolean)
-}
-
-function OnboardingFlow() {
-  const { completeOnboarding, rooms, skipOnboarding } = useAppState()
-  const [step, setStep] = useState(0)
-  const [form, setForm] = useState({
-    userType: 'looking',
-    budgetMin: '900',
-    budgetMax: '1300',
-    preferredArea: 'Any',
-    moveInDate: '',
-    lifestylePreference: 'Balanced',
-  })
-  const totalSteps = 4
-  const locations = [
-    'Any',
-    ...Array.from(new Set(rooms.flatMap((room) => [room.city, room.area]))).sort((a, b) => a.localeCompare(b)),
-  ]
-
-  const updateField = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }))
-  }
-
-  const finish = () => {
-    completeOnboarding(form)
-  }
-
-  return (
-    <div className="absolute inset-0 z-[70] flex items-end bg-slate-950/38 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-[3px] md:items-center md:justify-center">
-      <div className="card-surface card-shadow w-full overflow-hidden rounded-[32px] md:max-w-[520px]">
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 px-5 py-5 text-white">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Welcome to Gaffly</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">Personalize your room deck</h2>
-            </div>
-            <button type="button" onClick={skipOnboarding} className="rounded-full bg-white/12 px-3 py-2 text-xs font-semibold text-white">
-              Skip
-            </button>
-          </div>
-          <div className="mt-5 grid grid-cols-4 gap-2">
-            {Array.from({ length: totalSteps }).map((_, index) => (
-              <div key={index} className={`h-1.5 rounded-full ${index <= step ? 'bg-emerald-400' : 'bg-white/18'}`} />
-            ))}
-          </div>
-        </div>
-
-        <div className="min-h-[22rem] px-5 py-5">
-          {step === 0 ? (
-            <OnboardingStep title="What are you here to do?" description="We’ll tune the first session around your goal.">
-              <div className="grid gap-3">
-                <ChoiceCard
-                  active={form.userType === 'looking'}
-                  title="I’m looking for a room"
-                  body="Build a renter shortlist and compare matches."
-                  onClick={() => updateField('userType', 'looking')}
-                />
-                <ChoiceCard
-                  active={form.userType === 'offering'}
-                  title="I’m offering a room"
-                  body="Preview the renter experience before landlord tools arrive."
-                  onClick={() => updateField('userType', 'offering')}
-                />
-              </div>
-            </OnboardingStep>
-          ) : null}
-
-          {step === 1 ? (
-            <OnboardingStep title="Budget and area" description="Set the range and primary area you want to see first.">
-              <div className="grid grid-cols-2 gap-3">
-                <FilterInput label="Min budget" type="number" value={form.budgetMin} onChange={(event) => updateField('budgetMin', event.target.value)} />
-                <FilterInput label="Max budget" type="number" value={form.budgetMax} onChange={(event) => updateField('budgetMax', event.target.value)} />
-              </div>
-              <div className="mt-4">
-                <FilterSelect label="Preferred areas" value={form.preferredArea} onChange={(event) => updateField('preferredArea', event.target.value)} options={locations} />
-              </div>
-            </OnboardingStep>
-          ) : null}
-
-          {step === 2 ? (
-            <OnboardingStep title="Timing and vibe" description="A couple of details make the first deck feel relevant.">
-              <div className="grid gap-4">
-                <FilterInput label="Move-in date" type="date" value={form.moveInDate} onChange={(event) => updateField('moveInDate', event.target.value)} />
-                <div>
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Lifestyle</span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {['Quiet', 'Balanced', 'Social'].map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => updateField('lifestylePreference', option)}
-                        className={`min-h-12 rounded-[18px] border px-3 text-sm font-semibold transition ${
-                          form.lifestylePreference === option
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-soft'
-                            : 'border-orange-100 bg-white text-slate-600'
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </OnboardingStep>
-          ) : null}
-
-          {step === 3 ? (
-            <OnboardingStep title="Your first deck is ready" description="These choices will prefill discovery filters and stay saved on this device.">
-              <div className="grid gap-2">
-                {[
-                  form.userType === 'looking' ? 'Looking for a room' : 'Offering a room',
-                  `€${form.budgetMin || '0'} - €${form.budgetMax || 'any'}`,
-                  form.preferredArea,
-                  form.moveInDate || 'Flexible move-in',
-                  form.lifestylePreference,
-                ].map((item) => (
-                  <div key={item} className="surface-line rounded-[18px] bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </OnboardingStep>
-          ) : null}
-        </div>
-
-        <div className="grid grid-cols-[0.85fr_1.15fr] gap-3 border-t border-slate-100 bg-white/88 px-5 pb-5 pt-4">
-          <Button variant="secondary" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>
-            Back
-          </Button>
-          <Button onClick={step === totalSteps - 1 ? finish : () => setStep((current) => Math.min(totalSteps - 1, current + 1))}>
-            {step === totalSteps - 1 ? 'Start discovery' : 'Continue'}
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function OnboardingStep({ title, description, children }) {
-  return (
-    <section>
-      <h3 className="text-2xl font-semibold tracking-tight text-slate-950">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
-      <div className="mt-5">{children}</div>
-    </section>
-  )
-}
-
-function ChoiceCard({ active, title, body, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`surface-line rounded-[24px] p-4 text-left transition ${
-        active ? 'border-emerald-200 bg-emerald-50/78 shadow-soft' : 'bg-white hover:bg-slate-50'
-      }`}
-    >
-      <div className="text-base font-semibold text-slate-950">{title}</div>
-      <p className="mt-1 text-sm leading-6 text-slate-600">{body}</p>
-    </button>
-  )
 }

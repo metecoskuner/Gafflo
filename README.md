@@ -1,16 +1,17 @@
-# Gaffly
+# Gafflo
 
-Gaffly is a mobile-first room matching web app prototype for renters in Ireland.
+Gafflo is a mobile-first rental marketplace for tenants, landlords and agents in Ireland.
 
 ## Features
 
-- Tenant profile form
-- Room swipe experience
-- Compatibility match score
-- Saved rooms
-- Room details with match reasons
+- Tenant rental-fit profile form
+- Property discovery experience
+- Rental-fit match score
+- Saved properties
+- Property details with match reasons
+- Listing creation flow
 - LocalStorage persistence
-- Mock data only
+- Local fixture data for frontend development
 
 ## Tech stack
 
@@ -28,15 +29,15 @@ npm run dev
 npm run build
 ```
 
-## Demo disclaimer
+## Development Note
 
-This is a portfolio demo using mock data. No real rental listings or sensitive tenant documents are collected.
+This build runs entirely in the browser with fixture data. No real rental listings, payments or sensitive tenant documents are collected.
 
 ## Future improvements
 
-- Firebase auth
-- Real landlord listings
+- Authentication and role-based accounts
+- Real landlord and agent listings
 - Applicant dashboard
 - Report/block system
-- Basic messaging
+- Real messaging and enquiries
 - Vercel deployment

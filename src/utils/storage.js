@@ -1,15 +1,27 @@
 const KEYS = {
-  profile: 'gaffly.tenant-profile',
-  saved: 'gaffly.saved-rooms',
-  reviewed: 'gaffly.reviewed-rooms',
-  onboarding: 'gaffly.onboarding',
-  conversations: 'gaffly.conversations',
-  createdListings: 'gaffly.created-listings',
+  account: 'gafflo.account',
+  tenantProfile: 'gafflo.tenant-profile',
+  landlordProfile: 'gafflo.landlord-profile',
+  saved: 'gafflo.saved-properties',
+  dismissed: 'gafflo.dismissed-properties',
+  smartMatchActivity: 'gafflo.smart-match-activity',
+  enquiries: 'gafflo.enquiries',
+  conversations: 'gafflo.conversations',
+  properties: 'gafflo.properties',
 }
 
-function getJson(key, fallback) {
+const LEGACY_KEYS = {
+  account: 'gafflo.onboarding',
+  tenantProfile: 'gaffly.tenant-profile',
+  saved: 'gaffly.saved-rooms',
+  dismissed: 'gaffly.reviewed-rooms',
+  conversations: 'gaffly.conversations',
+  properties: 'gaffly.created-listings',
+}
+
+function getJson(key, fallback, legacyKey) {
   try {
-    const raw = window.localStorage.getItem(key)
+    const raw = window.localStorage.getItem(key) || (legacyKey ? window.localStorage.getItem(legacyKey) : null)
     return raw ? JSON.parse(raw) : fallback
   } catch {
     return fallback
@@ -20,50 +32,80 @@ function setJson(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
+export function getAccount() {
+  const account = getJson(KEYS.account, null, LEGACY_KEYS.account)
+  if (!account?.userType) return account
+  return {
+    role: account.userType === 'offering' ? 'landlord' : 'tenant',
+    landlordType: account.userType === 'offering' ? 'private_landlord' : null,
+    completed: true,
+  }
+}
+
+export function setAccount(account) {
+  setJson(KEYS.account, account)
+}
+
 export function getTenantProfile() {
-  return getJson(KEYS.profile, null)
+  return getJson(KEYS.tenantProfile, null, LEGACY_KEYS.tenantProfile)
 }
 
 export function setTenantProfile(profile) {
-  setJson(KEYS.profile, profile)
+  setJson(KEYS.tenantProfile, profile)
 }
 
-export function getSavedRoomIds() {
-  return getJson(KEYS.saved, [])
+export function getLandlordProfile() {
+  return getJson(KEYS.landlordProfile, null)
 }
 
-export function setSavedRoomIds(ids) {
+export function setLandlordProfile(profile) {
+  setJson(KEYS.landlordProfile, profile)
+}
+
+export function getSavedPropertyIds() {
+  return getJson(KEYS.saved, [], LEGACY_KEYS.saved)
+}
+
+export function setSavedPropertyIds(ids) {
   setJson(KEYS.saved, ids)
 }
 
-export function getReviewedRoomIds() {
-  return getJson(KEYS.reviewed, [])
+export function getDismissedPropertyIds() {
+  return getJson(KEYS.dismissed, [], LEGACY_KEYS.dismissed)
 }
 
-export function setReviewedRoomIds(ids) {
-  setJson(KEYS.reviewed, ids)
+export function setDismissedPropertyIds(ids) {
+  setJson(KEYS.dismissed, ids)
 }
 
-export function getOnboarding() {
-  return getJson(KEYS.onboarding, null)
+export function getSmartMatchActivity() {
+  return getJson(KEYS.smartMatchActivity, {})
 }
 
-export function setOnboarding(onboarding) {
-  setJson(KEYS.onboarding, onboarding)
+export function setSmartMatchActivity(activity) {
+  setJson(KEYS.smartMatchActivity, activity)
+}
+
+export function getEnquiries() {
+  return getJson(KEYS.enquiries, [])
+}
+
+export function setEnquiries(enquiries) {
+  setJson(KEYS.enquiries, enquiries)
 }
 
 export function getConversations() {
-  return getJson(KEYS.conversations, [])
+  return getJson(KEYS.conversations, [], LEGACY_KEYS.conversations)
 }
 
 export function setConversations(conversations) {
   setJson(KEYS.conversations, conversations)
 }
 
-export function getCreatedListings() {
-  return getJson(KEYS.createdListings, [])
+export function getLocalProperties() {
+  return getJson(KEYS.properties, [], LEGACY_KEYS.properties)
 }
 
-export function setCreatedListings(listings) {
-  setJson(KEYS.createdListings, listings)
+export function setLocalProperties(properties) {
+  setJson(KEYS.properties, properties)
 }

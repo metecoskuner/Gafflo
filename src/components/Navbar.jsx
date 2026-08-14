@@ -1,25 +1,39 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
+import BrandLogo from './BrandLogo'
+import useAppState from '../context/useAppState'
 
-const links = [
-  { to: '/profile', label: 'Profile' },
-  { to: '/rooms', label: 'Rooms' },
+const tenantLinks = [
+  { to: '/discover', label: 'Discover' },
   { to: '/saved', label: 'Saved' },
   { to: '/messages', label: 'Messages' },
+  { to: '/profile', label: 'Profile' },
+]
+
+const landlordLinks = [
+  { to: '/dashboard', label: 'Home' },
+  { to: '/properties', label: 'Properties' },
+  { to: '/applicants', label: 'Applicants' },
+  { to: '/messages', label: 'Messages' },
+  { to: '/profile', label: 'Profile' },
 ]
 
 export default function Navbar() {
+  const navigate = useNavigate()
+  const { role } = useAppState()
+  const links = role === 'landlord' ? landlordLinks : tenantLinks
+  const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
+
   return (
-    <header className="glass-topbar sticky top-0 z-30 hidden border-b border-orange-100/80 md:block">
+    <header className="glass-topbar sticky top-0 z-30 hidden border-b border-indigo-100/80 md:block">
       <div className="mx-auto flex items-center justify-between py-5">
-        <div className="flex items-center gap-3">
-          <div className="shadow-pressable flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-lg font-semibold text-white">
-            ⌂
-          </div>
-          <div>
-            <div className="text-xl font-semibold tracking-tight text-slate-950">Gaffly</div>
-            <p className="text-sm text-slate-500">Swipe rooms. Match smarter. Move better.</p>
-          </div>
-        </div>
+        <button
+          type="button"
+          aria-label="Go to Gafflo home"
+          onClick={() => navigate(homeRoute)}
+          className="rounded-2xl outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
+        >
+          <BrandLogo />
+        </button>
 
         <nav className="card-surface card-shadow flex items-center gap-2 rounded-full px-2 py-2">
           {links.map((link) => (
@@ -29,7 +43,7 @@ export default function Navbar() {
               className={({ isActive }) =>
                 `rounded-full px-4 py-2.5 text-sm font-medium transition ${
                   isActive
-                    ? 'shadow-soft bg-slate-900 text-white'
+                    ? 'shadow-soft bg-indigo-950 text-white'
                     : 'text-slate-600 hover:bg-white hover:text-slate-900'
                 }`
               }

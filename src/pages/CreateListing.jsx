@@ -4,14 +4,16 @@ import Button from '../components/Button'
 import FormInput from '../components/FormInput'
 import SelectInput from '../components/SelectInput'
 import useAppState from '../context/useAppState'
+import { getTodayIsoDate, isPastIsoDate } from '../utils/dateUtils'
 
 const cityOptions = ['Dublin', 'Cork', 'Galway', 'Limerick', 'Waterford']
-const roomTypeOptions = ['Single room', 'Double room', 'Large single', 'Ensuite']
-const genderOptions = ['Any', 'Female preferred', 'Male preferred']
+const propertyTypeOptions = ['Apartment', 'House', 'Studio', 'One-bedroom apartment']
 const occupationOptions = ['Any', 'Full-time', 'Part-time', 'Student', 'Remote worker']
 const petOptions = ['Comfortable', 'Not comfortable']
 const smokingOptions = ['No', 'Outside only', 'Yes']
-const lifestyleOptions = ['Quiet', 'Balanced', 'Social']
+const furnishedOptions = ['Furnished', 'Part-furnished', 'Unfurnished']
+const parkingOptions = ['No', 'Street permit nearby', 'Included', 'Driveway']
+const viewingTypeOptions = ['In-person', 'Virtual or in-person']
 
 const defaultImage =
   'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80'
@@ -25,34 +27,100 @@ function createInitialForm() {
     availableFrom: '',
     city: 'Dublin',
     area: '',
-    roomType: 'Double room',
-    genderPreference: 'Any',
+    propertyType: 'Apartment',
+    bedrooms: '1',
+    bathrooms: '1',
+    maxOccupants: '2',
+    furnished: 'Furnished',
+    parking: 'No',
+    minStayMonths: '6',
+    viewingType: 'In-person',
     occupationPreference: 'Any',
     petsAllowed: 'Comfortable',
     smokingAllowed: 'No',
-    lifestyleTags: ['Balanced'],
     description: '',
-    flatmateSummary: '',
+    listingTerms: '',
   }
 }
 
 export default function CreateListing() {
   const navigate = useNavigate()
-  const { addCreatedListing } = useAppState()
+  const { addProperty } = useAppState()
   const [form, setForm] = useState(createInitialForm)
   const [imagePreviews, setImagePreviews] = useState([])
   const [errors, setErrors] = useState({})
   const [isSaving, setIsSaving] = useState(false)
-  const selectedLifestyle = form.lifestyleTags[0] || 'Balanced'
-
   const previewImages = useMemo(() => (imagePreviews.length ? imagePreviews : [defaultImage]), [imagePreviews])
+  const today = getTodayIsoDate()
+
+  const validateField = (field, value, nextForm = form) => {
+    const validators = {
+      title: () => {
+        const length = String(value || '').trim().length
+        if (!length) return 'Add a clear listing title.'
+        if (length < 8) return 'Use a little more detail in the title.'
+        if (length > 90) return 'Keep the title under 90 characters.'
+        return ''
+      },
+      rent: () => (!value || !Number.isFinite(Number(value)) || Number(value) <= 0 ? 'Monthly rent must be more than €0.' : ''),
+      deposit: () => (value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 ? 'Deposit cannot be negative.' : ''),
+      availableFrom: () => {
+        if (!value) return 'Choose the available-from date.'
+        if (isPastIsoDate(value, today)) return 'Available-from date cannot be in the past.'
+        return ''
+      },
+      area: () => {
+        const length = String(value || '').trim().length
+        if (!length) return 'Add the area or neighbourhood.'
+        if (length > 70) return 'Keep the area under 70 characters.'
+        return ''
+      },
+      bedrooms: () => (!Number.isFinite(Number(value)) || Number(value) < 0 ? 'Bedrooms cannot be negative.' : ''),
+      bathrooms: () => (!Number.isFinite(Number(value)) || Number(value) < 0 ? 'Bathrooms cannot be negative.' : ''),
+      maxOccupants: () => {
+        if (!value || !Number.isFinite(Number(value)) || Number(value) < 1) return 'Maximum occupancy must be at least 1.'
+        if (Number(nextForm.bedrooms) > 0 && Number(value) < 1) return 'Add at least one occupant.'
+        return ''
+      },
+      minStayMonths: () => (!value || !Number.isFinite(Number(value)) || Number(value) < 1 ? 'Minimum stay must be at least 1 month.' : ''),
+      description: () => {
+        const length = String(value || '').trim().length
+        if (length < 40) return 'Add at least 40 characters so renters understand the property.'
+        if (length > 900) return 'Keep the description under 900 characters.'
+        return ''
+      },
+      listingTerms: () => {
+        const length = String(value || '').trim().length
+        if (length < 20) return 'Add basic lease terms or tenant requirements.'
+        if (length > 700) return 'Keep listing terms under 700 characters.'
+        return ''
+      },
+    }
+    return validators[field]?.() || ''
+  }
 
   const updateField = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }))
-    setErrors((current) => {
-      if (!current[field]) return current
-      const next = { ...current }
-      delete next[field]
+    setForm((current) => {
+      const next = {
+        ...current,
+        [field]: field === 'propertyType' && value === 'Studio' ? value : value,
+      }
+      if (field === 'propertyType' && value === 'Studio') {
+        next.bedrooms = '0'
+        next.maxOccupants = current.maxOccupants || '1'
+      }
+      setErrors((currentErrors) => {
+        const nextErrors = { ...currentErrors }
+        const error = validateField(field, value, next)
+        if (error) nextErrors[field] = error
+        else delete nextErrors[field]
+        if (field === 'propertyType') {
+          const bedroomError = validateField('bedrooms', next.bedrooms, next)
+          if (bedroomError) nextErrors.bedrooms = bedroomError
+          else delete nextErrors.bedrooms
+        }
+        return nextErrors
+      })
       return next
     })
   }
@@ -64,14 +132,12 @@ export default function CreateListing() {
   }
 
   const validate = () => {
-    const nextErrors = {}
-    if (!form.title.trim()) nextErrors.title = 'Add a clear listing title.'
-    if (!form.rent || Number(form.rent) <= 0) nextErrors.rent = 'Add the monthly rent.'
-    if (!form.deposit || Number(form.deposit) < 0) nextErrors.deposit = 'Add the deposit amount.'
-    if (!form.availableFrom) nextErrors.availableFrom = 'Choose the move-in date.'
-    if (!form.area.trim()) nextErrors.area = 'Add the area or neighbourhood.'
-    if (!form.description.trim()) nextErrors.description = 'Add a short room description.'
-    if (!form.flatmateSummary.trim()) nextErrors.flatmateSummary = 'Add a flatmate summary.'
+    const fields = ['title', 'rent', 'deposit', 'availableFrom', 'area', 'bedrooms', 'bathrooms', 'maxOccupants', 'minStayMonths', 'description', 'listingTerms']
+    const nextErrors = fields.reduce((acc, field) => {
+      const error = validateField(field, form[field], form)
+      if (error) acc[field] = error
+      return acc
+    }, {})
     setErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }
@@ -81,44 +147,46 @@ export default function CreateListing() {
     if (!validate()) return
 
     setIsSaving(true)
-    const listingId = addCreatedListing({
+    const listingId = addProperty({
       title: form.title.trim(),
+      description: form.description.trim(),
+      propertyType: form.propertyType,
       area: form.area.trim(),
       city: form.city,
+      approximateAddress: `${form.area.trim()} area`,
+      eircode: '',
       rent: Number(form.rent),
       deposit: Number(form.deposit),
       billsIncluded: Boolean(form.billsIncluded),
       availableFrom: form.availableFrom,
-      minStayMonths: 6,
-      roomType: form.roomType,
-      housematesCount: 2,
-      lifestyle: selectedLifestyle,
-      cleanliness: 'Very clean',
+      bedrooms: form.propertyType === 'Studio' ? 0 : Number(form.bedrooms),
+      bathrooms: Number(form.bathrooms),
+      maxOccupants: Number(form.maxOccupants),
+      furnished: form.furnished,
+      parking: form.parking,
+      minStayMonths: Number(form.minStayMonths),
       smokingAllowed: form.smokingAllowed,
       petsAllowed: form.petsAllowed,
-      genderPreference: form.genderPreference,
-      occupationTypes: form.occupationPreference === 'Any' ? occupationOptions.filter((item) => item !== 'Any') : [form.occupationPreference],
-      description: form.description.trim(),
-      flatmateSummary: form.flatmateSummary.trim(),
-      images: previewImages,
-      landlordName: 'Your listing',
-      features: [
+      amenities: [
         form.billsIncluded ? 'Bills included' : 'Bills separate',
-        `${selectedLifestyle} home`,
-        form.roomType,
-        form.occupationPreference === 'Any' ? 'Flexible occupation' : form.occupationPreference,
+        form.furnished,
+        form.propertyType,
+        form.occupationPreference === 'Any' ? 'Flexible applicants' : form.occupationPreference,
       ],
-      houseRules: [
+      images: previewImages,
+      viewingType: form.viewingType,
+      listingStatus: 'pending_verification',
+      listingRules: [
         form.smokingAllowed === 'No' ? 'No smoking indoors' : 'Smoking by agreement',
         form.petsAllowed === 'Comfortable' ? 'Pets considered' : 'No pets preferred',
-        'Respect shared spaces',
+        'Tenant references by request',
       ],
-      source: 'created',
+      listingTerms: form.listingTerms.trim(),
     })
 
     window.setTimeout(() => {
       setIsSaving(false)
-      navigate(`/rooms/${listingId}`)
+      if (listingId) navigate(`/properties/${listingId}`)
     }, 180)
   }
 
@@ -131,7 +199,7 @@ export default function CreateListing() {
           <div className="absolute inset-x-0 bottom-0 p-5 text-white">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Create listing</p>
             <h1 className="text-balance mt-2 text-3xl font-semibold tracking-tight">
-              {form.title || 'List your room'}
+              {form.title || 'List your property'}
             </h1>
             <p className="mt-2 text-sm text-slate-200">
               {form.area || 'Area'}, {form.city} {form.rent ? `· €${form.rent}/mo` : ''}
@@ -141,15 +209,15 @@ export default function CreateListing() {
       </section>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <FormSection title="Photos" description="Upload a few room photos. They are stored locally for this prototype.">
+        <FormSection title="Photos" description="Upload a few property photos for the listing preview.">
           <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-700">Room images</span>
+            <span className="mb-2 block text-sm font-medium text-slate-700">Property images</span>
             <input
               type="file"
               accept="image/*"
               multiple
               onChange={handleImageChange}
-              className="min-h-12 w-full rounded-[18px] border border-orange-100 bg-white px-4 py-3 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-emerald-700"
+              className="min-h-12 w-full rounded-[18px] border border-indigo-100 bg-white px-4 py-3 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-emerald-700"
             />
           </label>
           <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
@@ -164,16 +232,20 @@ export default function CreateListing() {
         <FormSection title="Listing basics" description="Keep this concise and scannable for renters.">
           <div className="grid gap-4">
             <FormInput
+              id="listing-title"
               label="Title"
-              placeholder="Bright double room in Rathmines"
+              placeholder="Bright apartment in Rathmines"
               value={form.title}
+              maxLength={90}
               error={errors.title}
               onChange={(event) => updateField('title', event.target.value)}
             />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 min-[380px]:grid-cols-2">
               <FormInput
                 label="Rent (€)"
                 type="number"
+                min="1"
+                inputMode="numeric"
                 value={form.rent}
                 error={errors.rent}
                 onChange={(event) => updateField('rent', event.target.value)}
@@ -181,6 +253,8 @@ export default function CreateListing() {
               <FormInput
                 label="Deposit (€)"
                 type="number"
+                min="0"
+                inputMode="numeric"
                 value={form.deposit}
                 error={errors.deposit}
                 onChange={(event) => updateField('deposit', event.target.value)}
@@ -198,6 +272,7 @@ export default function CreateListing() {
             <FormInput
               label="Move-in date"
               type="date"
+              min={today}
               value={form.availableFrom}
               error={errors.availableFrom}
               onChange={(event) => updateField('availableFrom', event.target.value)}
@@ -205,7 +280,7 @@ export default function CreateListing() {
           </div>
         </FormSection>
 
-        <FormSection title="Location and room" description="These details drive matching and filtering.">
+        <FormSection title="Location and property" description="These details drive matching and filtering.">
           <div className="grid gap-4 md:grid-cols-2">
             <SelectInput
               label="City"
@@ -217,20 +292,71 @@ export default function CreateListing() {
               label="Area"
               placeholder="Rathmines"
               value={form.area}
+              maxLength={70}
               error={errors.area}
               onChange={(event) => updateField('area', event.target.value)}
             />
             <SelectInput
-              label="Room type"
-              value={form.roomType}
-              onChange={(event) => updateField('roomType', event.target.value)}
-              options={roomTypeOptions.map((item) => ({ label: item, value: item }))}
+              label="Property type"
+              value={form.propertyType}
+              onChange={(event) => updateField('propertyType', event.target.value)}
+              options={propertyTypeOptions.map((item) => ({ label: item, value: item }))}
+            />
+            <FormInput
+              label="Bedrooms"
+              type="number"
+              min="0"
+              inputMode="numeric"
+              value={form.bedrooms}
+              error={errors.bedrooms}
+              disabled={form.propertyType === 'Studio'}
+              onChange={(event) => updateField('bedrooms', event.target.value)}
+            />
+            <FormInput
+              label="Bathrooms"
+              type="number"
+              min="0"
+              step="0.5"
+              inputMode="decimal"
+              value={form.bathrooms}
+              error={errors.bathrooms}
+              onChange={(event) => updateField('bathrooms', event.target.value)}
+            />
+            <FormInput
+              label="Max occupants"
+              type="number"
+              min="1"
+              inputMode="numeric"
+              value={form.maxOccupants}
+              error={errors.maxOccupants}
+              onChange={(event) => updateField('maxOccupants', event.target.value)}
             />
             <SelectInput
-              label="Gender preference"
-              value={form.genderPreference}
-              onChange={(event) => updateField('genderPreference', event.target.value)}
-              options={genderOptions.map((item) => ({ label: item, value: item }))}
+              label="Furnished"
+              value={form.furnished}
+              onChange={(event) => updateField('furnished', event.target.value)}
+              options={furnishedOptions.map((item) => ({ label: item, value: item }))}
+            />
+            <SelectInput
+              label="Parking"
+              value={form.parking}
+              onChange={(event) => updateField('parking', event.target.value)}
+              options={parkingOptions.map((item) => ({ label: item, value: item }))}
+            />
+            <FormInput
+              label="Minimum stay (months)"
+              type="number"
+              min="1"
+              inputMode="numeric"
+              value={form.minStayMonths}
+              error={errors.minStayMonths}
+              onChange={(event) => updateField('minStayMonths', event.target.value)}
+            />
+            <SelectInput
+              label="Viewing"
+              value={form.viewingType}
+              onChange={(event) => updateField('viewingType', event.target.value)}
+              options={viewingTypeOptions.map((item) => ({ label: item, value: item }))}
             />
             <SelectInput
               label="Occupation preference"
@@ -253,44 +379,27 @@ export default function CreateListing() {
           </div>
         </FormSection>
 
-        <FormSection title="Lifestyle" description="Pick the strongest signal for the household vibe.">
-          <div className="grid grid-cols-3 gap-2">
-            {lifestyleOptions.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => updateField('lifestyleTags', [option])}
-                className={`min-h-12 rounded-[18px] border px-3 text-sm font-semibold transition ${
-                  selectedLifestyle === option
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-soft'
-                    : 'border-orange-100 bg-white text-slate-600'
-                }`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        </FormSection>
-
-        <FormSection title="Description" description="Explain the room and who it suits.">
+        <FormSection title="Description" description="Explain the property and the ideal tenancy.">
           <div className="grid gap-4">
             <FormInput
               textarea
               rows={4}
-              label="Room description"
-              placeholder="Describe the room, transport, light, storage and shared spaces."
+              label="Property description"
+              placeholder="Describe the property, transport, light, storage and amenities."
               value={form.description}
+              maxLength={900}
               error={errors.description}
               onChange={(event) => updateField('description', event.target.value)}
             />
             <FormInput
               textarea
               rows={4}
-              label="Flatmate summary"
-              placeholder="Who lives there, household rhythm, cleaning style, guest expectations."
-              value={form.flatmateSummary}
-              error={errors.flatmateSummary}
-              onChange={(event) => updateField('flatmateSummary', event.target.value)}
+              label="Listing terms"
+              placeholder="Add lease terms, viewing notes, document expectations or tenant requirements."
+              value={form.listingTerms}
+              maxLength={700}
+              error={errors.listingTerms}
+              onChange={(event) => updateField('listingTerms', event.target.value)}
             />
           </div>
         </FormSection>
@@ -302,11 +411,11 @@ export default function CreateListing() {
         ) : null}
 
         <div className="sticky bottom-[calc(5.6rem+env(safe-area-inset-bottom))] z-20 grid grid-cols-[0.9fr_1.1fr] gap-3 rounded-[28px] border border-white/70 bg-white/94 p-2 shadow-soft backdrop-blur-xl">
-          <Button variant="secondary" onClick={() => navigate('/rooms')}>
+          <Button variant="secondary" onClick={() => navigate('/properties')}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? 'Publishing...' : 'Publish listing'}
+          <Button type="submit" disabled={isSaving} isLoading={isSaving}>
+            {isSaving ? 'Submitting' : 'Submit listing'}
           </Button>
         </div>
       </form>

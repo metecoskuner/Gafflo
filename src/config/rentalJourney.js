@@ -1,0 +1,167 @@
+export const applicationStatusSteps = [
+  'sent',
+  'viewed',
+  'landlord interested',
+  'shortlisted',
+  'viewing proposed',
+  'viewing confirmed',
+]
+
+export const applicationStatuses = {
+  sent: {
+    label: 'Sent',
+    tenantTitle: 'Interest sent',
+    description: 'Your interest has been sent to the listing owner.',
+  },
+  viewed: {
+    label: 'Viewed',
+    tenantTitle: 'Landlord viewed',
+    description: 'The listing owner has seen your enquiry.',
+  },
+  'landlord interested': {
+    label: 'Landlord interested',
+    tenantTitle: 'Landlord interested',
+    description: 'Good news — the landlord is interested. Messaging is the next step.',
+  },
+  shortlisted: {
+    label: 'Shortlisted',
+    tenantTitle: 'Shortlisted',
+    description: 'You have been shortlisted for this property.',
+  },
+  'viewing proposed': {
+    label: 'Viewing proposed',
+    tenantTitle: 'Viewing proposed',
+    description: 'The listing owner has proposed viewing times.',
+  },
+  'viewing confirmed': {
+    label: 'Viewing confirmed',
+    tenantTitle: 'Viewing confirmed',
+    description: 'Your viewing is confirmed. Keep Messages open for access details.',
+  },
+  'viewing cancelled': {
+    label: 'Viewing cancelled',
+    tenantTitle: 'Viewing cancelled',
+    description: 'This viewing is no longer going ahead.',
+  },
+  rejected: {
+    label: 'Not selected',
+    tenantTitle: 'Not selected',
+    description: 'This property is not progressing, but you can keep browsing other matches.',
+  },
+  closed: {
+    label: 'Closed',
+    tenantTitle: 'Closed',
+    description: 'This enquiry is closed.',
+  },
+  withdrawn: {
+    label: 'Withdrawn',
+    tenantTitle: 'Withdrawn',
+    description: 'You withdrew this enquiry.',
+  },
+}
+
+export const applicantPipelineTabs = [
+  { id: 'new', label: 'New' },
+  { id: 'interested', label: 'Interested' },
+  { id: 'shortlisted', label: 'Shortlisted' },
+  { id: 'viewing', label: 'Viewing' },
+  { id: 'closed', label: 'Closed' },
+]
+
+export function getApplicationStatus(status) {
+  return applicationStatuses[status] || {
+    label: status || 'Sent',
+    tenantTitle: status || 'Sent',
+    description: 'Your enquiry is being reviewed.',
+  }
+}
+
+export function getApplicationStep(status) {
+  const index = applicationStatusSteps.indexOf(status)
+  if (index >= 0) return index + 1
+  if (['rejected', 'closed', 'viewing cancelled', 'withdrawn'].includes(status)) return applicationStatusSteps.length
+  return 1
+}
+
+export function getPipelineGroup(status) {
+  if (['sent', 'viewed'].includes(status)) return 'new'
+  if (status === 'landlord interested') return 'interested'
+  if (status === 'shortlisted') return 'shortlisted'
+  if (['viewing proposed', 'viewing confirmed'].includes(status)) return 'viewing'
+  return 'closed'
+}
+
+export function isClosedStatus(status) {
+  return ['rejected', 'closed', 'viewing cancelled', 'withdrawn'].includes(status)
+}
+
+export function isLandlordEngagedStatus(status) {
+  return ['landlord interested', 'shortlisted', 'viewing proposed', 'viewing confirmed'].includes(status)
+}
+
+export function canListingReceiveEnquiry(property) {
+  return ['published', 'active'].includes(property?.listingStatus)
+}
+
+export function getViewingRows(enquiries, role) {
+  return enquiries
+    .filter((enquiry) => ['viewing proposed', 'viewing confirmed'].includes(enquiry.viewing?.status))
+    .map((enquiry) => ({
+      id: enquiry.id,
+      property: enquiry.property,
+      tenant: enquiry.tenant,
+      status: getApplicationStatus(enquiry.viewing.status).label,
+      slot: enquiry.viewing.selectedSlot || enquiry.viewing.proposedSlots?.[0] || 'Time to be agreed',
+      role,
+    }))
+}
+
+export function getPrimaryTrustSignal(property) {
+  const trust = property?.trust || {}
+  if (trust.propertyVerification === 'verified') return 'Property reviewed'
+  if (trust.landlordVerification === 'verified') return 'Verified landlord'
+  if (trust.identityStatus === 'checked') return 'Identity checked'
+  if (trust.phoneVerified) return 'Phone verified'
+  return ''
+}
+
+export function getTrustSignals(property) {
+  const trust = property?.trust || {}
+  return [
+    trust.emailVerified ? 'Email verified' : null,
+    trust.phoneVerified ? 'Phone verified' : null,
+    trust.identityStatus === 'checked' ? 'Identity checked' : null,
+    trust.landlordVerification === 'verified' ? 'Landlord verified' : null,
+    trust.propertyVerification === 'verified' ? 'Property reviewed' : null,
+  ].filter(Boolean)
+}
+
+export function isNewProperty(property, now = new Date()) {
+  if (!property?.createdAt) return false
+  const created = new Date(property.createdAt)
+  if (Number.isNaN(created.getTime())) return false
+  const ageDays = (new Date(now).getTime() - created.getTime()) / 86400000
+  return ageDays >= 0 && ageDays <= 14
+}
+
+export function getTenantProfileCompleteness(profile) {
+  const budgetReady = Number(profile.budgetMin) >= 0 && Number(profile.budgetMax) > 0 && Number(profile.budgetMin) <= Number(profile.budgetMax)
+  const checks = [
+    { id: 'budget', label: 'Budget range', complete: budgetReady },
+    { id: 'preferredAreas', label: 'Preferred areas', complete: Array.isArray(profile.preferredAreas) ? profile.preferredAreas.length > 0 : Boolean(String(profile.preferredAreas || '').trim()) },
+    { id: 'moveInDate', label: 'Move-in date', complete: Boolean(profile.moveInDate) },
+    { id: 'householdSize', label: 'Household size', complete: Number(profile.householdSize) >= 1 },
+    { id: 'employmentStatus', label: 'Employment details', complete: Boolean(profile.employmentStatus) },
+    { id: 'referencesReady', label: 'References readiness', complete: Boolean(profile.referencesReady) },
+    { id: 'incomeReady', label: 'Proof of income readiness', complete: Boolean(profile.incomeReady) },
+    { id: 'idReady', label: 'ID readiness', complete: Boolean(profile.idReady) },
+    { id: 'bio', label: 'Short introduction', complete: Boolean(String(profile.bio || '').trim()) },
+  ]
+  const completed = checks.filter((item) => item.complete).length
+  return {
+    percent: Math.round((completed / checks.length) * 100),
+    missing: checks.filter((item) => !item.complete),
+    completed,
+    total: checks.length,
+  }
+}
