@@ -3,16 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import MatchBadge from '../components/MatchBadge'
+import { getApplicationActions } from '../config/applicationTransitions'
 import { applicantPipelineTabs, getPipelineGroup } from '../config/rentalJourney'
+import { isRoomListing } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate, getFutureViewingSlots } from '../utils/dateUtils'
-
-const applicantActions = [
-  ['landlord interested', 'Interested'],
-  ['shortlisted', 'Shortlist'],
-  ['rejected', 'Not suitable'],
-]
 
 export default function Applicants() {
   const navigate = useNavigate()
@@ -92,6 +88,7 @@ export default function Applicants() {
 
             {propertyApplicants.map((enquiry, index) => {
               const tenant = enquiry.tenant
+              const roomListing = isRoomListing(property.listingCategory)
               const docsReady = [tenant.referencesReady, tenant.incomeReady, tenant.idReady].filter(Boolean).length
               const isMutual = ['landlord interested', 'shortlisted', 'viewing proposed', 'viewing confirmed'].includes(enquiry.status)
               const handleStatusChange = (status) => {
@@ -105,25 +102,27 @@ export default function Applicants() {
               return (
                 <article key={enquiry.id} className="card-surface card-shadow rounded-[26px] p-4 md:p-5">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap gap-2">
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">#{index + 1}</span>
                         <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-soft">{enquiry.statusLabel}</span>
                         {isMutual ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Mutual interest</span> : null}
                       </div>
                       <h3 className="mt-3 truncate text-xl font-semibold text-slate-950">{tenant.name || 'Tenant applicant'}</h3>
-                      <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{tenant.bio}</p>
                     </div>
-                    <MatchBadge score={enquiry.match.score} />
+                    <div className="shrink-0 scale-90">
+                      <MatchBadge score={enquiry.match.score} compact />
+                    </div>
                   </div>
+
+                  <ApplicantText message={enquiry.message} bio={tenant.bio} />
 
                   <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3">
                     <Info label="Budget" value={`${formatCurrency(tenant.budgetMin)}-${formatCurrency(tenant.budgetMax)}`} />
                     <Info label="Move-in" value={formatDate(tenant.moveInDate)} />
                     <Info label="Household" value={`${tenant.householdSize}`} />
-                    <Info label="Employment" value={tenant.employmentStatus} />
-                    <Info label="References" value={tenant.referencesReady ? 'Ready' : 'Not ready'} />
-                    <Info label="Documents" value={`${docsReady}/3 ready`} />
+                    {roomListing ? <Info label="Couple" value={tenant.coupleRequirement || Number(tenant.householdSize) > 1 ? 'Required' : 'No'} /> : null}
+                    <Info label="Readiness" value={`${docsReady}/3 ready`} />
                   </div>
 
                   <div className="mt-4 rounded-[20px] border border-slate-100 bg-slate-50/78 px-4 py-3">
@@ -135,22 +134,35 @@ export default function Applicants() {
                     </ul>
                   </div>
 
-                  <div className="mt-4 grid gap-2 min-[380px]:grid-cols-2 md:grid-cols-5">
-                    {applicantActions.map(([status, label]) => (
-                      <Button key={status} variant="secondary" disabled={enquiry.status === status} onClick={() => handleStatusChange(status)}>
-                        {label}
-                      </Button>
-                    ))}
+                  <div className="mt-4 grid gap-2 min-[380px]:grid-cols-2 md:grid-cols-3">
+                    {getApplicationActions(enquiry.status)
+                      .filter((action) => action.status !== 'viewing proposed' && !action.destructive && action.status !== 'closed')
+                      .map((action) => (
+                        <Button key={action.status} variant="secondary" onClick={() => handleStatusChange(action.status)}>
+                          {action.label}
+                        </Button>
+                      ))}
                     <Button variant="dark" onClick={() => navigate(`/messages/${openConversationForEnquiry(enquiry.id)}`)}>
                       Message
                     </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => proposeViewing(enquiry.id, property.viewingSlots?.length ? property.viewingSlots : getFutureViewingSlots())}
-                    >
-                      Arrange viewing
-                    </Button>
+                    {getApplicationActions(enquiry.status).some((action) => action.status === 'viewing proposed') ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => proposeViewing(enquiry.id, property.viewingSlots?.length ? property.viewingSlots : getFutureViewingSlots())}
+                      >
+                        Arrange viewing
+                      </Button>
+                    ) : null}
                   </div>
+                  {getApplicationActions(enquiry.status).some((action) => action.destructive) && confirmRejectId !== enquiry.id ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRejectId(enquiry.id)}
+                      className="mt-3 min-h-11 rounded-2xl px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-100"
+                    >
+                      Not suitable
+                    </button>
+                  ) : null}
                   {confirmRejectId === enquiry.id ? (
                     <div className="mt-3 rounded-[20px] border border-amber-100 bg-amber-50 px-4 py-3">
                       <p className="text-sm font-semibold text-amber-950">Mark this applicant as not suitable?</p>
@@ -184,6 +196,38 @@ function Info({ label, value }) {
     <div className="surface-line rounded-[18px] bg-slate-50/78 px-3 py-3">
       <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</div>
       <div className="mt-1 truncate text-sm font-semibold text-slate-800">{value}</div>
+    </div>
+  )
+}
+
+function ApplicantText({ bio, message }) {
+  const [expanded, setExpanded] = useState(false)
+  const text = String(message || bio || '').trim()
+  const secondary = message && bio && message.trim() !== bio.trim() ? bio.trim() : ''
+  const isLong = text.length > 180 || secondary.length > 120
+
+  if (!text && !secondary) return null
+
+  return (
+    <div className="mt-4 rounded-[20px] border border-slate-100 bg-white px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Applicant message</p>
+      <p className={`mt-2 text-sm leading-6 text-slate-700 ${!expanded && isLong ? 'line-clamp-4' : ''}`}>
+        {text}
+      </p>
+      {secondary ? (
+        <p className={`mt-2 text-sm leading-6 text-slate-600 ${!expanded && isLong ? 'line-clamp-2' : ''}`}>
+          {secondary}
+        </p>
+      ) : null}
+      {isLong ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="mt-2 min-h-10 rounded-full px-3 text-sm font-semibold text-indigo-900 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
     </div>
   )
 }

@@ -1,0 +1,273 @@
+import { describe, expect, it } from 'vitest'
+import { canTransitionApplication, terminalApplicationStatuses } from '../config/applicationTransitions'
+import { normalizePropertyType, normalizeLeaseMonths, normalizeSmoking } from '../config/domainOptions'
+import { getBrowseFacts, getSmartMatchFacts } from '../config/listingPresentation'
+import { normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
+import { propertyMatchesFilters } from '../config/discoveryFilters'
+import {
+  LISTING_CATEGORIES,
+  canChangeListingCategory,
+  getListingCompleteness,
+  inferListingCategory,
+  normalizeListingForStorage,
+  validateListingForReview,
+  validateRoomCapacity,
+} from '../config/listingCategories'
+import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
+import { validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
+import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
+import { directionalDayGap, isPastIsoDate } from '../utils/dateUtils'
+import { hasDuplicateEnquiry, hasDuplicateRecentMessage, sanitizeMessageBody } from '../utils/messagingRules'
+
+const tenant = {
+  targetCity: 'Dublin',
+  preferredAreas: ['Rathmines'],
+  budgetMin: 1400,
+  budgetMax: 2200,
+  moveInDate: '2027-02-01',
+  householdSize: 2,
+  leaseLength: '12',
+  furnishedPreference: 'furnished',
+  parkingNeeded: 'no',
+  smoking: 'no',
+  pets: 'none',
+  referencesReady: true,
+  incomeReady: true,
+  idReady: true,
+}
+
+const property = {
+  city: 'Dublin',
+  area: 'Rathmines',
+  rent: 1200,
+  availableFrom: '2027-02-10',
+  maxOccupants: 2,
+  minStayMonths: 6,
+  furnished: 'furnished',
+  parking: 'none',
+  smokingAllowed: 'no',
+  petsAllowed: 'not_allowed',
+}
+
+describe('application transitions', () => {
+  it('prevents normal regressions and terminal reopen', () => {
+    expect(canTransitionApplication('shortlisted', 'landlord interested')).toBe(false)
+    expect(canTransitionApplication('viewing proposed', 'landlord interested')).toBe(false)
+    expect(canTransitionApplication('viewing confirmed', 'shortlisted')).toBe(false)
+    for (const status of terminalApplicationStatuses) {
+      expect(canTransitionApplication(status, 'viewing proposed')).toBe(false)
+    }
+  })
+
+  it('allows cancelling a viewing without closing the application forever', () => {
+    expect(canTransitionApplication('viewing confirmed', 'viewing cancelled')).toBe(true)
+    expect(canTransitionApplication('viewing cancelled', 'viewing proposed')).toBe(true)
+  })
+})
+
+describe('viewing slots', () => {
+  it('rejects duplicate, past, excessive and invalid proposals', () => {
+    const future = '2030-01-02T11:00:00.000Z'
+    expect(validateViewingProposal([future, future], '2030-01-01T00:00:00.000Z').valid).toBe(false)
+    expect(validateViewingProposal(['2020-01-02T11:00:00.000Z'], '2030-01-01T00:00:00.000Z').valid).toBe(false)
+    expect(validateViewingProposal([future, '2030-01-02T12:00:00.000Z', '2030-01-02T13:00:00.000Z', '2030-01-02T14:00:00.000Z']).valid).toBe(false)
+    expect(validateViewingProposal(['not a date']).valid).toBe(false)
+  })
+
+  it('confirms only a current proposed future slot', () => {
+    const proposal = validateViewingProposal(['2030-01-02T11:00:00.000Z'], '2030-01-01T00:00:00.000Z')
+    expect(validateViewingChoice({ status: 'viewing proposed', proposedSlots: proposal.slots }, proposal.slots[0].id, '2030-01-01T00:00:00.000Z').valid).toBe(true)
+    expect(validateViewingChoice({ status: 'viewing proposed', proposedSlots: proposal.slots }, 'other', '2030-01-01T00:00:00.000Z').valid).toBe(false)
+    expect(validateViewingChoice({ status: 'viewing confirmed', proposedSlots: proposal.slots }, proposal.slots[0].id, '2030-01-01T00:00:00.000Z').valid).toBe(false)
+  })
+})
+
+describe('messaging rules', () => {
+  it('sanitizes and detects repeated messages', () => {
+    const body = sanitizeMessageBody('  Hi\n\nthere  ')
+    expect(body).toBe('Hi there')
+    expect(hasDuplicateRecentMessage({ messages: [{ sender: 'tenant', body, createdAt: '2030-01-01T00:00:00.000Z' }] }, 'tenant', body, new Date('2030-01-01T00:00:04.000Z').getTime())).toBe(true)
+  })
+
+  it('detects duplicate enquiries by tenant and property', () => {
+    expect(hasDuplicateEnquiry([{ propertyId: 'p1', tenantId: 't1' }], 'p1', 't1')).toBe(true)
+    expect(hasDuplicateEnquiry([{ propertyId: 'p1', tenantId: 't1' }], 'p1', 't2')).toBe(false)
+  })
+})
+
+describe('matching and dates', () => {
+  it('does not penalize cheaper rent and caps hard stops', () => {
+    const result = calculatePropertyMatch(tenant, { ...property, maxOccupants: 1 })
+    expect(result.reasons).toContain('The monthly rent is below your stated minimum budget.')
+    expect(result.hardStops).toContain('The listed maximum occupancy is too small for your household.')
+    expect(result.score).toBeLessThanOrEqual(58)
+  })
+
+  it('uses directional local date gaps and avoids invalid date positives', () => {
+    expect(directionalDayGap('2027-02-01', '2027-02-10')).toBe(9)
+    expect(isPastIsoDate('2027-02-01', '2027-02-02')).toBe(true)
+    const result = calculatePropertyMatch(tenant, { ...property, availableFrom: 'not-a-date' })
+    expect(result.warnings).toContain('Move-in timing is incomplete, so date fit is not scored.')
+  })
+
+  it('applies room matching hard stops and preferences', () => {
+    const room = {
+      ...property,
+      listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
+      roomType: 'double',
+      bathroomArrangement: 'shared',
+      maxOccupants: 1,
+      currentHouseholdSize: 1,
+      maxHouseholdSize: 2,
+      couplesAccepted: false,
+      billsIncluded: false,
+    }
+    const result = calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, coupleRequirement: true, privateBathroomPreferred: true, billsIncludedPreferred: true }, room)
+    expect(result.hardStops).toContain('Couples are not accepted for this room.')
+    expect(result.hardStops).toContain('Household capacity exceeded.')
+    expect(result.warnings).toContain('This room has a shared bathroom.')
+    expect(result.warnings).toContain('Bills are separate for this room.')
+  })
+
+  it('honours owner occupied tenant preference only when explicitly excluded', () => {
+    const room = {
+      ...property,
+      listingCategory: LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM,
+      roomType: 'ensuite',
+      bathroomArrangement: 'ensuite',
+      maxOccupants: 1,
+      currentHouseholdSize: 1,
+      maxHouseholdSize: 2,
+      couplesAccepted: false,
+    }
+    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 1, ownerOccupiedAcceptable: false }, room).hardStops).toContain('Owner-occupied excluded by tenant preference.')
+    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 1, ownerOccupiedAcceptable: true }, room).hardStops).not.toContain('Owner-occupied excluded by tenant preference.')
+  })
+
+  it('rewards room private bathroom preference when available', () => {
+    const room = {
+      ...property,
+      listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
+      roomType: 'ensuite',
+      bathroomArrangement: 'ensuite',
+      maxOccupants: 1,
+      currentHouseholdSize: 1,
+      maxHouseholdSize: 2,
+      couplesAccepted: false,
+    }
+    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 1, privateBathroomPreferred: true }, room).reasons).toContain('The bathroom arrangement matches your private bathroom preference.')
+  })
+})
+
+describe('domain and listing rules', () => {
+  it('normalizes shared domain values', () => {
+    expect(normalizePropertyType('One-bedroom apartment')).toBe('apartment')
+    expect(normalizeLeaseMonths('12+ months')).toBe('12')
+    expect(normalizeSmoking('Outside only')).toBe('outside_only')
+  })
+
+  it('limits listing lifecycle and discovery eligibility', () => {
+    expect(canTransitionListing('pending_verification', 'published')).toBe(false)
+    expect(canTransitionListing('paused', 'published')).toBe(true)
+    expect(canListingReceiveEnquiry({ listingStatus: 'rented' })).toBe(false)
+    expect(propertyMatchesFilters({ ...property, listingStatus: 'rented' }, { location: 'Any', listingCategory: 'Any' })).toBe(false)
+  })
+})
+
+describe('listing categories', () => {
+  const validBase = {
+    title: 'Bright listing in Rathmines',
+    rent: 1200,
+    deposit: 1200,
+    area: 'Rathmines',
+    availableFrom: '2030-02-01',
+    minStayMonths: 6,
+    description: 'A clear listing description with enough detail for renters to understand the home.',
+    bathrooms: 1,
+  }
+
+  it('normalizes category and legacy property values', () => {
+    expect(normalizeListingForStorage({ propertyType: 'One-bedroom apartment', bedrooms: 1 }).listingCategory).toBe(LISTING_CATEGORIES.ENTIRE_PROPERTY)
+    expect(normalizeListingForStorage({ propertyType: 'One-bedroom apartment', bedrooms: 1 }).propertyType).toBe('apartment')
+    expect(inferListingCategory({ roomType: 'Double' })).toBe(LISTING_CATEGORIES.PRIVATE_ROOM)
+    expect(inferListingCategory({ ownerLivesInProperty: true })).toBe(LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM)
+  })
+
+  it('filters by listing category and room-specific options', () => {
+    const room = {
+      ...property,
+      listingStatus: 'published',
+      listingCategory: LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM,
+      roomType: 'double',
+      bathroomArrangement: 'private',
+      billsIncluded: true,
+      couplesAccepted: true,
+      furnished: 'furnished',
+      parking: 'none',
+    }
+    expect(propertyMatchesFilters(room, { location: 'Any', listingCategory: 'room', privateBathroom: 'Required', billsIncluded: 'Required', ownerOccupied: 'Required', couplesAccepted: 'Required', roomType: 'double', furnishedPreference: 'Any', parking: 'Any', bedrooms: 'Any', pets: 'Any', leaseLength: 'Any' })).toBe(true)
+    expect(propertyMatchesFilters(room, { location: 'Any', listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, furnishedPreference: 'Any', parking: 'Any', bedrooms: 'Any', pets: 'Any', leaseLength: 'Any' })).toBe(false)
+  })
+
+  it('returns category-specific card labels from pure presentation helpers', () => {
+    const entireFacts = getSmartMatchFacts({ ...property, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: 2, furnished: 'furnished', parking: 'included', billsIncluded: false })
+    const roomFacts = getBrowseFacts({ ...property, listingCategory: LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM, roomType: 'ensuite', bathroomArrangement: 'ensuite', billsIncluded: true })
+    expect(entireFacts.map((fact) => fact.label)).toContain('Beds')
+    expect(roomFacts).toContainEqual({ label: 'Owner', value: 'Owner lives here' })
+  })
+
+  it('normalizes photo metadata by category and rejects invalid files', () => {
+    const photos = normalizePhotoMetadata([{ src: 'a', label: 'Kitchen' }, { src: 'a', label: 'Other' }, { src: 'b', label: 'Bathroom' }], LISTING_CATEGORIES.PRIVATE_ROOM)
+    expect(photos).toHaveLength(2)
+    expect(photos[0].label).toBe('Kitchen')
+    expect(photos[0].isCover).toBe(true)
+    const file = { name: 'notes.txt', type: 'text/plain', size: 10 }
+    expect(validatePhotoFiles([file], []).errors[0]).toBe('notes.txt is not an image.')
+  })
+
+  it('normalizes studio bedrooms separately from property type labels', () => {
+    const listing = normalizeListingForStorage({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', bedrooms: 2 })
+    expect(listing.propertyType).toBe('studio')
+    expect(listing.bedrooms).toBe(0)
+  })
+
+  it('normalizes room ownership flags by category', () => {
+    expect(normalizeListingForStorage({ listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM, ownerLivesInProperty: true }).ownerLivesInProperty).toBe(false)
+    expect(normalizeListingForStorage({ listingCategory: LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM, ownerLivesInProperty: false }).ownerLivesInProperty).toBe(true)
+  })
+
+  it('uses category-specific required fields', () => {
+    const entire = validateListingForReview({ ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: 1, maxOccupants: 1 }, '2030-01-01')
+    const room = validateListingForReview(
+      {
+        ...validBase,
+        listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
+        roomType: 'double',
+        bathroomArrangement: 'shared',
+        totalBedrooms: 3,
+        currentHouseholdSize: 2,
+        maxHouseholdSize: 3,
+      },
+      '2030-01-01',
+    )
+    expect(entire.valid).toBe(true)
+    expect(room.valid).toBe(true)
+    expect(validateListingForReview({ ...validBase, listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM }, '2030-01-01').valid).toBe(false)
+  })
+
+  it('validates room capacity', () => {
+    expect(validateRoomCapacity({ currentHouseholdSize: 2, maxHouseholdSize: 2 }).valid).toBe(false)
+    expect(validateRoomCapacity({ currentHouseholdSize: 2, maxHouseholdSize: 3 }).valid).toBe(true)
+  })
+
+  it('protects unsafe category changes by lifecycle state', () => {
+    expect(canChangeListingCategory({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, listingStatus: 'draft' }, LISTING_CATEGORIES.PRIVATE_ROOM).requiresConfirmation).toBe(true)
+    expect(canChangeListingCategory({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, listingStatus: 'pending_verification' }, LISTING_CATEGORIES.PRIVATE_ROOM).allowed).toBe(false)
+    expect(canChangeListingCategory({ listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM, listingStatus: 'draft' }, LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM).allowed).toBe(true)
+  })
+
+  it('calculates listing completeness per category', () => {
+    expect(getListingCompleteness({ ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', maxOccupants: 1 }, '2030-01-01').complete).toBe(true)
+    expect(getListingCompleteness({ ...validBase, listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM, roomType: 'double' }, '2030-01-01').complete).toBe(false)
+  })
+})

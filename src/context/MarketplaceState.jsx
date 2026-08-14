@@ -1,9 +1,26 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { canListingReceiveEnquiry, getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
+import { canTransitionApplication, nextViewingStatusForApplication } from '../config/applicationTransitions'
+import {
+  ANY_VALUE,
+  normalizeFurnished,
+  normalizeLeaseMonths,
+  normalizeParking,
+  normalizePet,
+  normalizePetPolicy,
+  normalizeSmoking,
+} from '../config/domainOptions'
+import { propertyMatchesFilters } from '../config/discoveryFilters'
+import { LISTING_CATEGORIES, normalizeListingForStorage } from '../config/listingCategories'
+import { normalizePhotoMetadata } from '../config/photoMetadata'
+import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
+import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
 import { smartMatchAccess } from '../config/smartMatch'
+import { normalizeViewingSlots, validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { mockConversations, mockEnquiries, mockProperties, mockTenants } from '../data/marketplace'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { getFutureViewingSlots } from '../utils/dateUtils'
+import { getLocalDateKey } from '../utils/localDate'
+import { hasDuplicateEnquiry, hasDuplicateRecentMessage, sanitizeMessageBody } from '../utils/messagingRules'
 import AppStateContext from './AppStateContext'
 import {
   getAccount,
@@ -50,6 +67,11 @@ const defaultTenantProfile = {
   idReady: false,
   bio: '',
   notifications: 'Email and app',
+  lookingFor: 'any',
+  privateBathroomPreferred: false,
+  billsIncludedPreferred: false,
+  ownerOccupiedAcceptable: true,
+  coupleRequirement: false,
 }
 
 const defaultLandlordProfile = {
@@ -77,7 +99,13 @@ const defaultPropertyFilters = {
   priceMax: '',
   location: 'Any',
   moveInBy: '',
+  listingCategory: 'Any',
   propertyType: 'Any',
+  roomType: 'Any',
+  privateBathroom: 'Any',
+  billsIncluded: 'Any',
+  ownerOccupied: 'Any',
+  couplesAccepted: 'Any',
   furnishedPreference: 'Any',
   bedrooms: 'Any',
   pets: 'Any',
@@ -94,29 +122,32 @@ function normalize(value) {
 
 function normalizeStoredProperty(property) {
   const isLegacyCreatedListing = property.source === 'created' && !property.ownerId
-  const propertyType = property.propertyType || property.roomType || 'Apartment'
-  const viewingSlots = property.viewingSlots?.length && property.viewingSlots.every((slot) => String(slot).includes(','))
-    ? property.viewingSlots
-    : getFutureViewingSlots()
+  const normalizedListing = normalizeListingForStorage(property)
+  const { propertyType } = normalizedListing
+  const viewingSlots = normalizeViewingSlots(property.viewingSlots)
 
   return {
-    ...property,
+    ...normalizedListing,
     ownerId: property.ownerId || (isLegacyCreatedListing ? currentOwnerId : undefined),
     ownerName: property.ownerName || property.landlordName || defaultLandlordProfile.displayName,
     ownerType: property.ownerType || 'Private landlord',
-    propertyType,
-    bedrooms: property.bedrooms ?? (property.roomType ? 1 : 0),
-    bathrooms: property.bathrooms ?? 1,
-    maxOccupants: property.maxOccupants ?? 1,
-    furnished: property.furnished || 'Furnished',
-    parking: property.parking || 'No',
+    bedrooms: normalizedListing.bedrooms,
+    bathrooms: normalizedListing.bathrooms,
+    maxOccupants: normalizedListing.maxOccupants,
+    furnished: normalizeFurnished(normalizedListing.furnished || 'Furnished'),
+    parking: normalizeParking(normalizedListing.parking || 'No'),
     minStayMonths: property.minStayMonths || 6,
     listingStatus: property.listingStatus || (isLegacyCreatedListing ? 'pending_verification' : 'published'),
     listingRules: property.listingRules || property.houseRules || [],
     features: property.features || property.amenities || [propertyType],
     images: property.images?.length ? property.images : [defaultPropertyImage],
+    photoMetadata: normalizePhotoMetadata(property.photoMetadata || property.images || [defaultPropertyImage], normalizedListing.listingCategory),
     viewingType: property.viewingType || 'In-person',
-    viewingSlots,
+    updatedAt: property.updatedAt || property.createdAt || '',
+    availabilityConfirmedAt: property.availabilityConfirmedAt || '',
+    smokingAllowed: normalizeSmoking(normalizedListing.smokingAllowed || 'No'),
+    petsAllowed: normalizePetPolicy(normalizedListing.petsAllowed || 'Not comfortable'),
+    viewingSlots: viewingSlots.length ? viewingSlots : getFutureViewingSlots(),
     trust: property.trust || {
       emailVerified: false,
       phoneVerified: false,
@@ -126,6 +157,11 @@ function normalizeStoredProperty(property) {
       internalDemoState: true,
     },
   }
+}
+
+function mergeLocalAndMockProperties(localProperties, mockProperties) {
+  const localIds = new Set(localProperties.map((property) => property.id))
+  return [...localProperties, ...mockProperties.filter((property) => !localIds.has(property.id))]
 }
 
 function normalizeStoredConversation(conversation) {
@@ -146,40 +182,20 @@ function normalizeStoredConversation(conversation) {
 
 function normalizeStoredEnquiry(enquiry) {
   const viewing = enquiry.viewing || { status: 'none', proposedSlots: [], selectedSlot: '' }
-  const hasAmbiguousSlots = (viewing.proposedSlots || []).some((slot) => !String(slot).includes(','))
-  const proposedSlots = viewing.status === 'viewing proposed' && hasAmbiguousSlots
-    ? getFutureViewingSlots()
-    : viewing.proposedSlots || []
-  const selectedSlot = viewing.selectedSlot && !String(viewing.selectedSlot).includes(',')
-    ? proposedSlots[0] || viewing.selectedSlot
-    : viewing.selectedSlot || ''
+  const proposedSlots = normalizeViewingSlots(viewing.proposedSlots)
+  const selectedSlot = normalizeViewingSlots([viewing.selectedSlot])[0] || null
+  const status = enquiry.status || 'sent'
 
   return {
     ...enquiry,
+    status,
     viewing: {
       ...viewing,
+      status: nextViewingStatusForApplication(status, viewing.status || 'none'),
       proposedSlots,
       selectedSlot,
     },
   }
-}
-
-function propertyMatchesFilters(property, filters) {
-  if (!['published', 'active'].includes(property.listingStatus)) return false
-  if (filters.priceMin && property.rent < Number(filters.priceMin)) return false
-  if (filters.priceMax && property.rent > Number(filters.priceMax)) return false
-  if (filters.location !== 'Any') {
-    const target = normalize(filters.location)
-    if (normalize(property.city) !== target && normalize(property.area) !== target) return false
-  }
-  if (filters.moveInBy && new Date(property.availableFrom).getTime() > new Date(filters.moveInBy).getTime()) return false
-  if (filters.propertyType !== 'Any' && normalize(property.propertyType) !== normalize(filters.propertyType)) return false
-  if (filters.furnishedPreference !== 'Any' && normalize(property.furnished) !== normalize(filters.furnishedPreference)) return false
-  if (filters.bedrooms !== 'Any' && property.bedrooms < Number(filters.bedrooms)) return false
-  if (filters.pets === 'Required' && normalize(property.petsAllowed) !== 'comfortable') return false
-  if (filters.parking === 'Required' && normalize(property.parking) === 'no') return false
-  if (filters.leaseLength !== 'Any' && Number.parseInt(filters.leaseLength, 10) < Number(property.minStayMonths || 0)) return false
-  return true
 }
 
 function getStatusLabel(status) {
@@ -190,7 +206,7 @@ function getListingStatusLabel(status) {
   const labels = {
     published: 'published',
     active: 'published',
-    pending_verification: 'sent for review',
+    pending_verification: 'in review',
     draft: 'saved as draft',
     paused: 'paused',
     rejected: 'not approved',
@@ -203,6 +219,10 @@ function getPublicPropertyById(properties, propertyId) {
   return properties.find((item) => item.id === propertyId && canListingReceiveEnquiry(item))
 }
 
+function isBlockedThread(conversations, propertyId, tenantId) {
+  return conversations.some((conversation) => conversation.propertyId === propertyId && conversation.tenantId === tenantId && conversation.blockedBy)
+}
+
 function hasLandlordMessage(conversation) {
   return (conversation?.messages || []).some((message) => message.sender === 'landlord')
 }
@@ -212,22 +232,6 @@ function canTenantSendMessage(conversation, enquiry) {
   if (!enquiry) return true
   if (isClosedStatus(enquiry.status)) return false
   return hasLandlordMessage(conversation) || isLandlordEngagedStatus(enquiry.status)
-}
-
-function sanitizeMessageBody(body) {
-  return String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1200)
-}
-
-function hasDuplicateRecentMessage(conversation, sender, body, now) {
-  const lastMessage = (conversation.messages || [])[conversation.messages?.length - 1]
-  if (!lastMessage || lastMessage.sender !== sender || lastMessage.body !== body) return false
-  const lastSentAt = new Date(lastMessage.createdAt).getTime()
-  if (Number.isNaN(lastSentAt)) return false
-  return now - lastSentAt < 5000
-}
-
-function hasValidViewingSlots(slots) {
-  return Array.isArray(slots) && slots.length > 0 && slots.length <= 3 && slots.every((slot) => String(slot || '').includes(','))
 }
 
 export function AppStateProvider({ children }) {
@@ -252,7 +256,7 @@ export function AppStateProvider({ children }) {
 
   const tenants = useMemo(() => [tenantProfile, ...mockTenants], [tenantProfile])
   const baseProperties = useMemo(
-    () => [...localProperties, ...mockProperties].map(normalizeStoredProperty),
+    () => mergeLocalAndMockProperties(localProperties, mockProperties).map(normalizeStoredProperty),
     [localProperties],
   )
   const properties = useMemo(
@@ -269,9 +273,13 @@ export function AppStateProvider({ children }) {
     () => discoveryProperties.filter((property) => !dismissedPropertyIds.includes(property.id)),
     [dismissedPropertyIds, discoveryProperties],
   )
-  const savedProperties = useMemo(
-    () => properties.filter((property) => savedPropertyIds.includes(property.id)),
+  const effectiveSavedPropertyIds = useMemo(
+    () => savedPropertyIds.filter((id) => properties.some((property) => property.id === id)),
     [properties, savedPropertyIds],
+  )
+  const savedProperties = useMemo(
+    () => properties.filter((property) => effectiveSavedPropertyIds.includes(property.id)),
+    [effectiveSavedPropertyIds, properties],
   )
   const enrichedEnquiries = useMemo(
     () =>
@@ -304,7 +312,7 @@ export function AppStateProvider({ children }) {
   const landlordProperties = useMemo(() => properties.filter((property) => property.ownerId === currentOwnerId), [properties])
   const landlordEnquiries = useMemo(() => enrichedEnquiries.filter((enquiry) => enquiry.ownerId === currentOwnerId), [enrichedEnquiries])
   const tenantEnquiries = useMemo(() => enrichedEnquiries.filter((enquiry) => enquiry.tenantId === currentTenantId), [enrichedEnquiries])
-  const todayKey = new Date().toISOString().slice(0, 10)
+  const todayKey = getLocalDateKey()
   const todaysSmartMatchActivity = smartMatchActivity[todayKey] || { cards: 0, interests: 0 }
   const smartMatchUsage = {
     date: todayKey,
@@ -410,11 +418,11 @@ export function AppStateProvider({ children }) {
     conversations: enrichedConversations,
     allConversations: conversations.map(normalizeStoredConversation),
     propertyFilters,
-    savedPropertyIds,
+    savedPropertyIds: effectiveSavedPropertyIds,
     dismissedPropertyIds,
     smartMatchUsage,
     toast,
-    activeFilterCount: Object.entries(propertyFilters).filter(([, value]) => value && value !== 'Any').length,
+    activeFilterCount: Object.entries(propertyFilters).filter(([, value]) => value && !['Any', ANY_VALUE].includes(value)).length,
     dismissToast: () => setToast(null),
     selectRole(role, landlordType = null) {
       persistAccount({ role, landlordType, completed: true })
@@ -425,7 +433,21 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'info', message: `Switched to ${role === 'tenant' ? 'tenant' : 'landlord'} mode.` })
     },
     saveTenantProfile(profile) {
-      const next = { ...defaultTenantProfile, ...profile, id: currentTenantId }
+      const next = {
+        ...defaultTenantProfile,
+        ...profile,
+        id: currentTenantId,
+        leaseLength: normalizeLeaseMonths(profile.leaseLength, 12),
+        furnishedPreference: [ANY_VALUE, 'Any'].includes(profile.furnishedPreference) ? ANY_VALUE : normalizeFurnished(profile.furnishedPreference),
+        pets: normalizePet(profile.pets),
+        smoking: normalizeSmoking(profile.smoking),
+        parkingNeeded: normalize(profile.parkingNeeded) === 'yes' ? 'yes' : 'no',
+        lookingFor: ['any', LISTING_CATEGORIES.ENTIRE_PROPERTY, 'room'].includes(profile.lookingFor) ? profile.lookingFor : 'any',
+        privateBathroomPreferred: Boolean(profile.privateBathroomPreferred),
+        billsIncludedPreferred: Boolean(profile.billsIncludedPreferred),
+        ownerOccupiedAcceptable: profile.ownerOccupiedAcceptable !== false,
+        coupleRequirement: Boolean(profile.coupleRequirement),
+      }
       setTenantProfile(next)
       setTenantProfileState(next)
       setToast({ type: 'success', message: 'Tenant profile saved.' })
@@ -468,6 +490,10 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'info', message: 'Property dismissed.' })
     },
     passSmartMatchProperty(propertyId) {
+      if (!smartMatchAccess.launchMode && todaysSmartMatchActivity.cards >= smartMatchAccess.dailyCardAllowance) {
+        setToast({ type: 'info', message: 'Daily Smart Match card limit reached. Browse is still available.' })
+        return
+      }
       if (!getPublicPropertyById(properties, propertyId) || dismissedPropertyIds.includes(propertyId)) return
       const next = dismissedPropertyIds.includes(propertyId) ? dismissedPropertyIds : [...dismissedPropertyIds, propertyId]
       setDismissedPropertyIds(next)
@@ -478,7 +504,7 @@ export function AppStateProvider({ children }) {
     startOver() {
       setDismissedPropertyIds([])
       setDismissedPropertyIdsState([])
-      setToast({ type: 'info', message: 'Discovery reset.' })
+      setToast({ type: 'info', message: 'Discovery reset. Daily usage is unchanged.' })
     },
     createEnquiry(propertyId, message = '') {
       if (account?.role === 'landlord') {
@@ -487,6 +513,10 @@ export function AppStateProvider({ children }) {
       }
       const existing = enquiries.find((enquiry) => enquiry.propertyId === propertyId && enquiry.tenantId === currentTenantId)
       if (existing) return getOrCreateConversationForEnquiry(existing)
+      if (isBlockedThread(conversations, propertyId, currentTenantId)) {
+        setToast({ type: 'info', message: 'Messaging is blocked for this listing.' })
+        return null
+      }
       const property = getPublicPropertyById(properties, propertyId)
       if (!property) {
         setToast({ type: 'info', message: 'This listing is not accepting new enquiries.' })
@@ -513,9 +543,23 @@ export function AppStateProvider({ children }) {
         setToast({ type: 'info', message: 'Switch to tenant mode to send interest.' })
         return null
       }
-      const existing = enquiries.find((enquiry) => enquiry.propertyId === propertyId && enquiry.tenantId === currentTenantId)
+      const existing = hasDuplicateEnquiry(enquiries, propertyId, currentTenantId)
+        ? enquiries.find((enquiry) => enquiry.propertyId === propertyId && enquiry.tenantId === currentTenantId)
+        : null
       let conversationId = existing ? getOrCreateConversationForEnquiry(existing) : null
       if (!conversationId) {
+        if (!smartMatchAccess.launchMode && todaysSmartMatchActivity.interests >= smartMatchAccess.dailyInterestAllowance) {
+          setToast({ type: 'info', message: 'Daily interest limit reached. You can still browse and save listings.' })
+          return null
+        }
+        if (!smartMatchAccess.launchMode && todaysSmartMatchActivity.cards >= smartMatchAccess.dailyCardAllowance) {
+          setToast({ type: 'info', message: 'Daily Smart Match card limit reached. Browse is still available.' })
+          return null
+        }
+        if (isBlockedThread(conversations, propertyId, currentTenantId)) {
+          setToast({ type: 'info', message: 'Messaging is blocked for this listing.' })
+          return null
+        }
         const property = getPublicPropertyById(properties, propertyId)
         if (!property) {
           setToast({ type: 'info', message: 'This listing is not accepting new enquiries.' })
@@ -548,34 +592,53 @@ export function AppStateProvider({ children }) {
       const enquiry = enquiries.find((item) => item.id === enquiryId)
       return enquiry ? getOrCreateConversationForEnquiry(enquiry) : null
     },
+    markConversationRead(conversationId) {
+      const reader = account?.role === 'landlord' ? 'landlord' : 'tenant'
+      const target = conversations.find((conversation) => conversation.id === conversationId)
+      if (!target || target.unreadFor !== reader) return
+      persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, unreadFor: null } : conversation)))
+    },
     updateEnquiryStatus(enquiryId, status) {
       if (account?.role !== 'landlord') return
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
-      if (!target || target.status === status || isClosedStatus(target.status)) return
+      if (!target || target.status === status || !canTransitionApplication(target.status, status)) return
       const now = new Date().toISOString()
       persistEnquiries(
         enquiries.map((enquiry) => {
           if (enquiry.id !== enquiryId || enquiry.status === status) return enquiry
-          return { ...enquiry, status, updatedAt: now }
+          return {
+            ...enquiry,
+            status,
+            updatedAt: now,
+            viewing: {
+              ...(enquiry.viewing || {}),
+              status: nextViewingStatusForApplication(status, enquiry.viewing?.status),
+              selectedSlot: status === 'viewing cancelled' ? null : enquiry.viewing?.selectedSlot,
+            },
+          }
         }),
       )
       setToast({ type: 'info', message: getStatusLabel(status) })
     },
     proposeViewing(enquiryId, slots) {
-      if (account?.role !== 'landlord' || !hasValidViewingSlots(slots)) return
+      const validation = validateViewingProposal(slots)
+      if (account?.role !== 'landlord' || !validation.valid) {
+        if (!validation.valid) setToast({ type: 'info', message: validation.reason })
+        return
+      }
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
-      if (!target || isClosedStatus(target.status) || target.viewing?.status === 'viewing confirmed') return
-      const currentSlots = target.viewing?.proposedSlots || []
-      const sameSlots = currentSlots.length === slots.length && currentSlots.every((slot, index) => slot === slots[index])
+      if (!target || !canTransitionApplication(target.status, 'viewing proposed')) return
+      const currentSlots = normalizeViewingSlots(target.viewing?.proposedSlots)
+      const sameSlots = currentSlots.length === validation.slots.length && currentSlots.every((slot, index) => slot.id === validation.slots[index].id)
       if (target.viewing?.status === 'viewing proposed' && sameSlots) return
       const now = new Date().toISOString()
       persistEnquiries(
         enquiries.map((enquiry) => {
           if (enquiry.id !== enquiryId) return enquiry
-          const currentSlots = enquiry.viewing?.proposedSlots || []
-          const sameSlots = currentSlots.length === slots.length && currentSlots.every((slot, index) => slot === slots[index])
+          const currentSlots = normalizeViewingSlots(enquiry.viewing?.proposedSlots)
+          const sameSlots = currentSlots.length === validation.slots.length && currentSlots.every((slot, index) => slot.id === validation.slots[index].id)
           if (enquiry.viewing?.status === 'viewing proposed' && sameSlots) return enquiry
-          return { ...enquiry, status: 'viewing proposed', updatedAt: now, viewing: { status: 'viewing proposed', proposedSlots: slots, selectedSlot: '' } }
+          return { ...enquiry, status: 'viewing proposed', updatedAt: now, viewing: { status: 'viewing proposed', proposedSlots: validation.slots, selectedSlot: null } }
         }),
       )
       setToast({ type: 'success', message: 'Viewing times proposed.' })
@@ -583,19 +646,21 @@ export function AppStateProvider({ children }) {
     chooseViewing(enquiryId, slot) {
       if (account?.role !== 'tenant') return
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
-      const proposedSlots = target?.viewing?.proposedSlots || []
-      if (!target || isClosedStatus(target.status) || target.viewing?.status === 'viewing confirmed' || !proposedSlots.includes(slot)) return
+      const validation = validateViewingChoice(target?.viewing, slot)
+      if (!target || !canTransitionApplication(target.status, 'viewing confirmed') || !validation.valid) {
+        if (!validation.valid) setToast({ type: 'info', message: validation.reason })
+        return
+      }
       const now = new Date().toISOString()
       persistEnquiries(
         enquiries.map((enquiry) => {
           if (enquiry.id !== enquiryId) return enquiry
-          const proposedSlots = enquiry.viewing?.proposedSlots || []
-          if (enquiry.viewing?.status === 'viewing confirmed') return enquiry
-          if (!proposedSlots.includes(slot)) return enquiry
-          return { ...enquiry, status: 'viewing confirmed', updatedAt: now, viewing: { ...enquiry.viewing, status: 'viewing confirmed', selectedSlot: slot } }
+          const choice = validateViewingChoice(enquiry.viewing, slot)
+          if (!choice.valid) return enquiry
+          return { ...enquiry, status: 'viewing confirmed', updatedAt: now, viewing: { ...enquiry.viewing, status: 'viewing confirmed', selectedSlot: choice.slot } }
         }),
       )
-      setToast({ type: 'success', message: `Viewing confirmed for ${slot}.` })
+      setToast({ type: 'success', message: `Viewing confirmed for ${validation.slot.label}.` })
     },
     sendMessage(conversationId, body) {
       const trimmedBody = sanitizeMessageBody(body)
@@ -656,7 +721,7 @@ export function AppStateProvider({ children }) {
           conversation.id === conversationId ? { ...conversation, reported: true, reportReason: reason || 'Not specified' } : conversation,
         ),
       )
-      setToast({ type: 'success', message: 'Report noted for review.' })
+      setToast({ type: 'success', message: 'Report saved locally on this device.' })
     },
     blockConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
@@ -664,6 +729,55 @@ export function AppStateProvider({ children }) {
       const blockedBy = account?.role === 'landlord' ? 'landlord' : 'tenant'
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, blockedBy } : conversation)))
       setToast({ type: 'info', message: 'User blocked in this conversation.' })
+    },
+    reportListing(propertyId, reason) {
+      const property = properties.find((item) => item.id === propertyId)
+      if (!property || !String(reason || '').trim()) return
+      const localExists = localProperties.some((item) => item.id === propertyId)
+      const fixture = mockProperties.find((item) => item.id === propertyId)
+      const reportedAt = new Date().toISOString()
+      const update = (item) =>
+        item.id === propertyId
+          ? { ...item, localReport: { reason: String(reason).trim(), reportedAt } }
+          : item
+      const next = localExists
+        ? localProperties.map(update)
+        : fixture
+          ? [{ ...fixture, localReport: { reason: String(reason).trim(), reportedAt } }, ...localProperties]
+          : localProperties
+      persistProperties(next)
+      setToast({ type: 'success', message: 'Report saved locally on this device.' })
+    },
+    blockPropertyOwner(propertyId) {
+      if (account?.role === 'landlord') return
+      const property = properties.find((item) => item.id === propertyId)
+      if (!property) return
+      const now = new Date().toISOString()
+      const existing = conversations.find((conversation) => conversation.propertyId === propertyId && conversation.tenantId === currentTenantId)
+      if (existing) {
+        persistConversations(conversations.map((conversation) => (conversation.id === existing.id ? { ...conversation, blockedBy: 'tenant' } : conversation)))
+      } else {
+        persistConversations([
+          {
+            id: `conversation-block-${propertyId}-${Date.now()}`,
+            propertyId,
+            enquiryId: null,
+            tenantId: currentTenantId,
+            ownerId: property.ownerId || currentOwnerId,
+            archived: true,
+            blockedBy: 'tenant',
+            muted: false,
+            reported: false,
+            reportReason: '',
+            unreadFor: null,
+            createdAt: now,
+            updatedAt: now,
+            messages: [],
+          },
+          ...conversations,
+        ])
+      }
+      setToast({ type: 'info', message: 'User blocked locally. Existing history is preserved.' })
     },
     addProperty(property) {
       if (account?.role !== 'landlord') return null
@@ -674,17 +788,17 @@ export function AppStateProvider({ children }) {
         ownerId: currentOwnerId,
         ownerName: landlordProfile.displayName,
         ownerType: landlordProfile.landlordType === 'agent' ? 'Letting agent' : 'Private landlord',
+        ...normalizeListingForStorage(property),
         rent: Number(property.rent),
         rentMonthly: Number(property.rent),
         deposit: Number(property.deposit),
-        bedrooms: Number(property.bedrooms),
-        bathrooms: Number(property.bathrooms),
-        maxOccupants: Number(property.maxOccupants),
         createdAt: now,
+        updatedAt: now,
+        availabilityConfirmedAt: now,
         listingStatus: property.listingStatus || 'draft',
         features: property.amenities?.slice(0, 4) || [],
         images: property.images?.length ? property.images : ['https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80'],
-        viewingSlots: property.viewingSlots?.length ? property.viewingSlots : getFutureViewingSlots(),
+        viewingSlots: normalizeViewingSlots(property.viewingSlots).length ? normalizeViewingSlots(property.viewingSlots) : getFutureViewingSlots(),
         trust: {
           emailVerified: Boolean(landlordProfile.trust?.emailVerified),
           phoneVerified: Boolean(landlordProfile.trust?.phoneVerified),
@@ -698,18 +812,45 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'success', message: 'Property saved.' })
       return nextProperty.id
     },
+    updateProperty(propertyId, patch) {
+      if (account?.role !== 'landlord') return null
+      const currentProperty = properties.find((property) => property.id === propertyId && property.ownerId === currentOwnerId)
+      if (!currentProperty) return null
+      const localExists = localProperties.some((property) => property.id === propertyId)
+      const fixture = mockProperties.find((property) => property.id === propertyId)
+      const normalizedPatch = {
+        ...normalizeListingForStorage({ ...currentProperty, ...patch }),
+        furnished: patch.furnished ? normalizeFurnished(patch.furnished) : currentProperty.furnished,
+        parking: patch.parking ? normalizeParking(patch.parking) : currentProperty.parking,
+        smokingAllowed: patch.smokingAllowed ? normalizeSmoking(patch.smokingAllowed) : currentProperty.smokingAllowed,
+        petsAllowed: patch.petsAllowed ? normalizePetPolicy(patch.petsAllowed) : currentProperty.petsAllowed,
+        updatedAt: new Date().toISOString(),
+        availabilityConfirmedAt: patch.availableFrom && patch.availableFrom === currentProperty.availableFrom ? new Date().toISOString() : currentProperty.availabilityConfirmedAt,
+      }
+      const update = (property) => (property.id === propertyId ? { ...property, ...normalizedPatch } : property)
+      const next = localExists
+        ? localProperties.map(update)
+        : fixture
+          ? [{ ...fixture, ...normalizedPatch, ownerId: currentOwnerId }, ...localProperties]
+          : localProperties
+      persistProperties(next)
+      setToast({ type: 'success', message: 'Listing updated.' })
+      return propertyId
+    },
     updatePropertyStatus(propertyId, listingStatus) {
       if (account?.role !== 'landlord') return
       const allowedStatuses = ['published', 'pending_verification', 'draft', 'paused', 'rejected', 'rented']
       if (!allowedStatuses.includes(listingStatus)) return
       const currentProperty = properties.find((property) => property.id === propertyId && property.ownerId === currentOwnerId)
       if (!currentProperty || currentProperty.listingStatus === listingStatus) return
+      if (!canTransitionListing(currentProperty.listingStatus, listingStatus)) return
       const localExists = localProperties.some((property) => property.id === propertyId)
       const fixture = mockProperties.find((property) => property.id === propertyId)
+      const now = new Date().toISOString()
       const next = localExists
-        ? localProperties.map((property) => (property.id === propertyId ? { ...property, listingStatus } : property))
+        ? localProperties.map((property) => (property.id === propertyId ? { ...property, listingStatus, updatedAt: now } : property))
         : fixture
-          ? [{ ...fixture, listingStatus }, ...localProperties]
+          ? [{ ...fixture, listingStatus, updatedAt: now }, ...localProperties]
           : localProperties
       persistProperties(next)
       setToast({ type: 'info', message: `Listing ${getListingStatusLabel(listingStatus)}.` })

@@ -35,7 +35,7 @@ function TenantDashboard() {
         </div>
       </section>
 
-      <section className="grid grid-cols-3 gap-3">
+      <section className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
         <Metric label="Active" value={String(activeProperties.length)} />
         <Metric label="Saved" value={String(savedProperties.length)} />
         <Metric label="Enquiries" value={String(tenantEnquiries.length)} />
@@ -92,12 +92,12 @@ function LandlordDashboard() {
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-3">
+      <section className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
         <Metric label="Active properties" value={String(active)} />
         <Metric label="New interested tenants" value={String(newInterest)} />
         <Metric label="Shortlisted tenants" value={String(shortlisted)} />
         <Metric label="Unread messages" value={String(unreadMessages)} />
-        <Metric label="Upcoming viewings" value={String(viewings)} className="col-span-2" />
+        <Metric label="Upcoming viewings" value={String(viewings)} className="min-[390px]:col-span-2" />
       </section>
 
       <UpcomingViewings rows={viewingRows} role="landlord" onOpenMessages={() => navigate('/messages')} />
@@ -122,8 +122,8 @@ function LandlordDashboard() {
 
 function Metric({ label, value, className = '' }) {
   return (
-    <div className={`card-surface card-shadow rounded-[22px] px-4 py-4 ${className}`}>
-      <div className="text-sm font-medium text-slate-500">{label}</div>
+    <div className={`card-surface card-shadow min-w-0 rounded-[22px] px-4 py-4 ${className}`}>
+      <div className="break-words text-sm font-medium leading-5 text-slate-500">{label}</div>
       <div className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
     </div>
   )
@@ -152,8 +152,8 @@ function UpcomingViewings({ rows, role, onOpenMessages }) {
       </div>
       <div className="mt-4 grid gap-3">
         {rows.slice(0, 3).map((row) => (
-          <article key={row.id} className="rounded-[20px] border border-slate-100 bg-slate-50/78 px-3 py-3">
-            <div className="flex items-start justify-between gap-3">
+          <article key={row.id} className="min-w-0 overflow-hidden rounded-[20px] border border-slate-100 bg-slate-50/78 px-3 py-3">
+            <div className="flex min-w-0 items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-semibold text-slate-950">{row.property.title}</h3>
                 <p className="mt-1 truncate text-sm text-slate-600">
@@ -162,7 +162,7 @@ function UpcomingViewings({ rows, role, onOpenMessages }) {
                 </p>
                 <p className="mt-2 text-sm font-semibold text-slate-900">{row.slot}</p>
               </div>
-              <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">
+              <span className="max-w-[45%] shrink break-words rounded-full bg-white px-3 py-1.5 text-center text-xs font-semibold leading-4 text-slate-700 shadow-soft">
                 {row.status}
               </span>
             </div>

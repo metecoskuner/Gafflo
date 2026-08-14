@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useAppState from '../context/useAppState'
+import { domainLabel } from '../config/domainOptions'
+import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
+import { formatFreshness } from '../config/listingPresentation'
 import { canListingReceiveEnquiry } from '../config/rentalJourney'
 import { formatDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatCurrency'
@@ -12,7 +15,7 @@ import TrustSummary from './TrustSummary'
 
 export default function PropertyDetailsModal({ standalone = false }) {
   const { propertyId } = useParams()
-  const { createEnquiry, properties, role, savedPropertyIds, saveProperty, removeSavedProperty, tenantEnquiries } = useAppState()
+  const { blockPropertyOwner, createEnquiry, properties, reportListing, role, savedPropertyIds, saveProperty, removeSavedProperty, tenantEnquiries } = useAppState()
   const navigate = useNavigate()
   const property = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
   const fallbackRoute = role === 'landlord' ? '/properties' : '/discover'
@@ -60,6 +63,10 @@ export default function PropertyDetailsModal({ standalone = false }) {
   const hardStops = property.match.hardStops || []
   const enquiry = tenantEnquiries.find((item) => item.propertyId === property.id)
   const canEnquire = canListingReceiveEnquiry(property)
+  const roomListing = isRoomListing(property.listingCategory)
+  const ownerOccupied = property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM
+  const updated = formatFreshness(property.updatedAt)
+  const availabilityConfirmed = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
   const handleEnquire = () => {
     if (!enquiry && !canEnquire) return
     const conversationId = createEnquiry(property.id)
@@ -68,7 +75,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 max-w-full overflow-x-hidden [touch-action:pan-y]">
       {!standalone ? (
         <button
           type="button"
@@ -79,16 +86,16 @@ export default function PropertyDetailsModal({ standalone = false }) {
       ) : null}
 
       <div
-        className={`relative flex h-[100dvh] items-stretch justify-center ${standalone ? 'bg-slate-50' : 'p-0 md:p-6'}`}
+        className={`relative flex h-[100dvh] max-w-full items-stretch justify-center overflow-x-hidden ${standalone ? 'bg-slate-50' : 'p-0 md:p-6'}`}
       >
         <div
-          className={`card-surface card-shadow relative flex h-[100dvh] w-full flex-col overflow-hidden bg-white ${standalone ? 'max-w-4xl' : 'md:h-auto md:max-h-[90vh] md:max-w-2xl md:rounded-[32px]'}`}
+          className={`card-surface card-shadow relative flex h-[100dvh] w-full max-w-full min-w-0 flex-col overflow-hidden bg-white ${standalone ? 'max-w-4xl' : 'md:h-auto md:max-h-[90vh] md:max-w-2xl md:rounded-[32px]'}`}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div data-property-details-scroll className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [touch-action:pan-y]">
             <PropertyImageGallery property={property} isSaved={isSaved} onClose={close} />
 
-            <div className="space-y-4 px-4 pb-[calc(env(safe-area-inset-bottom)+7.5rem)] pt-4 md:px-6">
-              <section className="card-surface card-shadow rounded-[26px] p-4">
+            <div className="max-w-full space-y-3 px-4 pb-[calc(env(safe-area-inset-bottom)+6.75rem)] pt-4 md:space-y-4 md:px-6">
+              <section className="card-surface card-shadow rounded-[24px] p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-500">{property.area}, {property.city}</p>
@@ -107,15 +114,20 @@ export default function PropertyDetailsModal({ standalone = false }) {
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <DetailTile label="Type" value={property.propertyType} />
-                  <DetailTile label="Bedrooms" value={property.bedrooms ? `${property.bedrooms}` : 'Studio'} />
+                  <DetailTile label="Category" value={listingCategoryLabel(property.listingCategory)} />
+                  <DetailTile label={roomListing ? 'Room' : 'Home'} value={roomListing ? domainLabel('roomType', property.roomType) : `${property.bedrooms ? `${property.bedrooms} bed` : 'Studio'} ${domainLabel('propertyType', property.propertyType)}`} />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {ownerOccupied ? <Pill>Owner lives in the property</Pill> : null}
+                  {updated ? <Pill>{updated}</Pill> : null}
+                  {availabilityConfirmed ? <Pill>{availabilityConfirmed}</Pill> : null}
                 </div>
               </section>
 
-              <DetailSection title="About the property">
+              <DetailSection title={roomListing ? 'Room' : 'Overview'}>
                 <p className="text-sm leading-7 text-slate-600">{property.description}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {property.features.map((feature) => (
+                  {property.features.slice(0, 5).map((feature) => (
                     <span
                       key={feature}
                       className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-indigo-100"
@@ -126,10 +138,51 @@ export default function PropertyDetailsModal({ standalone = false }) {
                 </div>
               </DetailSection>
 
-              <DetailSection title="Listing terms">
+              {roomListing ? (
+                <>
+                  <DetailSection title="Shared home">
+                    <div className="grid grid-cols-2 gap-3">
+                      <DetailTile label="Type" value={domainLabel('roomParentPropertyType', property.parentPropertyType)} />
+                      <DetailTile label="Total bedrooms" value={`${property.totalBedrooms || 1}`} />
+                      <DetailTile label="Bathrooms" value={`${property.bathrooms}`} />
+                      <DetailTile label="Owner occupied" value={ownerOccupied ? 'Owner lives here' : 'No'} />
+                    </div>
+                  </DetailSection>
+
+                  <DetailSection title="Shared spaces">
+                    <div className="grid grid-cols-2 gap-3">
+                      <DetailTile label="Kitchen" value={property.sharedKitchen ? 'Shared' : 'Ask landlord'} />
+                      <DetailTile label="Living area" value={property.sharedLivingRoom ? 'Shared' : 'Not listed'} />
+                      <DetailTile label="Laundry" value={property.laundry ? 'Available' : 'Ask landlord'} />
+                      <DetailTile label="Internet" value={property.internet ? 'Available' : 'Ask landlord'} />
+                    </div>
+                  </DetailSection>
+
+                  <DetailSection title="Household">
+                    <div className="grid grid-cols-2 gap-3">
+                      <DetailTile label="Current household" value={`${property.currentHouseholdSize || 1}`} />
+                      <DetailTile label="Max household" value={`${property.maxHouseholdSize || 2}`} />
+                      <DetailTile label="Couples" value={property.couplesAccepted ? 'Accepted' : 'Not accepted'} />
+                      <DetailTile label="Pets in home" value={property.petsInHome ? 'Yes' : 'No'} />
+                    </div>
+                    {property.householdSummary ? <p className="mt-3 text-sm leading-7 text-slate-600">{property.householdSummary}</p> : null}
+                  </DetailSection>
+                </>
+              ) : (
+                <DetailSection title="Amenities">
+                  <div className="flex flex-wrap gap-2">
+                    {(property.amenities || []).map((amenity) => (
+                      <span key={amenity} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">{amenity}</span>
+                    ))}
+                  </div>
+                </DetailSection>
+              )}
+
+              <DetailSection title={roomListing ? 'Bills and stay' : 'Rent and lease'}>
                 <div className="grid grid-cols-2 gap-3">
                   <DetailTile label="Occupancy" value={`Up to ${property.maxOccupants || 1}`} />
                   <DetailTile label="Minimum stay" value={`${property.minStayMonths} mo`} />
+                  <DetailTile label="Internet" value={roomListing ? (property.internet ? 'Listed' : 'Ask landlord') : 'Ask landlord'} />
                 </div>
                 <p className="mt-3 text-sm leading-7 text-slate-600">
                   {property.listingTerms ||
@@ -137,20 +190,14 @@ export default function PropertyDetailsModal({ standalone = false }) {
                 </p>
               </DetailSection>
 
-              <DetailSection title="Property attributes">
+              <DetailSection title={roomListing ? 'Rules' : 'Lease and rules'}>
                 <div className="grid grid-cols-2 gap-3">
-                  <DetailTile label="Furnished" value={property.furnished || 'Furnished'} />
-                  <DetailTile label="Type" value={property.propertyType} />
-                  <DetailTile label="Bedrooms" value={property.bedrooms ? `${property.bedrooms}` : 'Studio'} />
-                  <DetailTile label="Bathrooms" value={`${property.bathrooms}`} />
-                  <DetailTile label="Smoking" value={property.smokingAllowed} />
-                  <DetailTile label="Pets" value={property.petsAllowed} />
-                  <DetailTile label="Parking" value={property.parking} />
+                  <DetailTile label="Furnished" value={domainLabel('furnished', property.furnished)} />
+                  <DetailTile label="Smoking" value={domainLabel('smoking', property.smokingAllowed)} />
+                  <DetailTile label="Pets" value={domainLabel('petPolicy', property.petsAllowed)} />
+                  <DetailTile label="Parking" value={domainLabel('parking', property.parking)} />
                   <DetailTile label="Viewing" value={property.viewingType} />
                 </div>
-              </DetailSection>
-
-              <DetailSection title="Listing rules">
                 <ul className="space-y-2 text-sm text-slate-600">
                   {(property.listingRules || []).map((rule) => (
                     <li key={rule} className="flex items-start gap-3 rounded-[18px] bg-slate-50/78 px-3 py-3">
@@ -162,7 +209,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
               </DetailSection>
 
               <section className="rounded-[22px] border border-emerald-100 bg-emerald-50/80 p-4">
-                <p className="text-sm font-semibold text-emerald-950">Why this property fits you</p>
+                <p className="text-sm font-semibold text-emerald-950">Why this {roomListing ? 'room' : 'property'} fits you</p>
                 <ul className="mt-3 space-y-2 text-sm text-emerald-950">
                   {property.match.reasons.slice(0, 4).map((reason) => (
                     <li key={reason} className="flex items-start gap-2">
@@ -207,7 +254,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
                 <section className="is-success-pulse rounded-[22px] border border-emerald-100 bg-emerald-50/85 p-4">
                   <p className="text-sm font-semibold text-emerald-950">Viewing confirmed</p>
                   <p className="mt-1 text-sm leading-6 text-emerald-800">
-                    {enquiry.viewing.selectedSlot} · keep the conversation open for access details.
+                    {enquiry.viewing.selectedSlot?.label || 'Time to confirm'} · keep the conversation open for access details.
                   </p>
                 </section>
               ) : null}
@@ -216,24 +263,29 @@ export default function PropertyDetailsModal({ standalone = false }) {
 
               <TrustSummary property={property} />
 
-              <SafetyActions />
+              <SafetyActions
+                disabled={role === 'landlord'}
+                locallyReported={Boolean(property.localReport)}
+                onBlock={() => blockPropertyOwner(property.id)}
+                onReport={(reason) => reportListing(property.id, reason)}
+              />
             </div>
           </div>
 
           <div className="border-t border-slate-100 bg-white/94 px-4 pb-[calc(env(safe-area-inset-bottom)+0.85rem)] pt-3 backdrop-blur-xl md:px-6">
             {role === 'landlord' ? (
-              <div className="grid grid-cols-[0.95fr_1.05fr] gap-3">
+              <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
                 <Button variant="secondary" onClick={() => navigate('/properties')}>Back to properties</Button>
                 <Button variant="dark" onClick={() => navigate('/applicants')}>View applicants</Button>
               </div>
             ) : (
-              <div className="grid grid-cols-[0.95fr_1.05fr] gap-3">
+              <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
                 <Button
                   variant={isSaved ? 'secondary' : 'primary'}
                   data-account-action="save-property"
                   onClick={() => (isSaved ? removeSavedProperty(property.id) : saveProperty(property.id))}
                 >
-                  {isSaved ? 'Remove saved' : 'Save property'}
+                  {isSaved ? 'Saved' : 'Save'}
                 </Button>
                 <Button
                   variant="dark"
@@ -241,7 +293,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
                   disabled={!enquiry && !canEnquire}
                   onClick={handleEnquire}
                 >
-                  {enquiry ? 'Open enquiry' : canEnquire ? 'Interested' : 'Not accepting enquiries'}
+                  {enquiry ? 'Open enquiry' : canEnquire ? 'Interested' : 'Closed'}
                 </Button>
               </div>
             )}
@@ -263,7 +315,7 @@ function PropertyImageGallery({ property, isSaved, onClose }) {
 
   return (
     <>
-      <div className="relative h-[24rem] overflow-hidden bg-slate-200 md:h-[30rem]">
+      <div className="relative h-[20rem] max-w-full overflow-hidden bg-slate-200 min-[390px]:h-[24rem] md:h-[30rem]">
         {activeImageFailed ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-200 text-sm font-medium text-slate-500">
             Gafflo property preview
@@ -305,7 +357,7 @@ function PropertyImageGallery({ property, isSaved, onClose }) {
         </div>
 
         <div className="absolute inset-x-0 bottom-0 p-4 text-white md:p-5">
-          <h2 className="text-balance text-[2rem] font-semibold leading-tight tracking-tight md:text-4xl">{property.title}</h2>
+          <h2 className="text-balance text-[1.65rem] font-semibold leading-tight tracking-tight min-[390px]:text-[2rem] md:text-4xl">{property.title}</h2>
           <p className="mt-2 text-sm font-medium text-slate-200">
             {property.area}, {property.city}
           </p>
@@ -329,8 +381,8 @@ function PropertyImageGallery({ property, isSaved, onClose }) {
       </div>
 
       {images.length > 1 ? (
-        <div className="border-b border-slate-100 bg-white px-4 py-4 md:px-6">
-          <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="max-w-full overflow-x-hidden border-b border-slate-100 bg-white px-4 py-4 md:px-6">
+          <div className="flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-1 min-[390px]:gap-3">
             {images.map((image, index) => {
               const thumbFailed = failedImageIndexes.includes(index)
               const thumbLoaded = loadedImageIndexes.includes(index)
@@ -342,7 +394,7 @@ function PropertyImageGallery({ property, isSaved, onClose }) {
                   type="button"
                   onClick={() => setSelectedImageIndex(index)}
                   aria-label={`Show image ${index + 1} for ${property.title}`}
-                  className={`relative h-18 w-20 shrink-0 overflow-hidden rounded-[18px] border transition ${
+                  className={`relative h-16 w-18 shrink-0 overflow-hidden rounded-[16px] border transition min-[390px]:h-18 min-[390px]:w-20 ${
                     isActive ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-slate-200'
                   }`}
                 >
@@ -380,16 +432,44 @@ function PropertyImageGallery({ property, isSaved, onClose }) {
   )
 }
 
-function SafetyActions() {
+function SafetyActions({ disabled, locallyReported, onBlock, onReport }) {
+  const [reason, setReason] = useState('')
+  const [confirmBlock, setConfirmBlock] = useState(false)
+
   return (
     <details className="rounded-[22px] border border-slate-200 bg-white px-4 py-3">
       <summary className="cursor-pointer text-sm font-semibold text-slate-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
         Safety and reporting
       </summary>
-      <div className="mt-3 grid gap-2 min-[380px]:grid-cols-3">
-        <Button variant="secondary">Report listing</Button>
-        <Button variant="secondary">Report landlord</Button>
-        <Button variant="secondary">Block user</Button>
+      <div className="mt-3 grid min-w-0 gap-3">
+        <p className="text-sm leading-6 text-slate-600">
+          Reports and blocks are stored locally in this frontend prototype.
+        </p>
+        <select
+          value={reason}
+          disabled={disabled || locallyReported}
+          onChange={(event) => setReason(event.target.value)}
+          className="min-h-11 w-full min-w-0 rounded-[16px] border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:ring-4 focus:ring-indigo-100"
+        >
+          <option value="">Choose a report reason</option>
+          <option value="Listing details look suspicious">Listing details look suspicious</option>
+          <option value="Landlord behaviour concern">Landlord behaviour concern</option>
+          <option value="Payment or deposit concern">Payment or deposit concern</option>
+        </select>
+        <div className="grid min-w-0 gap-2 min-[380px]:grid-cols-2">
+          <Button variant="secondary" disabled={disabled || locallyReported || !reason} onClick={() => onReport(reason)}>
+            {locallyReported ? 'Report saved locally' : 'Save local report'}
+          </Button>
+          {confirmBlock ? (
+            <Button variant="dark" disabled={disabled} onClick={onBlock}>
+              Confirm block
+            </Button>
+          ) : (
+            <Button variant="secondary" disabled={disabled} onClick={() => setConfirmBlock(true)}>
+              Block user
+            </Button>
+          )}
+        </div>
       </div>
     </details>
   )
@@ -397,18 +477,22 @@ function SafetyActions() {
 
 function DetailSection({ title, children }) {
   return (
-    <section className="card-surface card-shadow rounded-[26px] p-4">
+    <section className="card-surface min-w-0 max-w-full rounded-[22px] p-4">
       <h3 className="text-lg font-semibold tracking-tight text-slate-950">{title}</h3>
       <div className="mt-3">{children}</div>
     </section>
   )
 }
 
+function Pill({ children }) {
+  return <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">{children}</span>
+}
+
 function DetailTile({ label, value }) {
   return (
-    <div className="surface-line min-w-0 rounded-[20px] bg-slate-50/78 px-3 py-3">
-      <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-slate-800">{value}</div>
+    <div className="surface-line min-w-0 max-w-full rounded-[20px] bg-slate-50/78 px-3 py-3">
+      <div className="break-words text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 [overflow-wrap:anywhere] min-[390px]:text-[11px]">{label}</div>
+      <div className="mt-1 break-words text-sm font-semibold leading-5 text-slate-800">{value}</div>
     </div>
   )
 }

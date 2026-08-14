@@ -92,16 +92,14 @@ export function getPipelineGroup(status) {
 }
 
 export function isClosedStatus(status) {
-  return ['rejected', 'closed', 'viewing cancelled', 'withdrawn'].includes(status)
+  return ['rejected', 'closed', 'withdrawn'].includes(status)
 }
 
 export function isLandlordEngagedStatus(status) {
   return ['landlord interested', 'shortlisted', 'viewing proposed', 'viewing confirmed'].includes(status)
 }
 
-export function canListingReceiveEnquiry(property) {
-  return ['published', 'active'].includes(property?.listingStatus)
-}
+export { canListingReceiveEnquiry }
 
 export function getViewingRows(enquiries, role) {
   return enquiries
@@ -111,7 +109,7 @@ export function getViewingRows(enquiries, role) {
       property: enquiry.property,
       tenant: enquiry.tenant,
       status: getApplicationStatus(enquiry.viewing.status).label,
-      slot: enquiry.viewing.selectedSlot || enquiry.viewing.proposedSlots?.[0] || 'Time to be agreed',
+      slot: enquiry.viewing.selectedSlot?.label || enquiry.viewing.proposedSlots?.[0]?.label || 'Time to be agreed',
       role,
     }))
 }
@@ -165,3 +163,4 @@ export function getTenantProfileCompleteness(profile) {
     total: checks.length,
   }
 }
+import { canListingReceiveEnquiry } from './listingLifecycle'

@@ -40,9 +40,19 @@ export default function Messages() {
     return <ChatThread conversation={conversation} />
   }
 
+  const archiveToast = toast?.action === 'undo-archive' ? (
+    <ArchiveUndoToast
+      conversationId={toast.conversationId}
+      message={toast.message}
+      onDismiss={dismissToast}
+      onUndo={unarchiveConversation}
+    />
+  ) : null
+
   if (!sortedConversations.length) {
     return (
-      <div className="mx-auto w-full max-w-[480px]">
+      <div className="mx-auto w-full max-w-[480px] space-y-4">
+        {archiveToast}
         <EmptyState
           eyebrow="Messages"
           title="No conversations yet"
@@ -55,23 +65,7 @@ export default function Messages() {
 
   return (
     <div className="space-y-4">
-      {toast?.action === 'undo-archive' ? (
-        <div className="toast-enter rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm shadow-soft">
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-medium text-slate-700">{toast.message}</span>
-            <button
-              type="button"
-              className="min-h-10 rounded-full px-3 text-sm font-semibold text-indigo-900 hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
-              onClick={() => {
-                unarchiveConversation(toast.conversationId)
-                dismissToast()
-              }}
-            >
-              Undo
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {archiveToast}
 
       <section className="card-surface card-shadow rounded-[28px] p-5">
         <p className="text-sm font-semibold text-emerald-600">Messages</p>
@@ -81,59 +75,133 @@ export default function Messages() {
 
       <section className="space-y-3">
         {sortedConversations.map((conversation) => {
-          const property = conversation.property
-          const lastMessage = conversation.messages[conversation.messages.length - 1] || {
-            sender: '',
-            body: 'No messages yet.',
-            createdAt: conversation.updatedAt || conversation.createdAt,
-          }
-          const hasUnread = conversation.unreadFor === role
-          const statusChip = getConversationStatusChip(conversation)
-
           return (
-            <article
+            <ConversationListRow
               key={conversation.id}
-              className={`card-surface card-shadow flex w-full items-center gap-3 rounded-[24px] p-3 text-left transition duration-200 hover:-translate-y-0.5 ${
-                hasUnread ? 'border-indigo-200 bg-white' : ''
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => navigate(`/messages/${conversation.id}`)}
-                className="flex min-w-0 flex-1 items-center gap-3 text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
-              >
-                <div className="h-18 w-18 shrink-0 overflow-hidden rounded-[18px] bg-slate-100">
-                  <ThumbnailImage src={property.images[0]} />
-                </div>
-                <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h2 className={`truncate text-base text-slate-950 ${hasUnread ? 'font-bold' : 'font-semibold'}`}>{property.title}</h2>
-                    <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                      {property.area} · {formatCurrency(property.rent)}/mo
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs font-medium text-slate-400">{formatMessageTime(lastMessage.createdAt)}</span>
-                </div>
-                <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-600">
-                  {lastMessage.sender === role ? 'You: ' : ''}
-                  {lastMessage.body}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {hasUnread ? <span className="h-2 w-2 rounded-full bg-indigo-950" aria-label="Unread conversation" /> : null}
-                  {statusChip ? (
-                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                      {statusChip}
-                    </span>
-                  ) : null}
-                </div>
-                </div>
-              </button>
-              <ConversationRowMenu conversation={conversation} />
-            </article>
+              conversation={conversation}
+              role={role}
+              onOpen={() => navigate(`/messages/${conversation.id}`)}
+            />
           )
         })}
       </section>
+    </div>
+  )
+}
+
+function ArchiveUndoToast({ conversationId, message, onDismiss, onUndo }) {
+  return (
+    <div className="toast-enter rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm shadow-soft">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium text-slate-700">{message}</span>
+        <button
+          type="button"
+          className="min-h-10 rounded-full px-3 text-sm font-semibold text-indigo-900 hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+          onClick={() => {
+            onUndo(conversationId)
+            onDismiss()
+          }}
+        >
+          Undo
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ConversationListRow({ conversation, onOpen, role }) {
+  const { archiveConversation } = useAppState()
+  const [offset, setOffset] = useState(0)
+  const start = useRef(null)
+  const property = conversation.property
+  const lastMessage = conversation.messages[conversation.messages.length - 1] || {
+    sender: '',
+    body: 'No messages yet.',
+    createdAt: conversation.updatedAt || conversation.createdAt,
+  }
+  const hasUnread = conversation.unreadFor === role
+  const statusChip = getConversationStatusChip(conversation)
+  const revealed = offset < -64
+
+  const handlePointerDown = (event) => {
+    if (window.matchMedia('(pointer: fine)').matches) return
+    start.current = { x: event.clientX, y: event.clientY, active: true }
+  }
+
+  const handlePointerMove = (event) => {
+    if (!start.current?.active) return
+    const dx = event.clientX - start.current.x
+    const dy = event.clientY - start.current.y
+    if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx)) {
+      start.current = null
+      setOffset(0)
+      return
+    }
+    if (dx < 0) setOffset(Math.max(dx, -96))
+  }
+
+  const handlePointerUp = () => {
+    setOffset(offset < -76 ? -96 : 0)
+    start.current = null
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-[24px]">
+      <div className={`absolute inset-y-0 right-0 z-10 flex items-center pr-2 transition-opacity md:hidden ${revealed ? 'opacity-100' : 'opacity-0'}`}>
+        <Button variant="secondary" className="min-h-10 bg-white text-rose-700" onClick={() => archiveConversation(conversation.id)}>
+          Archive
+        </Button>
+      </div>
+      <article
+        className={`card-surface card-shadow flex w-full items-center gap-3 rounded-[24px] p-3 text-left transition duration-200 hover:-translate-y-0.5 ${
+          hasUnread ? 'border-indigo-200 bg-white' : ''
+        }`}
+        style={{ transform: `translateX(${offset}px)` }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => setOffset(0)}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (revealed) {
+              setOffset(0)
+              return
+            }
+            onOpen()
+          }}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+        >
+          <div className="h-18 w-18 shrink-0 overflow-hidden rounded-[18px] bg-slate-100">
+            <ThumbnailImage src={property.images[0]} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className={`truncate text-base text-slate-950 ${hasUnread ? 'font-bold' : 'font-semibold'}`}>{property.title}</h2>
+                <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                  {property.area} · {formatCurrency(property.rent)}/mo
+                </p>
+              </div>
+              <span className="shrink-0 text-xs font-medium text-slate-400">{formatMessageTime(lastMessage.createdAt)}</span>
+            </div>
+            <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-600">
+              {lastMessage.sender === role ? 'You: ' : ''}
+              {lastMessage.body}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {hasUnread ? <span className="h-2 w-2 rounded-full bg-indigo-950" aria-label="Unread conversation" /> : null}
+              {statusChip ? (
+                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                  {statusChip}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </button>
+        <ConversationRowMenu conversation={conversation} />
+      </article>
     </div>
   )
 }
@@ -144,6 +212,7 @@ function ChatThread({ conversation }) {
     archiveConversation,
     blockConversation,
     chooseViewing,
+    markConversationRead,
     muteConversation,
     proposeViewing,
     reportConversation,
@@ -151,17 +220,36 @@ function ChatThread({ conversation }) {
     sendMessage,
   } = useAppState()
   const [draftMessage, setDraftMessage] = useState('')
+  const bodyRef = useRef(null)
   const textareaRef = useRef(null)
   const property = conversation.property
   const enquiry = conversation.enquiry
   const viewingStatus = enquiry?.viewing?.status
-  const tenantWaitingForLandlord = role === 'tenant' && !canCurrentRoleMessage(conversation, role)
   const messagingBlocked = Boolean(conversation.blockedBy)
-  const composerDisabled = tenantWaitingForLandlord || messagingBlocked || isClosedStatus(enquiry?.status)
+  const conversationClosed = isClosedStatus(enquiry?.status)
+  const tenantWaitingForLandlord = role === 'tenant' && !messagingBlocked && !conversationClosed && !canCurrentRoleMessage(conversation, role)
+  const composerDisabled = tenantWaitingForLandlord || messagingBlocked || conversationClosed
 
   useEffect(() => {
     resizeComposer(textareaRef.current)
   }, [draftMessage])
+
+  useEffect(() => {
+    markConversationRead(conversation.id)
+  }, [conversation.id, markConversationRead])
+
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!body) return
+    window.requestAnimationFrame(() => {
+      body.scrollTop = body.scrollHeight
+    })
+  }, [conversation.id, conversation.messages.length, viewingStatus])
+
+  const archiveAndReturn = () => {
+    archiveConversation(conversation.id)
+    navigate('/messages', { replace: true })
+  }
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -179,17 +267,24 @@ function ChatThread({ conversation }) {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-10.75rem-env(safe-area-inset-bottom))] flex-col">
-      <CompactPropertyHeader conversation={conversation} onBack={() => navigate('/messages')} />
+    <div className="flex h-[calc(100dvh-var(--gafflo-app-header-offset)-var(--gafflo-bottom-nav-offset)-0.75rem)] min-h-[34rem] flex-col overflow-hidden">
+      <CompactPropertyHeader
+        conversation={conversation}
+        onArchive={archiveAndReturn}
+        onBack={() => navigate('/messages')}
+        onBlock={() => blockConversation(conversation.id)}
+        onMute={() => muteConversation(conversation.id)}
+        onReport={(reason) => reportConversation(conversation.id, reason)}
+      />
 
-      <section className="flex-1 space-y-3 px-1 py-4">
+      <section ref={bodyRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-1 pb-4 pt-3">
         {enquiry ? <ApplicationStatus enquiry={enquiry} compact /> : null}
 
         {viewingStatus === 'viewing proposed' ? (
           <ViewingProposedCard
             enquiry={enquiry}
             canChoose={role === 'tenant'}
-            onChoose={(slot) => chooseViewing(enquiry.id, slot)}
+            onChoose={(slotId) => chooseViewing(enquiry.id, slotId)}
           />
         ) : null}
 
@@ -199,7 +294,7 @@ function ChatThread({ conversation }) {
 
         {role === 'landlord' && enquiry ? (
           <LandlordViewingCard
-            onArchive={() => archiveConversation(conversation.id)}
+            onArchive={archiveAndReturn}
             onPropose={(slots) => proposeViewing(enquiry.id, slots)}
           />
         ) : null}
@@ -212,67 +307,61 @@ function ChatThread({ conversation }) {
       </section>
 
       {tenantWaitingForLandlord ? (
-        <StatusCard tone="plain" title="Waiting for the landlord to reply">
-          <p className="text-sm leading-6 text-slate-600">
-            Your enquiry has been sent. You can continue once the landlord replies or engages with your application.
-          </p>
-        </StatusCard>
-      ) : null}
-
-      {messagingBlocked ? (
-        <StatusCard tone="plain" title="Messaging blocked">
-          <p className="text-sm leading-6 text-slate-600">Conversation history is still available, but new messages are disabled.</p>
-        </StatusCard>
-      ) : null}
-
-      <ConversationSafetyMenu
-        conversation={conversation}
-        onArchive={() => archiveConversation(conversation.id)}
-        onBlock={() => blockConversation(conversation.id)}
-        onMute={() => muteConversation(conversation.id)}
-        onReport={(reason) => reportConversation(conversation.id, reason)}
-      />
-
-      <form
-        id="message-composer"
-        onSubmit={handleSubmit}
-        className="sticky bottom-[calc(5.35rem+env(safe-area-inset-bottom))] z-20 rounded-[24px] border border-slate-200 bg-white/96 p-2 shadow-soft backdrop-blur-md"
-      >
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            value={draftMessage}
-            onChange={(event) => {
-              setDraftMessage(event.target.value)
-              resizeComposer(event.target)
-            }}
-            onKeyDown={handleComposerKeyDown}
-            disabled={composerDisabled}
-            maxLength={1200}
-            placeholder={composerDisabled ? 'Waiting for the landlord to reply' : 'Write a message'}
-            className="max-h-36 min-h-12 flex-1 resize-none overflow-y-auto rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3 text-base leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-          />
-          <button
-            type="submit"
-            disabled={!draftMessage.trim() || composerDisabled}
-            aria-label="Send message"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-950 text-lg font-semibold text-white shadow-soft transition duration-200 hover:bg-indigo-900 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            ↑
-          </button>
-        </div>
-      </form>
+        <LockedComposerState
+          title="Waiting for the landlord to reply"
+          description="Your enquiry has been sent. You can continue once the landlord replies or engages with your application."
+        />
+      ) : messagingBlocked ? (
+        <LockedComposerState
+          title="Messaging blocked"
+          description="Conversation history is still available, but new messages are disabled."
+        />
+      ) : conversationClosed ? (
+        <LockedComposerState
+          title="Conversation closed"
+          description="This application is closed. The message history remains available."
+        />
+      ) : (
+        <form
+          id="message-composer"
+          onSubmit={handleSubmit}
+          className="-mx-4 shrink-0 border-t border-slate-200 bg-white/97 px-4 pb-3 pt-2 shadow-[0_-18px_34px_-28px_rgba(15,23,42,0.35)] backdrop-blur-md md:mx-0 md:rounded-[24px] md:border md:p-2"
+        >
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={draftMessage}
+              onChange={(event) => {
+                setDraftMessage(event.target.value)
+                resizeComposer(event.target)
+              }}
+              onKeyDown={handleComposerKeyDown}
+              maxLength={1200}
+              placeholder="Write a message"
+              className="max-h-36 min-h-12 flex-1 resize-none overflow-y-auto rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3 text-base leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+            />
+            <button
+              type="submit"
+              disabled={!draftMessage.trim() || composerDisabled}
+              aria-label="Send message"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-950 text-lg font-semibold text-white shadow-soft transition duration-200 hover:bg-indigo-900 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              ↑
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   )
 }
 
-function CompactPropertyHeader({ conversation, onBack }) {
+function CompactPropertyHeader({ conversation, onArchive, onBack, onBlock, onMute, onReport }) {
   const property = conversation.property
   const enquiry = conversation.enquiry
 
   return (
-    <section className="card-surface card-shadow sticky top-[calc(env(safe-area-inset-top)+5.25rem)] z-20 overflow-hidden rounded-[24px]">
+    <section className="card-surface card-shadow z-30 shrink-0 overflow-visible rounded-[22px]">
       <div className="flex items-center gap-3 p-3">
         <button
           type="button"
@@ -294,6 +383,13 @@ function CompactPropertyHeader({ conversation, onBack }) {
             {property.area} · {formatCurrency(property.rent)}/mo
           </p>
         </div>
+        <ConversationSafetyMenu
+          conversation={conversation}
+          onArchive={onArchive}
+          onBlock={onBlock}
+          onMute={onMute}
+          onReport={onReport}
+        />
       </div>
       {enquiry ? (
         <div className="border-t border-slate-100 px-4 py-2.5">
@@ -301,6 +397,17 @@ function CompactPropertyHeader({ conversation, onBack }) {
         </div>
       ) : null}
     </section>
+  )
+}
+
+function LockedComposerState({ description, title }) {
+  return (
+    <div className="-mx-4 shrink-0 border-t border-slate-200 bg-white/97 px-4 pb-3 pt-3 shadow-[0_-18px_34px_-28px_rgba(15,23,42,0.35)] backdrop-blur-md md:mx-0 md:rounded-[24px] md:border">
+      <div className="rounded-[18px] bg-slate-50 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-950">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
+      </div>
+    </div>
   )
 }
 
@@ -336,24 +443,24 @@ function ViewingProposedCard({ enquiry, canChoose, onChoose }) {
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {enquiry.viewing.proposedSlots.map((slot) => (
             <Button
-              key={slot}
+              key={slot.id}
               variant="secondary"
               className="bg-white"
               disabled={isConfirming}
               onClick={() => {
                 setIsConfirming(true)
-                onChoose(slot)
+                onChoose(slot.id)
               }}
             >
-              {slot}
+              {slot.label}
             </Button>
           ))}
         </div>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
           {enquiry.viewing.proposedSlots.map((slot) => (
-            <span key={slot} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-soft">
-              {slot}
+            <span key={slot.id} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-soft">
+              {slot.label}
             </span>
           ))}
         </div>
@@ -366,7 +473,7 @@ function ViewingConfirmedCard({ property, selectedSlot }) {
   return (
     <StatusCard tone="success" title="Viewing confirmed">
       <p className="text-sm leading-6 text-emerald-900">
-        {selectedSlot} · {property.area}
+        {selectedSlot?.label || 'Time to confirm'} · {property.area}
       </p>
       <p className="mt-1 text-sm leading-6 text-emerald-800">Keep this conversation open for any access details or timing changes.</p>
     </StatusCard>
@@ -418,11 +525,11 @@ function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onRe
   const reported = Boolean(conversation.reported)
 
   return (
-    <details className="group mb-3 self-end">
-      <summary className="ml-auto flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-xl font-semibold text-slate-600 shadow-soft transition hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
+    <details className="group relative shrink-0">
+      <summary className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-xl font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
         <span aria-label="Conversation actions">•••</span>
       </summary>
-      <div className="mt-2 grid min-w-[16rem] gap-2 rounded-[22px] border border-slate-200 bg-white p-2 shadow-soft">
+      <div className="absolute right-0 top-12 z-40 grid min-w-[16rem] gap-2 rounded-[22px] border border-slate-200 bg-white p-2 shadow-soft">
         <Button variant="secondary" className="justify-start text-slate-600" onClick={onMute}>
           {conversation.muted ? 'Unmute conversation' : 'Mute conversation'}
         </Button>
@@ -442,7 +549,7 @@ function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onRe
           </select>
         </label>
         <Button variant="secondary" className="justify-start text-slate-600" disabled={reported || !reportReason} onClick={() => onReport(reportReason)}>
-          {reported ? 'Report sent' : 'Send report'}
+          {reported ? 'Saved locally' : 'Save local report'}
         </Button>
         {confirmBlock ? (
           <div className="rounded-[18px] border border-amber-100 bg-amber-50 px-3 py-3">
@@ -467,16 +574,18 @@ function ConversationRowMenu({ conversation }) {
   const { archiveConversation } = useAppState()
 
   return (
-    <details className="relative shrink-0">
-      <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full text-lg font-semibold text-slate-500 hover:bg-slate-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
-        <span aria-label="Conversation actions">•••</span>
-      </summary>
-      <div className="absolute right-0 top-11 z-10 w-36 rounded-[18px] border border-slate-200 bg-white p-2 shadow-soft">
-        <Button variant="secondary" className="min-h-10 w-full justify-start text-slate-600" onClick={() => archiveConversation(conversation.id)}>
-          Archive
-        </Button>
-      </div>
-    </details>
+    <div className="relative hidden shrink-0 md:block">
+      <details className="relative">
+        <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full text-lg font-semibold text-slate-500 hover:bg-slate-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
+          <span aria-label="Conversation actions">•••</span>
+        </summary>
+        <div className="absolute right-0 top-11 z-10 w-36 rounded-[18px] border border-slate-200 bg-white p-2 shadow-soft">
+          <Button variant="secondary" className="min-h-10 w-full justify-start text-slate-600" onClick={() => archiveConversation(conversation.id)}>
+            Archive
+          </Button>
+        </div>
+      </details>
+    </div>
   )
 }
 
@@ -492,7 +601,7 @@ function canCurrentRoleMessage(conversation, role) {
 
 function getConversationStatusChip(conversation) {
   if (conversation.blockedBy) return 'Blocked'
-  if (conversation.enquiry?.viewing?.status === 'viewing confirmed') return `Viewing ${conversation.enquiry.viewing.selectedSlot}`
+  if (conversation.enquiry?.viewing?.status === 'viewing confirmed') return `Viewing ${conversation.enquiry.viewing.selectedSlot?.label || 'confirmed'}`
   if (conversation.enquiry?.viewing?.status === 'viewing proposed') return 'Viewing proposed'
   if (!canCurrentRoleMessage(conversation, 'tenant')) return 'Awaiting reply'
   return conversation.enquiry?.statusLabel || ''

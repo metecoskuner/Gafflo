@@ -4,6 +4,8 @@ import ApplicationStatus, { ApplicationStatusPill } from '../components/Applicat
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import MatchBadge from '../components/MatchBadge'
+import { domainLabel } from '../config/domainOptions'
+import { isRoomListing, LISTING_CATEGORIES, listingCategoryLabel } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
 import { formatDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatCurrency'
@@ -88,6 +90,7 @@ export default function SavedProperties() {
         {sortedSavedProperties.map((property) => {
           const imageFailed = Boolean(imageFailures[property.id])
           const enquiry = tenantEnquiries.find((item) => item.propertyId === property.id)
+          const roomListing = isRoomListing(property.listingCategory)
 
           return (
             <article key={property.id} className="card-surface card-shadow overflow-hidden rounded-[30px]">
@@ -118,7 +121,7 @@ export default function SavedProperties() {
                     </span>
                     {enquiry ? <ApplicationStatusPill status={enquiry.status} /> : null}
                     <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">
-                      {property.billsIncluded ? 'Bills included' : 'Bills separate'}
+                      {listingCategoryLabel(property.listingCategory)}
                     </span>
                   </div>
                 </div>
@@ -137,10 +140,23 @@ export default function SavedProperties() {
               </button>
 
               <div className="space-y-4 p-5">
-                <div className="grid grid-cols-3 gap-2 text-sm text-slate-600">
-                  <InfoTile label="Deposit" value={formatCurrency(property.deposit)} />
-                  <InfoTile label="Bills" value={property.billsIncluded ? 'Included' : 'Separate'} />
-                  <InfoTile label="Furnished" value={property.furnished || 'Furnished'} />
+                <div className="grid grid-cols-2 gap-2 text-sm text-slate-600 min-[430px]:grid-cols-3">
+                  {roomListing ? (
+                    <>
+                      <InfoTile label="Room" value={domainLabel('roomType', property.roomType)} />
+                      <InfoTile label="Bathroom" value={domainLabel('bathroomArrangement', property.bathroomArrangement)} />
+                      <InfoTile label="Bills" value={property.billsIncluded ? 'Included' : 'Separate'} />
+                      <InfoTile label="Owner" value={property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? 'Lives here' : 'Shared home'} />
+                    </>
+                  ) : (
+                    <>
+                      <InfoTile label="Home" value={`${property.bedrooms ? `${property.bedrooms} bed` : 'Studio'} ${domainLabel('propertyType', property.propertyType)}`} />
+                      <InfoTile label="Deposit" value={formatCurrency(property.deposit)} />
+                      <InfoTile label="Bills" value={property.billsIncluded ? 'Included' : 'Separate'} />
+                    </>
+                  )}
+                  <InfoTile label="Furnished" value={domainLabel('furnished', property.furnished)} />
+                  <InfoTile label="Available" value={formatDate(property.availableFrom)} />
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -192,8 +208,8 @@ export default function SavedProperties() {
 function InfoTile({ label, value }) {
   return (
     <div className="surface-line min-w-0 rounded-[20px] bg-slate-50/78 px-3 py-3">
-      <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-slate-700">{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 break-words text-sm font-semibold leading-5 text-slate-700">{value}</div>
     </div>
   )
 }

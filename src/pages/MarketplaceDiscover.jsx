@@ -1,8 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import MatchBadge from '../components/MatchBadge'
+import { domainLabel } from '../config/domainOptions'
+import { isRoomListing, LISTING_CATEGORIES } from '../config/listingCategories'
+import { formatFreshness, getBrowseFacts, getSmartMatchFacts } from '../config/listingPresentation'
 import { getPrimaryTrustSignal, isNewProperty } from '../config/rentalJourney'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
@@ -12,8 +15,10 @@ const swipeThreshold = 105
 
 export default function MarketplaceDiscover() {
   const navigate = useNavigate()
+  const location = useLocation()
   const {
     activeFilterCount,
+    activeProperties: allActiveProperties,
     createEnquiry,
     discoveryProperties,
     availableProperties,
@@ -68,7 +73,7 @@ export default function MarketplaceDiscover() {
   return (
     <div className="space-y-4">
       <section className="card-surface card-shadow rounded-[26px] p-4 min-[390px]:p-5">
-        <div className="flex flex-col gap-4 min-[390px]:flex-row min-[390px]:items-start min-[390px]:justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-sm font-semibold text-emerald-600">Discover</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 min-[390px]:text-3xl">Smart Match</h1>
@@ -76,7 +81,7 @@ export default function MarketplaceDiscover() {
               Ranked Dublin listings based on budget, area, timing, tenancy rules and application readiness.
             </p>
           </div>
-          <div className="grid w-full shrink-0 grid-cols-2 rounded-full bg-slate-100 p-1 min-[390px]:w-auto">
+          <div className="grid w-full shrink-0 grid-cols-2 rounded-full bg-slate-100 p-1 md:w-auto">
             {[
               ['smart', 'Smart Match'],
               ['browse', 'Browse'],
@@ -101,6 +106,7 @@ export default function MarketplaceDiscover() {
 
       {viewMode === 'smart' ? (
         <SmartMatchDeck
+          key={`${location.key}-${rankedSmartMatches[0]?.id || 'empty'}`}
           properties={rankedSmartMatches}
           savedPropertyIds={savedPropertyIds}
           tenantEnquiries={tenantEnquiries}
@@ -119,6 +125,9 @@ export default function MarketplaceDiscover() {
           onReset={startOver}
           noFilterResults={activeFilterCount > 0 && discoveryProperties.length === 0}
           savedPulseId={savedPulseId}
+          smartLimitReached={!smartMatchUsage.isLaunchFree && smartMatchUsage.cardsRemaining <= 0}
+          interestLimitReached={!smartMatchUsage.isLaunchFree && smartMatchUsage.interestsRemaining <= 0}
+          noActiveListings={allActiveProperties.length === 0}
         />
       ) : (
         <section className="grid gap-4 md:grid-cols-2">
@@ -157,21 +166,51 @@ function SmartMatchDeck({
   onSave,
   noFilterResults,
   savedPulseId,
+  smartLimitReached,
+  interestLimitReached,
+  noActiveListings,
 }) {
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
+  const [dragIntent, setDragIntent] = useState(null)
   const pointerStart = useRef(null)
+  const latestDrag = useRef({ x: 0, y: 0 })
+  const movedDuringPointer = useRef(false)
+  const suppressNextClick = useRef(false)
   const activeProperty = properties[0]
   const nextProperty = properties[1]
   const dragRatio = Math.min(1, Math.abs(drag.x) / swipeThreshold)
   const passedThreshold = Math.abs(drag.x) > swipeThreshold
   const intent = drag.x > 12 ? 'interested' : drag.x < -12 ? 'pass' : null
 
-  const resetDrag = () => {
+  const resetDrag = useCallback(() => {
     pointerStart.current = null
+    movedDuringPointer.current = false
+    setDragIntent(null)
+    latestDrag.current = { x: 0, y: 0 }
     setDrag({ x: 0, y: 0, active: false })
-  }
+  }, [])
+
+  useEffect(() => {
+    const clearPointerState = () => resetDrag()
+    const clearHiddenPointerState = () => {
+      if (document.visibilityState === 'hidden') resetDrag()
+    }
+
+    window.addEventListener('pointerup', clearPointerState)
+    window.addEventListener('pointercancel', clearPointerState)
+    window.addEventListener('blur', clearPointerState)
+    document.addEventListener('visibilitychange', clearHiddenPointerState)
+
+    return () => {
+      window.removeEventListener('pointerup', clearPointerState)
+      window.removeEventListener('pointercancel', clearPointerState)
+      window.removeEventListener('blur', clearPointerState)
+      document.removeEventListener('visibilitychange', clearHiddenPointerState)
+    }
+  }, [resetDrag])
 
   const finishAction = (action, propertyId) => {
+    if (smartLimitReached || (action === 'interested' && interestLimitReached)) return
     onLeaving({ propertyId, action })
     window.setTimeout(() => {
       if (action === 'interested') onInterest(propertyId)
@@ -183,8 +222,11 @@ function SmartMatchDeck({
 
   const handlePointerDown = (event) => {
     if (!activeProperty || leaving) return
+    if (!event.target.closest('[data-smart-swipe-zone="true"]')) return
     pointerStart.current = { x: event.clientX, y: event.clientY }
+    latestDrag.current = { x: 0, y: 0 }
     event.currentTarget.setPointerCapture?.(event.pointerId)
+    movedDuringPointer.current = false
     setDrag({ x: 0, y: 0, active: true })
   }
 
@@ -192,36 +234,61 @@ function SmartMatchDeck({
     if (!pointerStart.current || leaving) return
     const x = event.clientX - pointerStart.current.x
     const y = event.clientY - pointerStart.current.y
-    setDrag({ x, y, active: true })
+    if (!dragIntent && Math.max(Math.abs(x), Math.abs(y)) < 10) return
+    const nextIntent = dragIntent || (Math.abs(x) > Math.abs(y) * 1.35 ? 'horizontal' : Math.abs(y) > Math.abs(x) * 1.15 ? 'vertical' : null)
+    if (!nextIntent) return
+    setDragIntent(nextIntent)
+    if (nextIntent === 'vertical') {
+      resetDrag()
+      return
+    }
+    movedDuringPointer.current = Math.abs(x) > 6 || Math.abs(y) > 6
+    if (movedDuringPointer.current) suppressNextClick.current = true
+    const constrainedY = Math.max(-18, Math.min(18, y))
+    latestDrag.current = { x, y: constrainedY }
+    setDrag({ x, y: constrainedY, active: true })
   }
 
   const handlePointerUp = () => {
     if (!activeProperty || !pointerStart.current || leaving) return
-    if (drag.x > swipeThreshold) finishAction('interested', activeProperty.id)
-    else if (drag.x < -swipeThreshold) finishAction('pass', activeProperty.id)
+    const latestX = latestDrag.current.x
+    if (latestX > swipeThreshold) finishAction('interested', activeProperty.id)
+    else if (latestX < -swipeThreshold) finishAction('pass', activeProperty.id)
     else resetDrag()
   }
 
   const triggerButtonAction = (action) => {
     if (!activeProperty || leaving) return
+    if (smartLimitReached) return
+    if (action === 'interested' && interestLimitReached) return
     finishAction(action, activeProperty.id)
   }
 
   if (!activeProperty) {
+    const title = smartLimitReached
+      ? 'Daily Smart Match limit reached.'
+      : noActiveListings
+        ? 'No active listings available.'
+        : noFilterResults
+          ? 'No properties match these filters.'
+          : "You've reviewed all eligible listings."
+    const description = smartLimitReached
+      ? 'Browse remains available for all matching listings, and saved properties are unchanged.'
+      : noActiveListings
+        ? 'Check back after landlords publish listings.'
+        : noFilterResults
+          ? 'Reset filters or update your rental profile to widen the results.'
+          : 'Continue browsing all matching properties, or start over to review the stack again without changing today’s usage.'
     return (
       <section className="card-surface card-shadow rounded-[30px] p-5 text-center">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Smart Match</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-          {noFilterResults ? 'No properties match these filters.' : "Today's Smart Matches are finished."}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          {noFilterResults
-            ? 'Reset filters or update your rental profile to widen the results.'
-            : 'Continue browsing all matching properties, or start over if you want to review the stack again.'}
-        </p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
         <div className="mt-4 grid gap-3">
           <Button onClick={onBrowse}>Continue browsing</Button>
-          <Button variant="secondary" onClick={noFilterResults ? onResetFilters : onReset}>{noFilterResults ? 'Reset filters' : 'Start over'}</Button>
+          <Button variant="secondary" onClick={noFilterResults ? onResetFilters : onReset} disabled={smartLimitReached || noActiveListings}>
+            {noFilterResults ? 'Reset filters' : 'Start over'}
+          </Button>
         </div>
       </section>
     )
@@ -238,13 +305,13 @@ function SmartMatchDeck({
 
   return (
     <section className="mx-auto max-w-[520px]">
-      <div className="relative h-[clamp(28rem,calc(100dvh-15.5rem-env(safe-area-inset-bottom)),34rem)] touch-none [perspective:1200px]">
+      <div className="relative [perspective:1200px]">
         {nextProperty ? (
           <PropertyDeckFace
             property={nextProperty}
-            className="absolute inset-0 pointer-events-none"
+            className="pointer-events-none absolute inset-x-3 top-4 -z-10 opacity-45"
+            interactive={false}
             style={{
-              opacity: 0.62 + dragRatio * 0.24,
               transform: `translateY(${18 - dragRatio * 11}px) scale(${0.958 + dragRatio * 0.03})`,
             }}
           />
@@ -254,7 +321,7 @@ function SmartMatchDeck({
           role="button"
           tabIndex={0}
           aria-label={`Open ${activeProperty.title}`}
-          className={`absolute inset-0 cursor-grab touch-none select-none rounded-[32px] outline-none transition-[transform,opacity,box-shadow] focus-visible:ring-4 focus-visible:ring-indigo-100 ${
+          className={`cursor-grab select-none rounded-[32px] [touch-action:pan-y] outline-none transition-[transform,opacity,box-shadow] focus-visible:ring-4 focus-visible:ring-indigo-100 ${
             drag.active ? 'duration-0' : 'motion-spring duration-300'
           } ${leaving ? 'motion-exit duration-300' : ''} ${
             passedThreshold && intent === 'interested'
@@ -268,7 +335,11 @@ function SmartMatchDeck({
             transform: cardTransform,
           }}
           onClick={(event) => {
-            if (Math.abs(drag.x) < 8 && Math.abs(drag.y) < 8 && !leaving) onDetails(activeProperty.id)
+            if (suppressNextClick.current) {
+              suppressNextClick.current = false
+              return
+            }
+            if (!movedDuringPointer.current && Math.abs(drag.x) < 8 && Math.abs(drag.y) < 8 && !leaving) onDetails(activeProperty.id)
             event.currentTarget.blur()
           }}
           onKeyDown={(event) => {
@@ -285,7 +356,7 @@ function SmartMatchDeck({
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2 rounded-[24px] border border-white/70 bg-white/94 p-2 shadow-soft backdrop-blur-xl">
-        <Button variant="secondary" className="min-h-14" onClick={() => triggerButtonAction('pass')}>Pass</Button>
+        <Button variant="secondary" className="min-h-14" disabled={smartLimitReached} onClick={() => triggerButtonAction('pass')}>Pass</Button>
         <Button
           variant={isSaved ? 'secondary' : 'primary'}
           success={savedPulseId === activeProperty.id}
@@ -295,65 +366,68 @@ function SmartMatchDeck({
         >
           {isSaved ? 'Saved' : 'Save'}
         </Button>
-        <Button variant="dark" className="min-h-14" data-account-action="send-interest" onClick={() => triggerButtonAction('interested')}>
-          Interested
+        <Button variant="dark" className="min-h-14" data-account-action="send-interest" disabled={interestLimitReached || smartLimitReached} onClick={() => triggerButtonAction('interested')}>
+          {interestLimitReached ? 'Limit reached' : 'Interested'}
         </Button>
       </div>
     </section>
   )
 }
 
-function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null, className = '', style }) {
+function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null, className = '', interactive = true, style }) {
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
+  const roomListing = isRoomListing(property.listingCategory)
+  const facts = getSmartMatchFacts(property).slice(0, roomListing ? 5 : 5)
+  const updated = formatFreshness(property.updatedAt)
+  const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
 
   return (
     <article
-      className={`card-surface card-shadow h-full overflow-hidden rounded-[32px] bg-white transition-[border-color,box-shadow] duration-200 ${
+      className={`card-surface card-shadow overflow-hidden rounded-[32px] bg-white transition-[border-color,box-shadow] duration-200 ${
         highlight === 'interested'
           ? 'border-emerald-200 ring-4 ring-emerald-50'
           : highlight === 'pass'
             ? 'border-slate-300 ring-4 ring-slate-100'
             : ''
       } ${className}`}
+      aria-hidden={!interactive}
       style={style}
     >
-      <div className="relative h-[58%] min-[390px]:h-[62%]">
+      <div data-smart-swipe-zone={interactive ? 'true' : undefined} className="relative h-[23rem] min-[390px]:h-[24rem]">
         <ImageWithSkeleton src={property.images[0]} alt={property.title} draggable={false} />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/86 via-slate-950/20 to-transparent" />
         <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
           <MatchBadge score={property.match.score} />
           <span className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">
-            {property.bedrooms ? `${property.bedrooms} bed` : 'Studio'} · {property.propertyType}
+            {roomListing ? domainLabel('roomType', property.roomType) : `${property.bedrooms ? `${property.bedrooms} bed` : 'Studio'} · ${domainLabel('propertyType', property.propertyType)}`}
           </span>
         </div>
         <div className="absolute inset-x-0 bottom-0 p-4 text-white">
           <h2 className="text-balance text-[1.55rem] font-semibold leading-tight tracking-tight min-[390px]:text-[1.85rem]">{property.title}</h2>
           <p className="mt-1 text-sm text-slate-200">{property.area}, {property.city}</p>
           <p className="mt-2 text-sm font-semibold">{formatCurrency(property.rent)}/mo · available {formatDate(property.availableFrom)}</p>
+          {property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? <p className="mt-1 text-sm font-semibold text-emerald-100">Owner lives here</p> : null}
         </div>
       </div>
 
-      <div className="space-y-3 p-3.5 min-[390px]:p-4">
-        <div className="grid grid-cols-3 gap-2">
-          <Info label="Deposit" value={formatCurrency(property.deposit)} />
-          <Info label="Furnished" value={property.furnished} />
-          <Info label="Parking" value={property.parking} />
+      <div className="space-y-2.5 p-3.5 min-[390px]:p-4">
+        <div className="grid grid-cols-2 gap-2 min-[390px]:grid-cols-3">
+          {facts.map((fact) => <Info key={fact.label} label={fact.label} value={fact.value} />)}
         </div>
-        <div className="rounded-[20px] border border-emerald-100 bg-emerald-50/70 px-4 py-3">
+        <div className="rounded-[18px] border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">Why it fits</p>
-          <ul className="mt-2 space-y-1 text-sm leading-5 text-emerald-950">
+          <ul className="mt-1.5 space-y-1 text-sm leading-5 text-emerald-950">
             {property.match.reasons.slice(0, 2).map((reason) => (
               <li key={reason}>{reason}</li>
             ))}
           </ul>
         </div>
         <div className="flex flex-wrap gap-2">
-          {isNew ? <Pill tone="new">New</Pill> : null}
-          {trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}
+          {isNew ? <Pill tone="new">New</Pill> : trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}
           {isSaved ? <Pill tone="green">Saved</Pill> : null}
           {enquiryStatus ? <Pill tone="dark">{enquiryStatus}</Pill> : null}
-          {property.match.warnings?.[0] ? <Pill tone="amber">{property.match.warnings[0]}</Pill> : null}
+          {availability ? <Pill tone="green">{availability}</Pill> : !availability && updated ? <Pill tone="trust">{updated}</Pill> : null}
         </div>
       </div>
     </article>
@@ -382,6 +456,9 @@ function SwipeIntentBadge({ intent, opacity, ready }) {
 function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInterest, onSave }) {
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
+  const roomListing = isRoomListing(property.listingCategory)
+  const facts = getBrowseFacts(property)
+  const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
 
   return (
     <article className="card-surface card-shadow overflow-hidden rounded-[30px]">
@@ -394,7 +471,7 @@ function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInt
             <div className="flex flex-col items-end gap-2">
               {isNew ? <Pill tone="new">New</Pill> : null}
               <span className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">
-                {property.bedrooms ? `${property.bedrooms} bed` : 'Studio'}
+                {roomListing ? domainLabel('roomType', property.roomType) : property.bedrooms ? `${property.bedrooms} bed` : 'Studio'}
               </span>
             </div>
           </div>
@@ -402,11 +479,18 @@ function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInt
             <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight">{property.title}</h2>
             <p className="mt-1 text-sm text-slate-200">{property.area}, {property.city}</p>
             <p className="mt-2 text-sm font-semibold">{formatCurrency(property.rent)}/mo · {formatDate(property.availableFrom)}</p>
+            {property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? <p className="mt-1 text-sm font-semibold text-emerald-100">Owner lives here</p> : null}
           </div>
         </div>
       </button>
-      <div className="space-y-4 p-5">
-        {trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}
+      <div className="space-y-3 p-4 min-[390px]:p-5">
+        <div className="grid grid-cols-2 gap-2">
+          {facts.slice(0, 4).map((fact) => <Info key={fact.label} label={fact.label} value={fact.value} />)}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}
+          {availability ? <Pill tone="green">{availability}</Pill> : null}
+        </div>
         {enquiryStatus ? (
           <div className="rounded-[20px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
             Enquiry status: {enquiryStatus}

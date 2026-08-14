@@ -3,13 +3,27 @@ import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
 import SelectInput from '../components/SelectInput'
+import {
+  ANY_VALUE,
+  furnishedOptions,
+  leasePreferenceOptions,
+  normalizeFurnished,
+  normalizeLeaseMonths,
+  normalizeParking,
+  normalizePet,
+  normalizeSmoking,
+  parkingNeedOptions,
+  petOptions,
+  smokingOptions,
+  withAny,
+} from '../config/domainOptions'
 import { getTenantProfileCompleteness } from '../config/rentalJourney'
+import { LISTING_CATEGORIES } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from '../utils/dateUtils'
 
 const areas = ['Rathmines', 'Ranelagh', 'Portobello', 'Smithfield', 'Drumcondra', 'Phibsborough', 'Ballsbridge', 'Dublin 2']
 const employmentOptions = ['Full-time', 'Part-time', 'Student', 'Remote worker', 'Self-employed']
-const leaseOptions = ['6 months', '6-12 months', '12 months', '12+ months']
 const contactOptions = ['In-app message', 'Email', 'Phone']
 
 export default function Profile() {
@@ -24,6 +38,11 @@ function TenantProfile() {
   const [form, setForm] = useState(() => ({
     ...tenantProfile,
     preferredAreas: tenantProfile.preferredAreas?.join(', ') || '',
+    leaseLength: normalizeLeaseMonths(tenantProfile.leaseLength, 12),
+    furnishedPreference: ['Any', ANY_VALUE].includes(tenantProfile.furnishedPreference) ? ANY_VALUE : normalizeFurnished(tenantProfile.furnishedPreference),
+    pets: normalizePet(tenantProfile.pets),
+    smoking: normalizeSmoking(tenantProfile.smoking),
+    parkingNeeded: normalizeParking(tenantProfile.parkingNeeded) === 'none' ? 'no' : 'yes',
   }))
   const [errors, setErrors] = useState(() =>
     isPastIsoDate(tenantProfile.moveInDate, today) ? { moveInDate: 'Move-in date cannot be in the past.' } : {},
@@ -103,7 +122,7 @@ function TenantProfile() {
       <form onSubmit={submit} className="space-y-4">
         <ProfileCompleteness completeness={completeness} />
         <Section title="Basics">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 min-[430px]:grid-cols-2">
             <FormInput id="tenant-name" label="Name" value={form.name || ''} maxLength={80} error={errors.name} onChange={(event) => update('name', event.target.value)} />
             <SelectInput label="Target city" value={form.targetCity || 'Dublin'} onChange={(event) => update('targetCity', event.target.value)} options={['Dublin', 'Cork', 'Galway'].map(option)} />
             <FormInput label="Preferred areas" value={form.preferredAreas || ''} onChange={(event) => update('preferredAreas', event.target.value)} />
@@ -113,25 +132,52 @@ function TenantProfile() {
         </Section>
 
         <Section title="Rental needs">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
             <FormInput id="tenant-budget-min" label="Budget min (€)" type="number" min="0" inputMode="numeric" value={form.budgetMin || ''} error={errors.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} />
             <FormInput id="tenant-budget-max" label="Budget max (€)" type="number" min="0" inputMode="numeric" value={form.budgetMax || ''} error={errors.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} />
             <FormInput id="tenant-move-in" label="Move-in date" type="date" min={today} value={isPastIsoDate(form.moveInDate, today) ? '' : form.moveInDate || ''} error={errors.moveInDate} onChange={(event) => update('moveInDate', event.target.value)} />
-            <SelectInput label="Lease length" value={form.leaseLength || '12 months'} onChange={(event) => update('leaseLength', event.target.value)} options={leaseOptions.map(option)} />
+            <SelectInput label="Lease length" value={form.leaseLength || '12'} onChange={(event) => update('leaseLength', event.target.value)} options={leasePreferenceOptions} />
             <FormInput id="tenant-household-size" label="Household size" type="number" min="1" inputMode="numeric" value={form.householdSize || 1} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />
-            <SelectInput label="Furnished" value={form.furnishedPreference || 'Any'} onChange={(event) => update('furnishedPreference', event.target.value)} options={['Any', 'Furnished', 'Part-furnished', 'Unfurnished'].map(option)} />
+            <SelectInput label="Furnished" value={form.furnishedPreference || ANY_VALUE} onChange={(event) => update('furnishedPreference', event.target.value)} options={withAny(furnishedOptions)} />
           </div>
+          <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2">
+            <SelectInput
+              label="Looking for"
+              value={form.lookingFor || 'any'}
+              onChange={(event) => update('lookingFor', event.target.value)}
+              options={[
+                { label: 'Any', value: 'any' },
+                { label: 'Entire property', value: LISTING_CATEGORIES.ENTIRE_PROPERTY },
+                { label: 'Room', value: 'room' },
+              ]}
+            />
+            {form.lookingFor === 'room' ? (
+              <Check label="Owner-occupied acceptable" checked={form.ownerOccupiedAcceptable !== false} onChange={() => update('ownerOccupiedAcceptable', form.ownerOccupiedAcceptable === false)} />
+            ) : null}
+          </div>
+          {form.lookingFor === 'room' ? (
+            <details className="mt-4 rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3" open>
+              <summary className="cursor-pointer text-sm font-semibold text-slate-950 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
+                Room preferences
+              </summary>
+              <div className="mt-3 grid gap-3 min-[430px]:grid-cols-2">
+                <Check label="Private bathroom preferred" checked={Boolean(form.privateBathroomPreferred)} onChange={() => toggle('privateBathroomPreferred')} />
+                <Check label="Bills included preferred" checked={Boolean(form.billsIncludedPreferred)} onChange={() => toggle('billsIncludedPreferred')} />
+                <Check label="Applying as a couple" checked={Boolean(form.coupleRequirement)} onChange={() => toggle('coupleRequirement')} />
+              </div>
+            </details>
+          ) : null}
         </Section>
 
         <Section title="Application readiness">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
             <SelectInput label="Employment" value={form.employmentStatus || 'Full-time'} onChange={(event) => update('employmentStatus', event.target.value)} options={employmentOptions.map(option)} />
             <SelectInput label="Student" value={form.studentStatus || 'No'} onChange={(event) => update('studentStatus', event.target.value)} options={['No', 'Yes'].map(option)} />
-            <SelectInput label="Pets" value={form.pets || 'No pets'} onChange={(event) => update('pets', event.target.value)} options={['No pets', 'Cat', 'Dog', 'Other pet'].map(option)} />
-            <SelectInput label="Smoking" value={form.smoking || 'No'} onChange={(event) => update('smoking', event.target.value)} options={['No', 'Outside only', 'Yes'].map(option)} />
-            <SelectInput label="Parking needed" value={form.parkingNeeded || 'No'} onChange={(event) => update('parkingNeeded', event.target.value)} options={['No', 'Yes'].map(option)} />
+            <SelectInput label="Pets" value={form.pets || 'none'} onChange={(event) => update('pets', event.target.value)} options={petOptions} />
+            <SelectInput label="Smoking" value={form.smoking || 'no'} onChange={(event) => update('smoking', event.target.value)} options={smokingOptions} />
+            <SelectInput label="Parking needed" value={form.parkingNeeded || 'no'} onChange={(event) => update('parkingNeeded', event.target.value)} options={parkingNeedOptions} />
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
             <Check label="References ready" checked={Boolean(form.referencesReady)} onChange={() => toggle('referencesReady')} />
             <Check label="Proof of income ready" checked={Boolean(form.incomeReady)} onChange={() => toggle('incomeReady')} />
             <Check label="ID ready" checked={Boolean(form.idReady)} onChange={() => toggle('idReady')} />
@@ -242,7 +288,7 @@ function ProfileShell({ eyebrow, title, description, children }) {
 
 function Section({ title, children }) {
   return (
-    <section className="card-surface card-shadow rounded-[28px] p-5">
+    <section className="card-surface card-shadow rounded-[24px] p-4 min-[390px]:rounded-[28px] min-[390px]:p-5">
       <h2 className="text-lg font-semibold tracking-tight text-slate-950">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
@@ -265,12 +311,17 @@ function ProfileCompleteness({ completeness }) {
         <div className="h-full rounded-full bg-emerald-600 transition-all duration-300" style={{ width: `${completeness.percent}%` }} />
       </div>
       {completeness.missing.length ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {completeness.missing.map((item) => (
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          {completeness.missing.slice(0, 4).map((item) => (
             <span key={item.id} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
               Add {item.label.toLowerCase()}
             </span>
           ))}
+          {completeness.missing.length > 4 ? (
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+              +{completeness.missing.length - 4}
+            </span>
+          ) : null}
         </div>
       ) : (
         <p className="mt-3 text-sm font-medium text-emerald-700">Your profile has the key details landlords expect.</p>
@@ -281,9 +332,12 @@ function ProfileCompleteness({ completeness }) {
 
 function Check({ label, checked, onChange }) {
   return (
-    <label className="surface-line flex min-h-12 items-center justify-between rounded-[18px] bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-      {label}
-      <input type="checkbox" checked={checked} onChange={onChange} className="h-5 w-5 accent-emerald-500" />
+    <label className="surface-line flex min-h-12 items-center justify-between gap-3 rounded-[18px] bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+      <span>{label}</span>
+      <span className={`relative h-7 w-12 shrink-0 rounded-full transition ${checked ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-soft transition ${checked ? 'left-6' : 'left-1'}`} />
+      </span>
+      <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
     </label>
   )
 }

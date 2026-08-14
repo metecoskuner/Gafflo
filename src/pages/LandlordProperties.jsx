@@ -2,20 +2,14 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
+import { domainLabel } from '../config/domainOptions'
+import { isRoomListing, listingCategoryLabel, LISTING_CATEGORIES } from '../config/listingCategories'
+import { getListingActions, listingStatusLabels } from '../config/listingLifecycle'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
 const statusTabs = ['published', 'pending_verification', 'draft', 'paused', 'rejected', 'rented']
-const statusLabels = {
-  published: 'Published',
-  pending_verification: 'In review',
-  draft: 'Draft',
-  paused: 'Paused',
-  rejected: 'Rejected',
-  rented: 'Rented',
-  active: 'Published',
-}
 
 export default function LandlordProperties() {
   const navigate = useNavigate()
@@ -59,7 +53,7 @@ export default function LandlordProperties() {
           {statusTabs.map((status) => (
             <div key={status} className="rounded-[20px] bg-slate-50 px-3 py-3 text-center">
               <div className="text-base font-semibold text-slate-950">{counts[status] || 0}</div>
-              <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{statusLabels[status]}</div>
+              <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{listingStatusLabels[status]}</div>
             </div>
           ))}
         </div>
@@ -68,6 +62,8 @@ export default function LandlordProperties() {
       <section className="grid gap-4">
         {landlordProperties.map((property) => {
           const applicantCount = landlordEnquiries.filter((enquiry) => enquiry.propertyId === property.id).length
+          const actions = getPrimaryListingActions(property.listingStatus)
+          const roomListing = isRoomListing(property.listingCategory)
           return (
             <article key={property.id} className="card-surface card-shadow overflow-hidden rounded-[30px]">
               <div className="grid md:grid-cols-[12rem_1fr]">
@@ -79,7 +75,7 @@ export default function LandlordProperties() {
                     <div>
                       <div className="flex flex-wrap gap-2">
                         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                          {statusLabels[property.listingStatus] || property.listingStatus}
+                          {listingStatusLabels[property.listingStatus] || property.listingStatus}
                         </span>
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
                           {applicantCount} applicants
@@ -91,29 +87,28 @@ export default function LandlordProperties() {
                       </p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <Info label="Beds" value={String(property.bedrooms || 'Studio')} />
-                    <Info label="Type" value={property.propertyType} />
-                    <Info label="Viewing" value={property.viewingType} />
+                  <div className="grid grid-cols-2 gap-2 min-[430px]:grid-cols-3">
+                    <Info label="Category" value={listingCategoryLabel(property.listingCategory)} />
+                    <Info label={roomListing ? 'Room' : 'Home'} value={roomListing ? domainLabel('roomType', property.roomType) : `${property.bedrooms ? `${property.bedrooms} bed` : 'Studio'} ${domainLabel('propertyType', property.propertyType)}`} />
+                    {roomListing ? (
+                      <Info label="Owner" value={property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? 'Lives here' : 'Not present'} />
+                    ) : (
+                      <Info label="Viewing" value={property.viewingType} />
+                    )}
                   </div>
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-                    <Button variant="secondary" onClick={() => navigate(`/properties/${property.id}`)}>Preview</Button>
-                    <Button variant="secondary" onClick={() => navigate('/listings/new')}>Create another</Button>
-                    <Button
-                      variant="secondary"
-                      disabled={property.listingStatus === 'pending_verification'}
-                      onClick={() => updatePropertyStatus(property.id, 'pending_verification')}
-                    >
-                      Request review
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={property.listingStatus === 'paused'}
-                      onClick={() => updatePropertyStatus(property.id, 'paused')}
-                    >
-                      Pause
-                    </Button>
-                    <Button variant="dark" onClick={() => navigate('/applicants')}>Applicants</Button>
+                  <div className="grid gap-2 min-[380px]:grid-cols-2 md:grid-cols-3">
+                    {actions.includes('preview') ? <Button variant="secondary" onClick={() => navigate(`/properties/${property.id}`)}>Preview</Button> : null}
+                    {actions.includes('edit') ? <Button variant="secondary" onClick={() => navigate(`/listings/${property.id}/edit`)}>Edit</Button> : null}
+                    {getListingActions(property.listingStatus).filter((action) => actions.includes(action.status)).map((action) => (
+                      <Button
+                        key={action.status}
+                        variant={action.destructive ? 'dark' : 'secondary'}
+                        onClick={() => updatePropertyStatus(property.id, action.status)}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                    {actions.includes('applicants') ? <Button variant="dark" onClick={() => navigate('/applicants')}>Applicants</Button> : null}
                   </div>
                 </div>
               </div>
@@ -123,6 +118,19 @@ export default function LandlordProperties() {
       </section>
     </div>
   )
+}
+
+function getPrimaryListingActions(status) {
+  const normalized = status === 'active' ? 'published' : status
+  const actionsByStatus = {
+    draft: ['edit', 'pending_verification'],
+    pending_verification: ['preview'],
+    published: ['preview', 'edit', 'paused', 'applicants'],
+    paused: ['published', 'edit'],
+    rented: ['preview'],
+    rejected: ['edit', 'pending_verification'],
+  }
+  return actionsByStatus[normalized] || ['preview']
 }
 
 function Info({ label, value }) {

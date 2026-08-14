@@ -17,7 +17,7 @@ const hostItems = [
 ]
 
 export default function BottomNav() {
-  const { role, savedPropertyIds } = useAppState()
+  const { role, savedProperties } = useAppState()
   const items = role === 'landlord' ? hostItems : renterItems
 
   return (
@@ -40,9 +40,9 @@ export default function BottomNav() {
           >
             <span className="relative text-lg leading-none">
               {item.icon}
-              {item.to === '/saved' && savedPropertyIds.length > 0 ? (
+              {item.to === '/saved' && savedProperties.length > 0 ? (
                 <span className="absolute -right-3 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-bold text-white">
-                  {savedPropertyIds.length}
+                  {savedProperties.length}
                 </span>
               ) : null}
             </span>

@@ -1,4 +1,14 @@
-import { differenceInDaysSafe } from './dateUtils'
+import {
+  normalizeBathroomArrangement,
+  normalizeFurnished,
+  normalizeLeaseMonths,
+  normalizeParking,
+  normalizePet,
+  normalizePetPolicy,
+  normalizeSmoking,
+} from '../config/domainOptions'
+import { LISTING_CATEGORIES, isRoomListing, tenantLookingForMatches } from '../config/listingCategories'
+import { directionalDayGap } from './dateUtils'
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase()
@@ -25,6 +35,16 @@ export function calculatePropertyMatch(tenantProfile, property) {
   const reasons = []
   const warnings = []
   const hardStops = []
+  const roomListing = isRoomListing(property.listingCategory)
+
+  if (tenantLookingForMatches(tenantProfile.lookingFor, property.listingCategory)) {
+    score += 8
+    if (tenantProfile.lookingFor && tenantProfile.lookingFor !== 'any') {
+      reasons.push(roomListing ? 'This room matches what you are looking for.' : 'This entire property matches what you are looking for.')
+    }
+  } else {
+    warnings.push(roomListing ? 'You are mainly looking for entire properties.' : 'You are mainly looking for rooms.')
+  }
 
   if (normalize(tenantProfile.targetCity) === normalize(property.city)) {
     score += 12
@@ -50,15 +70,20 @@ export function calculatePropertyMatch(tenantProfile, property) {
     if (gap > 300) hardStops.push('The rent is materially above your maximum budget.')
     else warnings.push('The monthly rent is above your maximum budget.')
   } else if (property.rent < Number(tenantProfile.budgetMin)) {
-    warnings.push('The monthly rent is below your stated budget range.')
+    score += 8
+    reasons.push('The monthly rent is below your stated minimum budget.')
   }
 
-  const moveInGap = differenceInDaysSafe(tenantProfile.moveInDate, property.availableFrom)
-  if (moveInGap <= 30) {
+  const moveInGap = directionalDayGap(tenantProfile.moveInDate, property.availableFrom)
+  if (moveInGap === null) {
+    warnings.push('Move-in timing is incomplete, so date fit is not scored.')
+  } else if (moveInGap >= -14 && moveInGap <= 30) {
     score += 12
     reasons.push('The available date is close to your move-in date.')
+  } else if (moveInGap < -14) {
+    warnings.push('This listing may be available too early for your move-in timing.')
   } else {
-    warnings.push('The available date may not match your move-in date.')
+    warnings.push('This listing may be available later than your move-in date.')
   }
 
   const householdSize = Number(tenantProfile.householdSize || 1)
@@ -67,10 +92,42 @@ export function calculatePropertyMatch(tenantProfile, property) {
     score += 10
     reasons.push('The listed occupancy can fit your household size.')
   } else {
-    hardStops.push('The listed maximum occupancy is too small for your household.')
+    hardStops.push(roomListing ? 'Household capacity exceeded.' : 'The listed maximum occupancy is too small for your household.')
   }
 
-  const preferredLease = Number.parseInt(tenantProfile.leaseLength, 10)
+  if (roomListing) {
+    const needsCoupleRoom = Boolean(tenantProfile.coupleRequirement) || householdSize > 1
+    const capacityAfterMoveIn = Number(property.currentHouseholdSize || 0) + householdSize
+    if (needsCoupleRoom && !property.couplesAccepted) hardStops.push('Couples are not accepted for this room.')
+    if (capacityAfterMoveIn > Number(property.maxHouseholdSize || property.currentHouseholdSize || 1)) hardStops.push('Household capacity exceeded.')
+
+    if (tenantProfile.ownerOccupiedAcceptable === false && property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM) {
+      hardStops.push('Owner-occupied excluded by tenant preference.')
+    } else if (property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM) {
+      reasons.push('Owner lives here, which fits your room preference.')
+    }
+
+    const bathroom = normalizeBathroomArrangement(property.bathroomArrangement)
+    if (tenantProfile.privateBathroomPreferred) {
+      if (['private', 'ensuite'].includes(bathroom)) {
+        score += 7
+        reasons.push('The bathroom arrangement matches your private bathroom preference.')
+      } else {
+        warnings.push('This room has a shared bathroom.')
+      }
+    }
+
+    if (tenantProfile.billsIncludedPreferred) {
+      if (property.billsIncluded) {
+        score += 5
+        reasons.push('Bills are included for this room.')
+      } else {
+        warnings.push('Bills are separate for this room.')
+      }
+    }
+  }
+
+  const preferredLease = Number(normalizeLeaseMonths(tenantProfile.leaseLength, 12))
   if (!preferredLease || preferredLease >= Number(property.minStayMonths || 0)) {
     score += 8
     reasons.push('The minimum lease term fits your preference.')
@@ -81,7 +138,8 @@ export function calculatePropertyMatch(tenantProfile, property) {
   if (
     !tenantProfile.furnishedPreference ||
     tenantProfile.furnishedPreference === 'Any' ||
-    normalize(tenantProfile.furnishedPreference) === normalize(property.furnished)
+    tenantProfile.furnishedPreference === 'any' ||
+    normalizeFurnished(tenantProfile.furnishedPreference) === normalizeFurnished(property.furnished)
   ) {
     score += 7
     reasons.push('The furnishing setup fits your preference.')
@@ -90,17 +148,22 @@ export function calculatePropertyMatch(tenantProfile, property) {
   }
 
   const needsParking = normalize(tenantProfile.parkingNeeded) === 'yes'
-  if (!needsParking || normalize(property.parking) !== 'no') {
+  if (!needsParking || normalizeParking(property.parking) !== 'none') {
     score += 6
     if (needsParking) reasons.push('The listing appears to support your parking need.')
   } else {
     hardStops.push('You need parking, but this listing does not include it.')
   }
 
-  const smokingCompatible = normalize(tenantProfile.smoking) === 'no' ? normalize(property.smokingAllowed) !== 'yes' : true
+  const tenantSmoking = normalizeSmoking(tenantProfile.smoking)
+  const listingSmoking = normalizeSmoking(property.smokingAllowed)
+  const smokingCompatible =
+    tenantSmoking === 'no' ||
+    listingSmoking === 'yes' ||
+    (tenantSmoking === 'outside_only' && listingSmoking === 'outside_only')
 
-  const hasPets = !['no', 'no pets', 'none', ''].includes(normalize(tenantProfile.pets))
-  const petsCompatible = hasPets ? normalize(property.petsAllowed) === 'comfortable' : true
+  const hasPets = !['none', ''].includes(normalizePet(tenantProfile.pets))
+  const petsCompatible = hasPets ? normalizePetPolicy(property.petsAllowed) === 'considered' : true
 
   if (smokingCompatible && petsCompatible) {
     score += 7
@@ -122,7 +185,8 @@ export function calculatePropertyMatch(tenantProfile, property) {
 
   score -= hardStops.length * 18
 
-  const boundedScore = Math.max(0, Math.min(100, score))
+  const hardStopCap = hardStops.length ? 58 : 100
+  const boundedScore = Math.max(0, Math.min(hardStopCap, score))
 
   return {
     score: boundedScore,
@@ -130,7 +194,7 @@ export function calculatePropertyMatch(tenantProfile, property) {
       reasons.length > 0
         ? reasons
         : ['This listing could still be worth a look, but your profile would improve the match signal.'],
-    warnings,
-    hardStops,
+    warnings: [...new Set(warnings)],
+    hardStops: [...new Set(hardStops)],
   }
 }
