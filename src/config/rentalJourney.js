@@ -116,6 +116,7 @@ export function getViewingRows(enquiries, role) {
 
 export function getPrimaryTrustSignal(property) {
   const trust = property?.trust || {}
+  if (trust.internalDemoState) return ''
   if (trust.propertyVerification === 'verified') return 'Property reviewed'
   if (trust.landlordVerification === 'verified') return 'Verified landlord'
   if (trust.identityStatus === 'checked') return 'Identity checked'
@@ -125,6 +126,7 @@ export function getPrimaryTrustSignal(property) {
 
 export function getTrustSignals(property) {
   const trust = property?.trust || {}
+  if (trust.internalDemoState) return []
   return [
     trust.emailVerified ? 'Email verified' : null,
     trust.phoneVerified ? 'Phone verified' : null,
@@ -132,6 +134,17 @@ export function getTrustSignals(property) {
     trust.landlordVerification === 'verified' ? 'Landlord verified' : null,
     trust.propertyVerification === 'verified' ? 'Property reviewed' : null,
   ].filter(Boolean)
+}
+
+export function getTrustStatusLabel(status, trust = {}) {
+  if (trust.internalDemoState) return 'Not shown'
+  const labels = {
+    verified: 'Verified',
+    pending: 'Pending',
+    rejected: 'Rejected',
+    not_verified: 'Not verified',
+  }
+  return labels[status] || 'Not verified'
 }
 
 export function isNewProperty(property, now = new Date()) {

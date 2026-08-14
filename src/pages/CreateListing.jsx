@@ -22,20 +22,24 @@ import {
   listingCategoryLabel,
   listingCategoryOptions,
   normalizeListingForStorage,
-  normalizeListingFormValues,
+  normalizeListingFormState,
   validateListingForReview,
 } from '../config/listingCategories'
+import { cityOptions } from '../config/locationOptions'
 import { getDurableListingImages, getDurablePhotoMetadata, getPhotoLabelOptions, isSessionObjectUrl, normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
 import useAppState from '../context/useAppState'
 import { getTodayIsoDate } from '../utils/dateUtils'
 
-const cityOptions = ['Dublin', 'Cork', 'Galway', 'Limerick', 'Waterford']
 const viewingTypeOptions = ['In-person', 'Virtual or in-person']
+const roomOccupancyOptions = [
+  { label: '1 person', value: '1' },
+  { label: 'Up to 2 people', value: '2' },
+]
 const defaultImage =
   'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80'
 
 function createInitialForm() {
-  return normalizeListingFormValues({
+  return normalizeListingFormState({
     listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY,
     title: '',
     rent: '',
@@ -53,7 +57,7 @@ function createInitialForm() {
     bathrooms: '1',
     bathroomArrangement: 'shared',
     maxOccupants: '2',
-    currentHouseholdSize: '1',
+    currentHouseholdSize: '0',
     maxHouseholdSize: '2',
     furnished: 'furnished',
     parking: 'none',
@@ -110,7 +114,7 @@ export default function CreateListing() {
   }, [])
 
   const updateField = (field, value) => {
-    setForm((current) => normalizeListingFormValues({ ...current, [field]: value }))
+    setForm((current) => normalizeListingFormState({ ...current, [field]: value }))
     setErrors((current) => {
       const next = { ...current }
       delete next[field]
@@ -126,12 +130,24 @@ export default function CreateListing() {
       setErrors((current) => ({ ...current, listingCategory: safety.reason }))
       return
     }
-    if (safety.requiresConfirmation && !window.confirm('Changing category will reset fields that do not apply to the new listing type. Continue?')) return
+    const hasSessionPhotos = listingPhotos.some((photo) => photo.sessionOnly || isSessionObjectUrl(photo.src))
+    const resetMessage = hasSessionPhotos
+      ? 'Changing category will reset fields that do not apply to the new listing type and remove photos from this editing session. Continue?'
+      : 'Changing category will reset fields that do not apply to the new listing type. Continue?'
+    if (safety.requiresConfirmation && !window.confirm(resetMessage)) return
     setErrors((current) => {
       const next = { ...current }
       delete next.listingCategory
       return next
     })
+    if (hasSessionPhotos) {
+      listingPhotos.forEach((photo) => {
+        if (isSessionObjectUrl(photo.src)) URL.revokeObjectURL(photo.src)
+      })
+      setPhotoItems([])
+    } else {
+      setPhotoItems((current) => normalizePhotoMetadata(current, nextCategory))
+    }
     setForm((current) => applyCategoryDefaults(current, nextCategory))
   }
 
@@ -197,7 +213,7 @@ export default function CreateListing() {
   }
 
   const validate = () => {
-    const result = validateListingForReview(form, today)
+    const result = validateListingForReview(form, today, { photoCount: listingPhotos.length })
     setErrors(result.errors)
     return result.valid
   }
@@ -464,22 +480,18 @@ function HouseholdSection({ form, errors, updateField }) {
       <div className="grid gap-3 min-[430px]:grid-cols-2">
         <FormInput label="Total bedrooms" type="number" min="1" inputMode="numeric" value={form.totalBedrooms} error={errors.totalBedrooms} onChange={(event) => updateField('totalBedrooms', event.target.value)} />
         <FormInput label="Total bathrooms" type="number" min="0.5" step="0.5" inputMode="decimal" value={form.bathrooms} error={errors.bathrooms} onChange={(event) => updateField('bathrooms', event.target.value)} />
-        <FormInput label="Current household size" type="number" min="1" inputMode="numeric" value={form.currentHouseholdSize} error={errors.currentHouseholdSize} onChange={(event) => updateField('currentHouseholdSize', event.target.value)} />
+        <FormInput label="Current household size" type="number" min={form.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? '1' : '0'} inputMode="numeric" value={form.currentHouseholdSize} error={errors.currentHouseholdSize} onChange={(event) => updateField('currentHouseholdSize', event.target.value)} />
         <FormInput label="Max household size after move-in" type="number" min="2" inputMode="numeric" value={form.maxHouseholdSize} error={errors.maxHouseholdSize} onChange={(event) => updateField('maxHouseholdSize', event.target.value)} />
+        <SelectInput label="Room occupancy" value={form.maxOccupants} onChange={(event) => updateField('maxOccupants', event.target.value)} options={roomOccupancyOptions} error={errors.maxOccupants} />
       </div>
       <div className="mt-4 rounded-[18px] bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
         Household after move-in: up to {form.maxHouseholdSize || 0} people in a {domainLabel('roomParentPropertyType', form.parentPropertyType)}.
       </div>
       <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2">
-        <Toggle label="Shared kitchen" checked={Boolean(form.sharedKitchen)} onChange={(value) => updateField('sharedKitchen', value)} />
-        <Toggle label="Shared living room" checked={Boolean(form.sharedLivingRoom)} onChange={(value) => updateField('sharedLivingRoom', value)} />
-        <Toggle label="Laundry" checked={Boolean(form.laundry)} onChange={(value) => updateField('laundry', value)} />
-        <Toggle label="Internet" checked={Boolean(form.internet)} onChange={(value) => updateField('internet', value)} />
         <Toggle label="Couples accepted" checked={Boolean(form.couplesAccepted)} onChange={(value) => updateField('couplesAccepted', value)} />
         <Toggle label="Pets currently in home" checked={Boolean(form.petsInHome)} onChange={(value) => updateField('petsInHome', value)} />
         <SelectInput label="Pets accepted" value={form.petsAllowed} onChange={(event) => updateField('petsAllowed', event.target.value)} options={petPolicyOptions} />
         <SelectInput label="Smoking" value={form.smokingAllowed} onChange={(event) => updateField('smokingAllowed', event.target.value)} options={smokingOptions} />
-        <SelectInput label="Parking" value={form.parking} onChange={(event) => updateField('parking', event.target.value)} options={parkingOptions} />
       </div>
     </FormSection>
   )
@@ -541,11 +553,11 @@ function FormSection({ title, description, children }) {
 }
 
 function propertyToForm(property) {
-  return normalizeListingFormValues({ ...createInitialForm(), ...property })
+  return normalizeListingFormState({ ...createInitialForm(), ...property })
 }
 
 function applyCategoryDefaults(current, nextCategory) {
-  return normalizeListingFormValues({
+  return normalizeListingFormState({
     ...current,
     listingCategory: nextCategory,
     propertyType: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? 'apartment' : undefined,
@@ -553,8 +565,9 @@ function applyCategoryDefaults(current, nextCategory) {
     roomType: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? undefined : 'double',
     bedrooms: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? '1' : '1',
     totalBedrooms: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? undefined : '2',
-    currentHouseholdSize: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? undefined : '1',
+    currentHouseholdSize: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? undefined : nextCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? '1' : '0',
     maxHouseholdSize: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? undefined : '2',
+    maxOccupants: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? '2' : '1',
     bathroomArrangement: nextCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? undefined : 'shared',
     ownerLivesInProperty: nextCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM,
   })
@@ -602,7 +615,7 @@ function buildFeatures(form) {
 function buildListingRules(form) {
   return [
     form.smokingAllowed === 'no' ? 'No smoking indoors' : 'Smoking by agreement',
-    form.petsAllowed === 'considered' ? 'Pets considered' : 'No pets preferred',
+    form.petsAllowed === 'allowed' ? 'Pets allowed' : form.petsAllowed === 'considered' ? 'Pets considered' : 'Pets not allowed',
     form.couplesAccepted ? 'Couples accepted' : null,
     form.petsInHome ? 'Pets currently in the home' : null,
     'Tenant references by request',

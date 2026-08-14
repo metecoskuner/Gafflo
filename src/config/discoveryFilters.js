@@ -40,7 +40,7 @@ export function propertyMatchesFilters(property, filters) {
   if (roomListing && filters.couplesAccepted === 'Required' && !property.couplesAccepted) return false
   if (![ANY_VALUE, 'Any'].includes(filters.furnishedPreference) && normalizeFurnished(property.furnished) !== normalizeFurnished(filters.furnishedPreference)) return false
   if (!roomListing && filters.bedrooms !== 'Any' && property.bedrooms < Number(filters.bedrooms)) return false
-  if (filters.pets === 'Required' && normalizePetPolicy(property.petsAllowed) !== 'considered') return false
+  if (filters.pets === 'Required' && normalizePetPolicy(property.petsAllowed) !== 'allowed') return false
   if (filters.parking === 'Required' && normalizeParking(property.parking) === 'none') return false
   if (![ANY_VALUE, 'Any'].includes(filters.leaseLength) && Number(normalizeLeaseMonths(filters.leaseLength)) < Number(property.minStayMonths || 0)) return false
   return true

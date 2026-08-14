@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import MatchBadge from '../components/MatchBadge'
 import { getApplicationActions } from '../config/applicationTransitions'
+import { filterApplicantsByProperty, getValidApplicantPropertyId } from '../config/applicantFilters'
 import { applicantPipelineTabs, getPipelineGroup } from '../config/rentalJourney'
 import { isRoomListing } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
@@ -12,20 +13,24 @@ import { formatDate, getFutureViewingSlots } from '../utils/dateUtils'
 
 export default function Applicants() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { landlordEnquiries, landlordProperties, updateEnquiryStatus, openConversationForEnquiry, proposeViewing } = useAppState()
   const [activePipeline, setActivePipeline] = useState('new')
   const [confirmRejectId, setConfirmRejectId] = useState(null)
+  const activePropertyId = getValidApplicantPropertyId(searchParams.get('property'), landlordProperties)
+  const activeProperty = landlordProperties.find((property) => property.id === activePropertyId)
+  const scopedEnquiries = useMemo(() => filterApplicantsByProperty(landlordEnquiries, activePropertyId), [activePropertyId, landlordEnquiries])
   const pipelineCounts = useMemo(
     () =>
       applicantPipelineTabs.reduce((acc, tab) => {
-        acc[tab.id] = landlordEnquiries.filter((enquiry) => getPipelineGroup(enquiry.status) === tab.id).length
+        acc[tab.id] = scopedEnquiries.filter((enquiry) => getPipelineGroup(enquiry.status) === tab.id).length
         return acc
       }, {}),
-    [landlordEnquiries],
+    [scopedEnquiries],
   )
   const filteredEnquiries = useMemo(
-    () => landlordEnquiries.filter((enquiry) => getPipelineGroup(enquiry.status) === activePipeline),
-    [activePipeline, landlordEnquiries],
+    () => scopedEnquiries.filter((enquiry) => getPipelineGroup(enquiry.status) === activePipeline),
+    [activePipeline, scopedEnquiries],
   )
 
   if (!landlordEnquiries.length) {
@@ -44,7 +49,17 @@ export default function Applicants() {
       <section className="card-surface card-shadow rounded-[28px] p-5">
         <p className="text-sm font-semibold text-emerald-600">Applicants</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Review interested tenants</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Start with the strongest rental fit, then message or arrange a viewing.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          {activeProperty ? `Showing applicants for ${activeProperty.title}.` : 'Start with the strongest rental fit, then message or arrange a viewing.'}
+        </p>
+        {searchParams.get('property') && !activeProperty ? (
+          <p className="mt-2 text-sm font-medium text-amber-700">That listing is not available, so all applicants are shown.</p>
+        ) : null}
+        {activeProperty ? (
+          <Button type="button" variant="secondary" className="mt-3" onClick={() => setSearchParams({})}>
+            All properties
+          </Button>
+        ) : null}
         <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
           {applicantPipelineTabs.map((tab) => (
             <button
@@ -68,7 +83,7 @@ export default function Applicants() {
         </section>
       ) : null}
 
-      {landlordProperties.map((property) => {
+      {landlordProperties.filter((property) => !activePropertyId || property.id === activePropertyId).map((property) => {
         const propertyApplicants = filteredEnquiries
           .filter((enquiry) => enquiry.propertyId === property.id)
           .sort((a, b) => b.match.score - a.match.score)
@@ -121,7 +136,7 @@ export default function Applicants() {
                     <Info label="Budget" value={`${formatCurrency(tenant.budgetMin)}-${formatCurrency(tenant.budgetMax)}`} />
                     <Info label="Move-in" value={formatDate(tenant.moveInDate)} />
                     <Info label="Household" value={`${tenant.householdSize}`} />
-                    {roomListing ? <Info label="Couple" value={tenant.coupleRequirement || Number(tenant.householdSize) > 1 ? 'Required' : 'No'} /> : null}
+                    {roomListing ? <Info label="Room applicants" value={tenant.coupleRequirement ? 'Needs 2-person room' : `${tenant.householdSize}`} /> : null}
                     <Info label="Readiness" value={`${docsReady}/3 ready`} />
                   </div>
 

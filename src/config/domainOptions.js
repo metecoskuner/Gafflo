@@ -45,8 +45,9 @@ export const petOptions = [
 ]
 
 export const petPolicyOptions = [
+  option('allowed', 'Pets allowed'),
   option('considered', 'Pets considered'),
-  option('not_allowed', 'No pets preferred'),
+  option('not_allowed', 'Pets not allowed'),
 ]
 
 export const smokingOptions = [
@@ -116,13 +117,16 @@ const aliases = {
     other: 'other',
   },
   petPolicy: {
+    allowed: 'allowed',
+    yes: 'allowed',
+    'pets allowed': 'allowed',
     comfortable: 'considered',
     considered: 'considered',
-    yes: 'considered',
     'pets considered': 'considered',
     'not comfortable': 'not_allowed',
     no: 'not_allowed',
     'no pets preferred': 'not_allowed',
+    'pets not allowed': 'not_allowed',
     not_allowed: 'not_allowed',
   },
   smoking: {

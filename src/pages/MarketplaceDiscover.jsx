@@ -78,7 +78,7 @@ export default function MarketplaceDiscover() {
             <p className="text-sm font-semibold text-emerald-600">Discover</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 min-[390px]:text-3xl">Smart Match</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Ranked Dublin listings based on budget, area, timing, tenancy rules and application readiness.
+              Ranked listings based on your rental profile.
             </p>
           </div>
           <div className="grid w-full shrink-0 grid-cols-2 rounded-full bg-slate-100 p-1 md:w-auto">

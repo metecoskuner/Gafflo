@@ -9,7 +9,9 @@ import {
   normalizePetPolicy,
   normalizeSmoking,
 } from '../config/domainOptions'
+import { cityOptions, normalizePreferredAreas } from '../config/locationOptions'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
+import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { LISTING_CATEGORIES, normalizeListingForStorage } from '../config/listingCategories'
 import { getDurableListingImages, getDurablePhotoMetadata } from '../config/photoMetadata'
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
@@ -66,7 +68,6 @@ const defaultTenantProfile = {
   incomeReady: false,
   idReady: false,
   bio: '',
-  notifications: 'Email and app',
   lookingFor: 'any',
   privateBathroomPreferred: false,
   billsIncludedPreferred: false,
@@ -82,7 +83,6 @@ const defaultLandlordProfile = {
   phone: '+353 87 000 0000',
   email: 'maeve@example.test',
   preferredContactMethod: 'In-app message',
-  propertyCount: '2',
   verificationStatus: 'Landlord verification pending',
   trust: {
     emailVerified: true,
@@ -91,7 +91,7 @@ const defaultLandlordProfile = {
     landlordVerification: 'pending',
     internalDemoState: true,
   },
-  bio: 'Private landlord managing a small number of Dublin homes.',
+  bio: 'Private landlord managing a small number of rental places.',
 }
 
 const defaultPropertyFilters = {
@@ -161,7 +161,7 @@ function normalizeStoredProperty(property) {
 
 function mergeLocalAndMockProperties(localProperties, mockProperties) {
   const localIds = new Set(localProperties.map((property) => property.id))
-  return [...localProperties, ...mockProperties.filter((property) => !localIds.has(property.id))]
+  return [...localProperties, ...getVisibleMvpMockProperties(mockProperties).filter((property) => !localIds.has(property.id))]
 }
 
 function normalizeStoredConversation(conversation) {
@@ -442,18 +442,21 @@ export function AppStateProvider({ children }) {
         pets: normalizePet(profile.pets),
         smoking: normalizeSmoking(profile.smoking),
         parkingNeeded: normalize(profile.parkingNeeded) === 'yes' ? 'yes' : 'no',
+        targetCity: cityOptions.includes(profile.targetCity) ? profile.targetCity : defaultTenantProfile.targetCity,
+        preferredAreas: normalizePreferredAreas(profile.preferredAreas, profile.targetCity),
         lookingFor: ['any', LISTING_CATEGORIES.ENTIRE_PROPERTY, 'room'].includes(profile.lookingFor) ? profile.lookingFor : 'any',
         privateBathroomPreferred: Boolean(profile.privateBathroomPreferred),
         billsIncludedPreferred: Boolean(profile.billsIncludedPreferred),
         ownerOccupiedAcceptable: profile.ownerOccupiedAcceptable !== false,
-        coupleRequirement: Boolean(profile.coupleRequirement),
+        coupleRequirement: Boolean(profile.coupleRequirement) && Number(profile.householdSize) >= 2,
+        notifications: undefined,
       }
       setTenantProfile(next)
       setTenantProfileState(next)
       setToast({ type: 'success', message: 'Tenant profile saved.' })
     },
     saveLandlordProfile(profile) {
-      const next = { ...defaultLandlordProfile, ...profile, id: currentOwnerId }
+      const next = { ...defaultLandlordProfile, ...profile, id: currentOwnerId, propertyCount: undefined }
       setLandlordProfile(next)
       setLandlordProfileState(next)
       setToast({ type: 'success', message: 'Landlord profile saved.' })
@@ -787,7 +790,7 @@ export function AppStateProvider({ children }) {
         id: `property-local-${Date.now()}`,
         ownerId: currentOwnerId,
         ownerName: landlordProfile.displayName,
-        ownerType: landlordProfile.landlordType === 'agent' ? 'Letting agent' : 'Private landlord',
+        ownerType: 'Private landlord',
         ...normalizeListingForStorage(property),
         rent: Number(property.rent),
         rentMonthly: Number(property.rent),

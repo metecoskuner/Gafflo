@@ -7,6 +7,7 @@ import {
   normalizePetPolicy,
   normalizeSmoking,
 } from '../config/domainOptions'
+import { normalizePreferredAreas } from '../config/locationOptions'
 import { LISTING_CATEGORIES, isRoomListing, tenantLookingForMatches } from '../config/listingCategories'
 import { directionalDayGap } from './dateUtils'
 
@@ -15,7 +16,7 @@ function normalize(value) {
 }
 
 function normalizeAreaList(preferredAreas = []) {
-  return preferredAreas.map((item) => normalize(item))
+  return normalizePreferredAreas(preferredAreas).map((item) => normalize(item))
 }
 
 export function calculatePropertyMatch(tenantProfile, property) {
@@ -92,11 +93,11 @@ export function calculatePropertyMatch(tenantProfile, property) {
     score += 10
     reasons.push('The listed occupancy can fit your household size.')
   } else {
-    hardStops.push(roomListing ? 'Household capacity exceeded.' : 'The listed maximum occupancy is too small for your household.')
+    hardStops.push(roomListing ? 'This room occupancy is too small for the applicants.' : 'The listed maximum occupancy is too small for your household.')
   }
 
   if (roomListing) {
-    const needsCoupleRoom = Boolean(tenantProfile.coupleRequirement) || householdSize > 1
+    const needsCoupleRoom = Boolean(tenantProfile.coupleRequirement)
     const capacityAfterMoveIn = Number(property.currentHouseholdSize || 0) + householdSize
     if (needsCoupleRoom && !property.couplesAccepted) hardStops.push('Couples are not accepted for this room.')
     if (capacityAfterMoveIn > Number(property.maxHouseholdSize || property.currentHouseholdSize || 1)) hardStops.push('Household capacity exceeded.')
@@ -163,11 +164,13 @@ export function calculatePropertyMatch(tenantProfile, property) {
     (tenantSmoking === 'outside_only' && listingSmoking === 'outside_only')
 
   const hasPets = !['none', ''].includes(normalizePet(tenantProfile.pets))
-  const petsCompatible = hasPets ? normalizePetPolicy(property.petsAllowed) === 'considered' : true
+  const petPolicy = normalizePetPolicy(property.petsAllowed)
+  const petsCompatible = hasPets ? petPolicy !== 'not_allowed' : true
 
   if (smokingCompatible && petsCompatible) {
     score += 7
-    reasons.push('The listing rules fit your smoking and pet preferences.')
+    if (hasPets && petPolicy === 'considered') warnings.push('Pets are considered for this listing, but acceptance is not guaranteed.')
+    else reasons.push('The listing rules fit your smoking and pet preferences.')
   } else {
     hardStops.push('Some listing rules may not fit your smoking or pet preferences.')
   }

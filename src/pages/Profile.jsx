@@ -17,12 +17,12 @@ import {
   smokingOptions,
   withAny,
 } from '../config/domainOptions'
+import { cityOptions, getAreaOptionsForCity, normalizePreferredAreas } from '../config/locationOptions'
 import { getTenantProfileCompleteness } from '../config/rentalJourney'
 import { LISTING_CATEGORIES } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from '../utils/dateUtils'
 
-const areas = ['Rathmines', 'Ranelagh', 'Portobello', 'Smithfield', 'Drumcondra', 'Phibsborough', 'Ballsbridge', 'Dublin 2']
 const employmentOptions = ['Full-time', 'Part-time', 'Student', 'Remote worker', 'Self-employed']
 const contactOptions = ['In-app message', 'Email', 'Phone']
 
@@ -37,7 +37,8 @@ function TenantProfile() {
   const today = getTodayIsoDate()
   const [form, setForm] = useState(() => ({
     ...tenantProfile,
-    preferredAreas: tenantProfile.preferredAreas?.join(', ') || '',
+    preferredAreas: normalizePreferredAreas(tenantProfile.preferredAreas || [], tenantProfile.targetCity),
+    areaDraft: '',
     leaseLength: normalizeLeaseMonths(tenantProfile.leaseLength, 12),
     furnishedPreference: ['Any', ANY_VALUE].includes(tenantProfile.furnishedPreference) ? ANY_VALUE : normalizeFurnished(tenantProfile.furnishedPreference),
     pets: normalizePet(tenantProfile.pets),
@@ -47,7 +48,7 @@ function TenantProfile() {
   const [errors, setErrors] = useState(() =>
     isPastIsoDate(tenantProfile.moveInDate, today) ? { moveInDate: 'Move-in date cannot be in the past.' } : {},
   )
-  const areaHelp = useMemo(() => areas.join(' · '), [])
+  const areaOptions = useMemo(() => getAreaOptionsForCity(form.targetCity || 'Dublin'), [form.targetCity])
   const completeness = getTenantProfileCompleteness(form)
 
   const validateField = (field, value, nextForm = form) => {
@@ -68,6 +69,7 @@ function TenantProfile() {
       moveInDate: () => (isPastIsoDate(value, today) ? 'Move-in date cannot be in the past.' : ''),
       householdSize: () => (!Number.isFinite(Number(value)) || Number(value) < 1 ? 'Household size must be at least 1.' : ''),
       bio: () => (String(value || '').length > 600 ? 'Keep your introduction under 600 characters.' : ''),
+      coupleRequirement: () => (value && Number(nextForm.householdSize) < 2 ? 'Set room applicants to 2 people if you are applying as a couple.' : ''),
     }
     return validators[field]?.() || ''
   }
@@ -75,6 +77,7 @@ function TenantProfile() {
   const update = (field, value) => {
     setForm((current) => {
       const next = { ...current, [field]: value }
+      if (field === 'targetCity') next.preferredAreas = normalizePreferredAreas(next.preferredAreas, value)
       setErrors((currentErrors) => {
         const nextErrors = { ...currentErrors }
         const error = validateField(field, value, next)
@@ -89,16 +92,29 @@ function TenantProfile() {
           if (maxError) nextErrors.budgetMax = maxError
           else delete nextErrors.budgetMax
         }
+        if (field === 'householdSize' || field === 'coupleRequirement') {
+          const coupleError = validateField('coupleRequirement', next.coupleRequirement, next)
+          if (coupleError) nextErrors.coupleRequirement = coupleError
+          else delete nextErrors.coupleRequirement
+        }
         return nextErrors
       })
       return next
     })
   }
   const toggle = (field) => update(field, !form[field])
+  const addPreferredArea = (area) => {
+    const nextAreas = normalizePreferredAreas([...(form.preferredAreas || []), area], form.targetCity)
+    update('preferredAreas', nextAreas)
+    update('areaDraft', '')
+  }
+  const removePreferredArea = (area) => {
+    update('preferredAreas', (form.preferredAreas || []).filter((item) => item !== area))
+  }
 
   const submit = (event) => {
     event.preventDefault()
-    const fields = ['name', 'budgetMin', 'budgetMax', 'moveInDate', 'householdSize', 'bio']
+    const fields = ['name', 'budgetMin', 'budgetMax', 'moveInDate', 'householdSize', 'coupleRequirement', 'bio']
     const nextErrors = fields.reduce((acc, field) => {
       const error = validateField(field, form[field], form)
       if (error) acc[field] = error
@@ -112,7 +128,9 @@ function TenantProfile() {
       budgetMin: Math.max(0, Number(form.budgetMin || 0)),
       budgetMax: Math.max(0, Number(form.budgetMax || 0)),
       householdSize: Math.max(1, Number(form.householdSize || 1)),
-      preferredAreas: String(form.preferredAreas || '').split(',').map((item) => item.trim()).filter(Boolean),
+      preferredAreas: normalizePreferredAreas(form.preferredAreas, form.targetCity),
+      notifications: undefined,
+      areaDraft: undefined,
     })
     navigate('/discover')
   }
@@ -124,11 +142,17 @@ function TenantProfile() {
         <Section title="Basics">
           <div className="grid gap-3 min-[430px]:grid-cols-2">
             <FormInput id="tenant-name" label="Name" value={form.name || ''} maxLength={80} error={errors.name} onChange={(event) => update('name', event.target.value)} />
-            <SelectInput label="Target city" value={form.targetCity || 'Dublin'} onChange={(event) => update('targetCity', event.target.value)} options={['Dublin', 'Cork', 'Galway'].map(option)} />
-            <FormInput label="Preferred areas" value={form.preferredAreas || ''} onChange={(event) => update('preferredAreas', event.target.value)} />
-            <SelectInput label="Notifications" value={form.notifications || 'Email and app'} onChange={(event) => update('notifications', event.target.value)} options={['Email and app', 'Email only', 'App only'].map(option)} />
+            <SelectInput label="Target city" value={form.targetCity || 'Dublin'} onChange={(event) => update('targetCity', event.target.value)} options={cityOptions.map(option)} />
           </div>
-          <p className="mt-3 text-xs leading-6 text-slate-500">Dublin examples: {areaHelp}</p>
+          <PreferredAreasInput
+            areaDraft={form.areaDraft || ''}
+            areas={form.preferredAreas || []}
+            city={form.targetCity || 'Dublin'}
+            options={areaOptions}
+            onAdd={addPreferredArea}
+            onDraft={(value) => update('areaDraft', value)}
+            onRemove={removePreferredArea}
+          />
         </Section>
 
         <Section title="Rental needs">
@@ -137,7 +161,7 @@ function TenantProfile() {
             <FormInput id="tenant-budget-max" label="Budget max (€)" type="number" min="0" inputMode="numeric" value={form.budgetMax || ''} error={errors.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} />
             <FormInput id="tenant-move-in" label="Move-in date" type="date" min={today} value={isPastIsoDate(form.moveInDate, today) ? '' : form.moveInDate || ''} error={errors.moveInDate} onChange={(event) => update('moveInDate', event.target.value)} />
             <SelectInput label="Lease length" value={form.leaseLength || '12'} onChange={(event) => update('leaseLength', event.target.value)} options={leasePreferenceOptions} />
-            <FormInput id="tenant-household-size" label="Household size" type="number" min="1" inputMode="numeric" value={form.householdSize || 1} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />
+            <FormInput id="tenant-household-size" label={form.lookingFor === 'room' ? 'Room applicants' : 'Household size'} type="number" min="1" inputMode="numeric" value={form.householdSize || 1} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />
             <SelectInput label="Furnished" value={form.furnishedPreference || ANY_VALUE} onChange={(event) => update('furnishedPreference', event.target.value)} options={withAny(furnishedOptions)} />
           </div>
           <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2">
@@ -163,7 +187,7 @@ function TenantProfile() {
               <div className="mt-3 grid gap-3 min-[430px]:grid-cols-2">
                 <Check label="Private bathroom preferred" checked={Boolean(form.privateBathroomPreferred)} onChange={() => toggle('privateBathroomPreferred')} />
                 <Check label="Bills included preferred" checked={Boolean(form.billsIncludedPreferred)} onChange={() => toggle('billsIncludedPreferred')} />
-                <Check label="Applying as a couple" checked={Boolean(form.coupleRequirement)} onChange={() => toggle('coupleRequirement')} />
+                <Check label="Need room for 2 people" checked={Boolean(form.coupleRequirement)} error={errors.coupleRequirement} onChange={() => toggle('coupleRequirement')} />
               </div>
             </details>
           ) : null}
@@ -188,7 +212,16 @@ function TenantProfile() {
           <FormInput id="tenant-bio" textarea rows={5} label="Short bio" maxLength={600} value={form.bio || ''} error={errors.bio} onChange={(event) => update('bio', event.target.value)} />
         </Section>
 
-        <RoleSwitch onTenant={() => switchRole('tenant')} onLandlord={() => switchRole('landlord', 'private_landlord')} />
+        <RoleSwitch
+          onTenant={() => {
+            switchRole('tenant')
+            navigate('/discover')
+          }}
+          onLandlord={() => {
+            switchRole('landlord', 'private_landlord')
+            navigate('/dashboard')
+          }}
+        />
         <Button type="submit" className="w-full">Save tenant profile</Button>
       </form>
     </ProfileShell>
@@ -196,6 +229,7 @@ function TenantProfile() {
 }
 
 function LandlordProfile() {
+  const navigate = useNavigate()
   const { landlordProfile, saveLandlordProfile, switchRole } = useAppState()
   const [form, setForm] = useState(landlordProfile)
   const [errors, setErrors] = useState({})
@@ -208,7 +242,6 @@ function LandlordProfile() {
         if (length > 80) return 'Keep the display name under 80 characters.'
         return ''
       },
-      propertyCount: () => (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0) ? 'Property count cannot be negative.' : ''),
       email: () => (value && !/^\S+@\S+\.\S+$/.test(value) ? 'Enter a valid email address.' : ''),
       phone: () => (String(value || '').length > 30 ? 'Keep the phone number under 30 characters.' : ''),
       bio: () => (String(value || '').length > 600 ? 'Keep profile information under 600 characters.' : ''),
@@ -229,7 +262,7 @@ function LandlordProfile() {
 
   const submit = (event) => {
     event.preventDefault()
-    const fields = ['displayName', 'propertyCount', 'email', 'phone', 'bio']
+    const fields = ['displayName', 'email', 'phone', 'bio']
     const nextErrors = fields.reduce((acc, field) => {
       const error = validateField(field, form[field])
       if (error) acc[field] = error
@@ -238,7 +271,7 @@ function LandlordProfile() {
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length) return
 
-    saveLandlordProfile({ ...form, landlordType: 'private_landlord', companyName: '' })
+    saveLandlordProfile({ ...form, landlordType: 'private_landlord', companyName: '', propertyCount: undefined })
   }
 
   return (
@@ -251,7 +284,6 @@ function LandlordProfile() {
               <div className="text-sm font-medium text-slate-700">Type</div>
               <div className="mt-1 text-sm font-semibold text-slate-950">Private landlord</div>
             </div>
-            <FormInput id="landlord-property-count" label="Number of properties" type="number" min="0" inputMode="numeric" value={form.propertyCount || ''} error={errors.propertyCount} onChange={(event) => update('propertyCount', event.target.value)} />
             <FormInput id="landlord-phone" label="Phone" inputMode="tel" maxLength={30} value={form.phone || ''} error={errors.phone} onChange={(event) => update('phone', event.target.value)} />
             <FormInput id="landlord-email" label="Email" type="email" inputMode="email" value={form.email || ''} error={errors.email} onChange={(event) => update('email', event.target.value)} />
             <SelectInput label="Preferred contact" value={form.preferredContactMethod || 'In-app message'} onChange={(event) => update('preferredContactMethod', event.target.value)} options={contactOptions.map(option)} />
@@ -267,7 +299,16 @@ function LandlordProfile() {
         <div className="rounded-[22px] border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           New landlords can create draft listings, but public publishing can require landlord and property review.
         </div>
-        <RoleSwitch onTenant={() => switchRole('tenant')} onLandlord={() => switchRole('landlord', 'private_landlord')} />
+        <RoleSwitch
+          onTenant={() => {
+            switchRole('tenant')
+            navigate('/discover')
+          }}
+          onLandlord={() => {
+            switchRole('landlord', 'private_landlord')
+            navigate('/dashboard')
+          }}
+        />
         <Button type="submit" className="w-full">Save landlord profile</Button>
       </form>
     </ProfileShell>
@@ -331,15 +372,43 @@ function ProfileCompleteness({ completeness }) {
   )
 }
 
-function Check({ label, checked, onChange }) {
+function PreferredAreasInput({ areaDraft, areas, city, onAdd, onDraft, onRemove, options }) {
   return (
-    <label className="surface-line flex min-h-12 items-center justify-between gap-3 rounded-[18px] bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-      <span>{label}</span>
-      <span className={`relative h-7 w-12 shrink-0 rounded-full transition ${checked ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-soft transition ${checked ? 'left-6' : 'left-1'}`} />
-      </span>
-      <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
-    </label>
+    <div className="mt-4 space-y-3">
+      <div className="grid gap-3 min-[430px]:grid-cols-[1fr_auto]">
+        <SelectInput label="Suggested areas" value="" onChange={(event) => event.target.value && onAdd(event.target.value)} options={[{ label: `Choose an area in ${city}`, value: '' }, ...options.map(option)]} />
+        <div className="flex items-end">
+          <Button type="button" variant="secondary" className="w-full" disabled={!areaDraft.trim()} onClick={() => onAdd(areaDraft)}>
+            Add custom
+          </Button>
+        </div>
+      </div>
+      <FormInput label="Custom area" value={areaDraft} maxLength={70} onChange={(event) => onDraft(event.target.value)} />
+      {areas.length ? (
+        <div className="flex flex-wrap gap-2">
+          {areas.map((area) => (
+            <button key={area} type="button" onClick={() => onRemove(area)} className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-indigo-100">
+              {area} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function Check({ label, checked, error, onChange }) {
+  return (
+    <div>
+      <label className="surface-line flex min-h-12 items-center justify-between gap-3 rounded-[18px] bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+        <span>{label}</span>
+        <span className={`relative h-7 w-12 shrink-0 rounded-full transition ${checked ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+          <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-soft transition ${checked ? 'left-6' : 'left-1'}`} />
+        </span>
+        <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
+      </label>
+      {error ? <p className="mt-1 text-xs font-medium text-rose-500">{error}</p> : null}
+    </div>
   )
 }
 

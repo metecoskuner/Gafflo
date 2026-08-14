@@ -7,6 +7,7 @@ import Navbar from './components/Navbar'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
 import Button from './components/Button'
 import { ANY_VALUE, domainLabel, furnishedOptions, propertyTypeOptions, roomTypeOptions } from './config/domainOptions'
+import { cityOptions } from './config/locationOptions'
 import { LISTING_CATEGORIES, listingCategoryOptions } from './config/listingCategories'
 import { AppStateProvider } from './context/MarketplaceState'
 import useAppState from './context/useAppState'
@@ -243,7 +244,7 @@ function FilterSheet({ onClose }) {
 
   const locations = [
     'Any',
-    ...Array.from(new Set(properties.flatMap((property) => [property.city, property.area]))).sort((a, b) => a.localeCompare(b)),
+    ...Array.from(new Set([...cityOptions, ...properties.flatMap((property) => [property.city, property.area])])).filter(Boolean).sort((a, b) => a.localeCompare(b)),
   ]
   const categoryFilterOptions = toFilterOptions([{ value: 'Any', label: 'Any' }, ...listingCategoryOptions, { value: 'room', label: 'Any room' }])
   const propertyTypeFilterOptions = toFilterOptions([{ value: ANY_VALUE, label: 'Any' }, ...propertyTypeOptions])

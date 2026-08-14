@@ -108,7 +108,7 @@ export default function LandlordProperties() {
                         {action.label}
                       </Button>
                     ))}
-                    {actions.includes('applicants') ? <Button variant="dark" onClick={() => navigate('/applicants')}>Applicants</Button> : null}
+                    {actions.includes('applicants') ? <Button variant="dark" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>Applicants</Button> : null}
                   </div>
                 </div>
               </div>
@@ -125,8 +125,8 @@ function getPrimaryListingActions(status) {
   const actionsByStatus = {
     draft: ['edit', 'pending_verification'],
     pending_verification: ['preview'],
-    published: ['preview', 'edit', 'paused', 'applicants'],
-    paused: ['published', 'edit'],
+    published: ['preview', 'edit', 'paused', 'applicants', 'rented'],
+    paused: ['preview', 'edit', 'published', 'rented'],
     rented: ['preview'],
     rejected: ['edit', 'pending_verification'],
   }

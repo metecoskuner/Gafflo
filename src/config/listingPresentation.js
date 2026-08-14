@@ -57,3 +57,7 @@ export function formatFreshness(value, label = 'Updated', now = new Date()) {
   if (diffDays === 1) return `${label} yesterday`
   return `${label} ${diffDays} days ago`
 }
+
+export function shouldShowTenantMatch(role) {
+  return role !== 'landlord'
+}

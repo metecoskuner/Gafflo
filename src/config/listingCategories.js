@@ -80,8 +80,10 @@ export function normalizeListingForStorage(listing = {}) {
   const isRoom = isRoomListing(listingCategory)
   const propertyType = isRoom ? normalizeRoomParentPropertyType(listing.parentPropertyType || listing.propertyType) : normalizePropertyType(listing.propertyType)
   const bedrooms = propertyType === 'studio' && !isRoom ? 0 : positiveInteger(listing.bedrooms, isRoom ? 1 : 1)
-  const currentHouseholdSize = positiveInteger(listing.currentHouseholdSize, 1)
-  const maxHouseholdSize = Math.max(positiveInteger(listing.maxHouseholdSize, currentHouseholdSize + 1), currentHouseholdSize + 1)
+  const minCurrentHousehold = listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? 1 : 0
+  const currentHouseholdSize = Math.max(positiveInteger(listing.currentHouseholdSize, minCurrentHousehold), minCurrentHousehold)
+  const roomOccupancy = positiveInteger(listing.maxOccupants, 1)
+  const maxHouseholdSize = Math.max(positiveInteger(listing.maxHouseholdSize, currentHouseholdSize + roomOccupancy), currentHouseholdSize + roomOccupancy)
 
   return {
     ...listing,
@@ -93,7 +95,7 @@ export function normalizeListingForStorage(listing = {}) {
     bedrooms: isRoom ? 1 : bedrooms,
     totalBedrooms: isRoom ? positiveInteger(listing.totalBedrooms, Math.max(2, bedrooms)) : undefined,
     bathrooms: positiveNumber(listing.bathrooms, 1),
-    maxOccupants: isRoom ? positiveInteger(listing.maxOccupants, 1) : positiveInteger(listing.maxOccupants, bedrooms > 0 ? bedrooms : 1),
+    maxOccupants: isRoom ? roomOccupancy : positiveInteger(listing.maxOccupants, bedrooms > 0 ? bedrooms : 1),
     currentHouseholdSize: isRoom ? currentHouseholdSize : undefined,
     maxHouseholdSize: isRoom ? maxHouseholdSize : undefined,
     bathroomArrangement: isRoom ? normalizeBathroomArrangement(listing.bathroomArrangement) : undefined,
@@ -104,20 +106,34 @@ export function normalizeListingForStorage(listing = {}) {
   }
 }
 
-export function normalizeListingFormValues(form = {}) {
-  const listing = normalizeListingForStorage(form)
+export function normalizeListingFormState(form = {}) {
+  const listingCategory = normalizeListingCategory(form.listingCategory, form)
+  const isRoom = isRoomListing(listingCategory)
+  const propertyType = isRoom ? normalizeRoomParentPropertyType(form.parentPropertyType || form.propertyType) : normalizePropertyType(form.propertyType)
   return {
-    ...listing,
-    bedrooms: listing.propertyType === 'studio' && listing.listingCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY ? '0' : String(listing.bedrooms ?? ''),
-    bathrooms: String(listing.bathrooms ?? ''),
-    maxOccupants: String(listing.maxOccupants ?? ''),
-    totalBedrooms: listing.totalBedrooms === undefined ? '' : String(listing.totalBedrooms),
-    currentHouseholdSize: listing.currentHouseholdSize === undefined ? '' : String(listing.currentHouseholdSize),
-    maxHouseholdSize: listing.maxHouseholdSize === undefined ? '' : String(listing.maxHouseholdSize),
+    ...form,
+    listingCategory,
+    propertyType,
+    parentPropertyType: isRoom ? propertyType : undefined,
+    roomType: isRoom ? normalizeRoomType(form.roomType) : undefined,
+    ownerLivesInProperty: listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM,
+    bedrooms: propertyType === 'studio' && !isRoom ? '0' : stringifyFormNumber(form.bedrooms),
+    bathrooms: stringifyFormNumber(form.bathrooms),
+    maxOccupants: stringifyFormNumber(form.maxOccupants),
+    totalBedrooms: isRoom ? stringifyFormNumber(form.totalBedrooms) : '',
+    currentHouseholdSize: isRoom ? stringifyFormNumber(form.currentHouseholdSize) : '',
+    maxHouseholdSize: isRoom ? stringifyFormNumber(form.maxHouseholdSize) : '',
+    bathroomArrangement: isRoom ? normalizeBathroomArrangement(form.bathroomArrangement) : undefined,
+    furnished: normalizeFurnished(form.furnished),
+    parking: normalizeParking(form.parking),
+    smokingAllowed: normalizeSmoking(form.smokingAllowed),
+    petsAllowed: normalizePetPolicy(form.petsAllowed),
   }
 }
 
-export function validateListingForReview(listing = {}, today = '') {
+export const normalizeListingFormValues = normalizeListingFormState
+
+export function validateListingForReview(listing = {}, today = '', options = {}) {
   const normalized = normalizeListingForStorage(listing)
   const errors = {}
 
@@ -129,6 +145,7 @@ export function validateListingForReview(listing = {}, today = '') {
   if (today && listing.availableFrom && listing.availableFrom < today) errors.availableFrom = 'Available-from date cannot be in the past.'
   if (!positiveInteger(listing.minStayMonths, 0)) errors.minStayMonths = 'Minimum stay must be at least 1 month.'
   addTextError(errors, 'description', listing.description, 40, 900, 'Add at least 40 characters so renters understand the listing.')
+  if (Number(options.photoCount || 0) < 1) errors.images = isRoomListing(normalized.listingCategory) ? 'Add at least one room photo before requesting review.' : 'Add at least one listing photo before requesting review.'
 
   if (normalized.listingCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY) {
     if (!listing.propertyType || !['apartment', 'house', 'studio'].includes(normalized.propertyType)) errors.propertyType = 'Choose a property type.'
@@ -140,8 +157,9 @@ export function validateListingForReview(listing = {}, today = '') {
     if (!listing.bathroomArrangement || !['private', 'shared', 'ensuite'].includes(normalized.bathroomArrangement)) errors.bathroomArrangement = 'Choose the bathroom arrangement.'
     if (!positiveInteger(listing.totalBedrooms, 0)) errors.totalBedrooms = 'Add the total bedrooms in the home.'
     if (!positiveNumber(listing.bathrooms, 0)) errors.bathrooms = 'Add the total bathrooms.'
-    const capacity = validateRoomCapacity(listing)
-    if (!capacity.valid) errors.maxHouseholdSize = capacity.reason
+    if (!positiveInteger(listing.maxOccupants, 0)) errors.maxOccupants = 'Choose the room occupancy.'
+    const capacity = validateRoomCapacity(listing, normalized.listingCategory)
+    Object.assign(errors, capacity.errors)
   }
 
   return { valid: Object.keys(errors).length === 0, errors, listing: normalized }
@@ -153,19 +171,25 @@ export function getListingCompleteness(listing = {}, today = '') {
   const requiredFields =
     category === LISTING_CATEGORIES.ENTIRE_PROPERTY
       ? ['rent', 'area', 'availableFrom', 'propertyType', 'description']
-      : ['roomType', 'rent', 'area', 'availableFrom', 'bathroomArrangement', 'totalBedrooms', 'maxHouseholdSize', 'description']
+      : ['roomType', 'rent', 'area', 'availableFrom', 'bathroomArrangement', 'maxOccupants', 'totalBedrooms', 'currentHouseholdSize', 'maxHouseholdSize', 'description']
   const missing = requiredFields.filter((field) => errors[field])
   if (category === LISTING_CATEGORIES.ENTIRE_PROPERTY && normalizePropertyType(listing.propertyType) !== 'studio' && errors.bedrooms) missing.push('bedrooms')
   return { complete: missing.length === 0, missing, errors }
 }
 
-export function validateRoomCapacity(listing = {}) {
-  const current = positiveInteger(listing.currentHouseholdSize, 0)
+export function validateRoomCapacity(listing = {}, listingCategory = normalizeListingCategory(listing.listingCategory, listing)) {
+  const errors = {}
+  const rawCurrent = listing.currentHouseholdSize
+  const current = positiveInteger(rawCurrent, rawCurrent === 0 || rawCurrent === '0' ? 0 : -1)
   const max = positiveInteger(listing.maxHouseholdSize, 0)
-  if (!current) return { valid: false, reason: 'Add the current household size.' }
-  if (!max) return { valid: false, reason: 'Add the maximum household size after move-in.' }
-  if (max <= current) return { valid: false, reason: 'Max household size must allow at least one new person.' }
-  return { valid: true, reason: '' }
+  const maxOccupants = positiveInteger(listing.maxOccupants, 0)
+  if (current < 0) errors.currentHouseholdSize = 'Add the current household size.'
+  if (listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM && current < 1) errors.currentHouseholdSize = 'Owner-occupied rooms must include the owner in the current household.'
+  if (!max) errors.maxHouseholdSize = 'Add the maximum household size after move-in.'
+  if (!maxOccupants) errors.maxOccupants = 'Choose the room occupancy.'
+  if (!errors.maxHouseholdSize && !errors.currentHouseholdSize && max < current) errors.maxHouseholdSize = 'Max household size cannot be below the current household size.'
+  if (!errors.maxHouseholdSize && !errors.currentHouseholdSize && !errors.maxOccupants && current + maxOccupants > max) errors.maxHouseholdSize = 'Max household size must fit the current household plus this room occupancy.'
+  return { valid: Object.keys(errors).length === 0, errors, reason: Object.values(errors)[0] || '' }
 }
 
 export function getCategoryResetFields(fromCategory, toCategory) {
@@ -217,4 +241,9 @@ function positiveInteger(value, fallback = 0) {
 function positiveNumber(value, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function stringifyFormNumber(value) {
+  if (value === null || value === undefined) return ''
+  return String(value)
 }

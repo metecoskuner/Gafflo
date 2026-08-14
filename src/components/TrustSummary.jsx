@@ -1,4 +1,4 @@
-import { getTrustSignals } from '../config/rentalJourney'
+import { getTrustSignals, getTrustStatusLabel } from '../config/rentalJourney'
 
 export default function TrustSummary({ property }) {
   const signals = getTrustSignals(property)
@@ -26,8 +26,8 @@ export default function TrustSummary({ property }) {
         </div>
       )}
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <TrustTile label="Landlord" value={formatTrustStatus(property.trust?.landlordVerification)} />
-        <TrustTile label="Property" value={formatTrustStatus(property.trust?.propertyVerification)} />
+        <TrustTile label="Landlord" value={getTrustStatusLabel(property.trust?.landlordVerification, property.trust)} />
+        <TrustTile label="Property" value={getTrustStatusLabel(property.trust?.propertyVerification, property.trust)} />
       </div>
     </section>
   )
@@ -40,14 +40,4 @@ function TrustTile({ label, value }) {
       <div className="mt-1 truncate text-sm font-semibold text-slate-800">{value}</div>
     </div>
   )
-}
-
-function formatTrustStatus(status) {
-  const labels = {
-    verified: 'Verified',
-    pending: 'Pending',
-    rejected: 'Rejected',
-    not_verified: 'Not verified',
-  }
-  return labels[status] || 'Not verified'
 }

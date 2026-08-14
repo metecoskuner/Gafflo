@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { canTransitionApplication, terminalApplicationStatuses } from '../config/applicationTransitions'
-import { normalizePropertyType, normalizeLeaseMonths, normalizeSmoking } from '../config/domainOptions'
-import { getBrowseFacts, getSmartMatchFacts } from '../config/listingPresentation'
+import { normalizePetPolicy, normalizePropertyType, normalizeLeaseMonths, normalizeSmoking } from '../config/domainOptions'
+import { filterApplicantsByProperty, getValidApplicantPropertyId } from '../config/applicantFilters'
+import { cityOptions, normalizePreferredAreas } from '../config/locationOptions'
+import { getBrowseFacts, getSmartMatchFacts, shouldShowTenantMatch } from '../config/listingPresentation'
 import { getDurableListingImages, getDurablePhotoMetadata, normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import {
@@ -10,10 +12,13 @@ import {
   getListingCompleteness,
   inferListingCategory,
   normalizeListingForStorage,
+  normalizeListingFormState,
   validateListingForReview,
   validateRoomCapacity,
 } from '../config/listingCategories'
-import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
+import { canListingReceiveEnquiry, canTransitionListing, getListingActions } from '../config/listingLifecycle'
+import { getTrustSignals, getTrustStatusLabel } from '../config/rentalJourney'
+import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { directionalDayGap, isPastIsoDate } from '../utils/dateUtils'
@@ -129,6 +134,26 @@ describe('matching and dates', () => {
     expect(result.warnings).toContain('Bills are separate for this room.')
   })
 
+  it('does not infer couple status from household size alone', () => {
+    const room = {
+      ...property,
+      listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
+      maxOccupants: 2,
+      currentHouseholdSize: 0,
+      maxHouseholdSize: 2,
+      couplesAccepted: false,
+    }
+    const result = calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 2, coupleRequirement: false }, room)
+    expect(result.hardStops).not.toContain('Couples are not accepted for this room.')
+  })
+
+  it('treats pets considered as possible fit instead of guaranteed acceptance', () => {
+    const considered = calculatePropertyMatch({ ...tenant, pets: 'dog' }, { ...property, petsAllowed: 'considered' })
+    expect(considered.warnings).toContain('Pets are considered for this listing, but acceptance is not guaranteed.')
+    expect(considered.hardStops).not.toContain('Some listing rules may not fit your smoking or pet preferences.')
+    expect(calculatePropertyMatch({ ...tenant, pets: 'dog' }, { ...property, petsAllowed: 'not_allowed' }).hardStops).toContain('Some listing rules may not fit your smoking or pet preferences.')
+  })
+
   it('honours owner occupied tenant preference only when explicitly excluded', () => {
     const room = {
       ...property,
@@ -174,6 +199,12 @@ describe('domain and listing rules', () => {
     expect(canTransitionListing('paused', 'published')).toBe(true)
     expect(canListingReceiveEnquiry({ listingStatus: 'rented' })).toBe(false)
     expect(propertyMatchesFilters({ ...property, listingStatus: 'rented' }, { location: 'Any', listingCategory: 'Any' })).toBe(false)
+    expect(normalizePetPolicy('Pets allowed')).toBe('allowed')
+  })
+
+  it('centralizes cities and canonical preferred areas', () => {
+    expect(cityOptions).toEqual(['Dublin', 'Cork', 'Galway', 'Limerick', 'Waterford'])
+    expect(normalizePreferredAreas([' rathmines ', 'Rathmines', 'Custom Dock'], 'Dublin')).toEqual(['Rathmines', 'Custom Dock'])
   })
 })
 
@@ -252,18 +283,20 @@ describe('listing categories', () => {
   })
 
   it('uses category-specific required fields', () => {
-    const entire = validateListingForReview({ ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: 1, maxOccupants: 1 }, '2030-01-01')
+    const entire = validateListingForReview({ ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: 1, maxOccupants: 1 }, '2030-01-01', { photoCount: 1 })
     const room = validateListingForReview(
       {
         ...validBase,
         listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
         roomType: 'double',
         bathroomArrangement: 'shared',
+        maxOccupants: 1,
         totalBedrooms: 3,
         currentHouseholdSize: 2,
         maxHouseholdSize: 3,
       },
       '2030-01-01',
+      { photoCount: 1 },
     )
     expect(entire.valid).toBe(true)
     expect(room.valid).toBe(true)
@@ -271,8 +304,10 @@ describe('listing categories', () => {
   })
 
   it('validates room capacity', () => {
-    expect(validateRoomCapacity({ currentHouseholdSize: 2, maxHouseholdSize: 2 }).valid).toBe(false)
-    expect(validateRoomCapacity({ currentHouseholdSize: 2, maxHouseholdSize: 3 }).valid).toBe(true)
+    expect(validateRoomCapacity({ currentHouseholdSize: 2, maxHouseholdSize: 2, maxOccupants: 1 }).errors.maxHouseholdSize).toBe('Max household size must fit the current household plus this room occupancy.')
+    expect(validateRoomCapacity({ currentHouseholdSize: 2, maxHouseholdSize: 3, maxOccupants: 1 }).valid).toBe(true)
+    expect(validateRoomCapacity({ listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM, currentHouseholdSize: 0, maxHouseholdSize: 1, maxOccupants: 1 }).valid).toBe(true)
+    expect(validateRoomCapacity({ listingCategory: LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM, currentHouseholdSize: 0, maxHouseholdSize: 1, maxOccupants: 1 }).errors.currentHouseholdSize).toBe('Owner-occupied rooms must include the owner in the current household.')
   })
 
   it('protects unsafe category changes by lifecycle state', () => {
@@ -284,5 +319,70 @@ describe('listing categories', () => {
   it('calculates listing completeness per category', () => {
     expect(getListingCompleteness({ ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', maxOccupants: 1 }, '2030-01-01').complete).toBe(true)
     expect(getListingCompleteness({ ...validBase, listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM, roomType: 'double' }, '2030-01-01').complete).toBe(false)
+  })
+})
+
+describe('frontend integrity helpers', () => {
+  it('keeps editable blank numeric form state separate from storage normalization', () => {
+    const form = normalizeListingFormState({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: '', bathrooms: '' })
+    expect(form.bedrooms).toBe('')
+    expect(form.bathrooms).toBe('')
+    expect(validateListingForReview({ ...form, title: 'Valid title', rent: 1200, deposit: 1200, area: 'Rathmines', availableFrom: '2030-01-01', minStayMonths: 6, maxOccupants: 1, description: 'A clear listing description with enough detail for renters.' }, '2029-01-01', { photoCount: 1 }).errors).toMatchObject({
+      bedrooms: 'Add the number of bedrooms.',
+      bathrooms: 'Add the number of bathrooms.',
+    })
+  })
+
+  it('stores studio bedrooms as zero without forcing apartment bedroom inputs', () => {
+    const form = normalizeListingFormState({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', bedrooms: '' })
+    expect(form.bedrooms).toBe('0')
+    expect(normalizeListingForStorage(form).bedrooms).toBe(0)
+  })
+
+  it('requires session or durable photos for review without persisting blob URLs', () => {
+    const listing = {
+      title: 'Bright listing',
+      rent: 1200,
+      deposit: 1200,
+      area: 'Rathmines',
+      availableFrom: '2030-01-01',
+      minStayMonths: 6,
+      description: 'A clear listing description with enough detail for renters.',
+      listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY,
+      propertyType: 'apartment',
+      bedrooms: 1,
+      bathrooms: 1,
+      maxOccupants: 1,
+    }
+    expect(validateListingForReview(listing, '2029-01-01').errors.images).toBe('Add at least one listing photo before requesting review.')
+    expect(validateListingForReview(listing, '2029-01-01', { photoCount: 1 }).valid).toBe(true)
+    expect(getDurablePhotoMetadata([{ src: 'blob:http://localhost/photo' }], LISTING_CATEGORIES.ENTIRE_PROPERTY)).toEqual([])
+  })
+
+  it('filters applicants by valid property query only', () => {
+    const properties = [{ id: 'p1' }, { id: 'p2' }]
+    const enquiries = [{ propertyId: 'p1' }, { propertyId: 'p2' }]
+    expect(getValidApplicantPropertyId('p1', properties)).toBe('p1')
+    expect(getValidApplicantPropertyId('missing', properties)).toBe('')
+    expect(filterApplicantsByProperty(enquiries, 'p2')).toEqual([{ propertyId: 'p2' }])
+  })
+
+  it('hides tenant match presentation for landlord previews', () => {
+    expect(shouldShowTenantMatch('tenant')).toBe(true)
+    expect(shouldShowTenantMatch('landlord')).toBe(false)
+  })
+
+  it('does not present demo trust state as production verification', () => {
+    const property = { trust: { internalDemoState: true, landlordVerification: 'verified', propertyVerification: 'verified' } }
+    expect(getTrustSignals(property)).toEqual([])
+    expect(getTrustStatusLabel('verified', property.trust)).toBe('Not shown')
+  })
+
+  it('hides agent fixtures from the current visible MVP property set', () => {
+    expect(getVisibleMvpMockProperties([{ id: 'a', ownerType: 'Letting agent' }, { id: 'b', ownerType: 'Private landlord' }]).map((item) => item.id)).toEqual(['b'])
+  })
+
+  it('keeps published mark-rented action reachable', () => {
+    expect(getListingActions('published').map((action) => action.status)).toContain('rented')
   })
 })

@@ -23,9 +23,9 @@ function TenantDashboard() {
       <section className="card-shadow overflow-hidden rounded-[34px] bg-indigo-950 px-5 py-6 text-white md:px-8 md:py-10">
         <BrandLogo size="sm" textClassName="text-white" />
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Tenant dashboard</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-5xl">Find a home that fits the tenancy.</h1>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-5xl">Find a place that fits the tenancy.</h1>
         <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
-          Compare Dublin listings by budget, location, move-in timing, rules and application readiness.
+          Compare listings by budget, location, move-in timing, rules and application readiness.
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <Button onClick={() => navigate('/discover')}>Discover properties</Button>

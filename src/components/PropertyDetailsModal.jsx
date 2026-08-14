@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import useAppState from '../context/useAppState'
 import { domainLabel } from '../config/domainOptions'
 import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
-import { formatFreshness } from '../config/listingPresentation'
+import { formatFreshness, shouldShowTenantMatch } from '../config/listingPresentation'
 import { canListingReceiveEnquiry } from '../config/rentalJourney'
 import { formatDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatCurrency'
@@ -59,8 +59,9 @@ export default function PropertyDetailsModal({ standalone = false }) {
   }
 
   const isSaved = savedPropertyIds.includes(property.id)
-  const warnings = property.match.warnings || []
-  const hardStops = property.match.hardStops || []
+  const tenantContext = shouldShowTenantMatch(role)
+  const warnings = tenantContext ? property.match.warnings || [] : []
+  const hardStops = tenantContext ? property.match.hardStops || [] : []
   const enquiry = tenantEnquiries.find((item) => item.propertyId === property.id)
   const canEnquire = canListingReceiveEnquiry(property)
   const roomListing = isRoomListing(property.listingCategory)
@@ -104,7 +105,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
                       <span className="text-base font-medium text-slate-500"> / month</span>
                     </div>
                   </div>
-                  <MatchBadge score={property.match.score} />
+                  {tenantContext ? <MatchBadge score={property.match.score} /> : null}
                 </div>
 
                 <div className="mt-4 grid grid-cols-3 gap-2">
@@ -208,17 +209,19 @@ export default function PropertyDetailsModal({ standalone = false }) {
                 </ul>
               </DetailSection>
 
-              <section className="rounded-[22px] border border-emerald-100 bg-emerald-50/80 p-4">
-                <p className="text-sm font-semibold text-emerald-950">Why this {roomListing ? 'room' : 'property'} fits you</p>
-                <ul className="mt-3 space-y-2 text-sm text-emerald-950">
-                  {property.match.reasons.slice(0, 4).map((reason) => (
-                    <li key={reason} className="flex items-start gap-2">
-                      <span className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500" />
-                      <span>{reason}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              {tenantContext ? (
+                <section className="rounded-[22px] border border-emerald-100 bg-emerald-50/80 p-4">
+                  <p className="text-sm font-semibold text-emerald-950">Why this {roomListing ? 'room' : 'listing'} fits you</p>
+                  <ul className="mt-3 space-y-2 text-sm text-emerald-950">
+                    {property.match.reasons.slice(0, 4).map((reason) => (
+                      <li key={reason} className="flex items-start gap-2">
+                        <span className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500" />
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
 
               {hardStops.length ? (
                 <section className="rounded-[22px] border border-rose-100 bg-rose-50/80 p-4">
@@ -259,7 +262,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
                 </section>
               ) : null}
 
-              {enquiry ? <ApplicationStatus enquiry={enquiry} /> : null}
+              {tenantContext && enquiry ? <ApplicationStatus enquiry={enquiry} /> : null}
 
               <TrustSummary property={property} />
 
@@ -276,7 +279,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
             {role === 'landlord' ? (
               <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
                 <Button variant="secondary" onClick={() => navigate('/properties')}>Back to properties</Button>
-                <Button variant="dark" onClick={() => navigate('/applicants')}>View applicants</Button>
+                <Button variant="dark" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>View applicants</Button>
               </div>
             ) : (
               <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
@@ -443,7 +446,7 @@ function SafetyActions({ disabled, locallyReported, onBlock, onReport }) {
       </summary>
       <div className="mt-3 grid min-w-0 gap-3">
         <p className="text-sm leading-6 text-slate-600">
-          Reports and blocks are stored locally in this frontend prototype.
+          Reports and blocks are saved on this device.
         </p>
         <select
           value={reason}
