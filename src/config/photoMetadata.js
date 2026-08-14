@@ -37,6 +37,19 @@ export function normalizePhotoMetadata(photos = [], listingCategory = LISTING_CA
     .map((photo, index) => ({ ...photo, isCover: index === 0 }))
 }
 
+export function isSessionObjectUrl(src) {
+  return String(src || '').startsWith('blob:')
+}
+
+export function getDurablePhotoMetadata(photos = [], listingCategory = LISTING_CATEGORIES.ENTIRE_PROPERTY) {
+  return normalizePhotoMetadata(photos, listingCategory).filter((photo) => !isSessionObjectUrl(photo.src))
+}
+
+export function getDurableListingImages(photos = [], fallbackImage, listingCategory = LISTING_CATEGORIES.ENTIRE_PROPERTY) {
+  const durableImages = getDurablePhotoMetadata(photos, listingCategory).map((photo) => photo.src)
+  return durableImages.length ? durableImages : [fallbackImage]
+}
+
 export function validatePhotoFiles(files = [], existingPhotos = []) {
   const accepted = []
   const errors = []

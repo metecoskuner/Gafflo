@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { canTransitionApplication, terminalApplicationStatuses } from '../config/applicationTransitions'
 import { normalizePropertyType, normalizeLeaseMonths, normalizeSmoking } from '../config/domainOptions'
 import { getBrowseFacts, getSmartMatchFacts } from '../config/listingPresentation'
-import { normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
+import { getDurableListingImages, getDurablePhotoMetadata, normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import {
   LISTING_CATEGORIES,
@@ -141,7 +141,10 @@ describe('matching and dates', () => {
       couplesAccepted: false,
     }
     expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 1, ownerOccupiedAcceptable: false }, room).hardStops).toContain('Owner-occupied excluded by tenant preference.')
-    expect(calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 1, ownerOccupiedAcceptable: true }, room).hardStops).not.toContain('Owner-occupied excluded by tenant preference.')
+    const acceptableResult = calculatePropertyMatch({ ...tenant, lookingFor: 'room', householdSize: 1, ownerOccupiedAcceptable: true }, room)
+    expect(acceptableResult.hardStops).not.toContain('Owner-occupied excluded by tenant preference.')
+    expect(acceptableResult.reasons).toContain('Owner lives in the property.')
+    expect(acceptableResult.reasons).not.toContain('Owner lives here, which fits your room preference.')
   })
 
   it('rewards room private bathroom preference when available', () => {
@@ -223,6 +226,18 @@ describe('listing categories', () => {
     expect(photos[0].isCover).toBe(true)
     const file = { name: 'notes.txt', type: 'text/plain', size: 10 }
     expect(validatePhotoFiles([file], []).errors[0]).toBe('notes.txt is not an image.')
+  })
+
+  it('keeps session object URLs out of durable listing photos', () => {
+    const fallback = 'https://images.example.test/fallback.jpg'
+    const remote = 'https://images.example.test/remote.jpg'
+    const photos = [
+      { src: 'blob:http://localhost/session-photo', label: 'Cover / Room' },
+      { src: remote, label: 'Kitchen' },
+    ]
+    expect(getDurablePhotoMetadata(photos, LISTING_CATEGORIES.PRIVATE_ROOM).map((photo) => photo.src)).toEqual([remote])
+    expect(getDurableListingImages(photos, fallback, LISTING_CATEGORIES.PRIVATE_ROOM)).toEqual([remote])
+    expect(getDurableListingImages([{ src: 'blob:http://localhost/only-session-photo' }], fallback, LISTING_CATEGORIES.PRIVATE_ROOM)).toEqual([fallback])
   })
 
   it('normalizes studio bedrooms separately from property type labels', () => {

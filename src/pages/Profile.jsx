@@ -208,7 +208,6 @@ function LandlordProfile() {
         if (length > 80) return 'Keep the display name under 80 characters.'
         return ''
       },
-      companyName: () => (String(value || '').length > 90 ? 'Keep the company name under 90 characters.' : ''),
       propertyCount: () => (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0) ? 'Property count cannot be negative.' : ''),
       email: () => (value && !/^\S+@\S+\.\S+$/.test(value) ? 'Enter a valid email address.' : ''),
       phone: () => (String(value || '').length > 30 ? 'Keep the phone number under 30 characters.' : ''),
@@ -230,7 +229,7 @@ function LandlordProfile() {
 
   const submit = (event) => {
     event.preventDefault()
-    const fields = ['displayName', 'companyName', 'propertyCount', 'email', 'phone', 'bio']
+    const fields = ['displayName', 'propertyCount', 'email', 'phone', 'bio']
     const nextErrors = fields.reduce((acc, field) => {
       const error = validateField(field, form[field])
       if (error) acc[field] = error
@@ -239,17 +238,19 @@ function LandlordProfile() {
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length) return
 
-    saveLandlordProfile(form)
+    saveLandlordProfile({ ...form, landlordType: 'private_landlord', companyName: '' })
   }
 
   return (
-    <ProfileShell eyebrow="Landlord / agent profile" title="Listing owner profile" description="Verification status is tracked separately from choosing the landlord role.">
+    <ProfileShell eyebrow="Landlord profile" title="Listing owner profile" description="Verification status is tracked separately from choosing the landlord role.">
       <form onSubmit={submit} className="space-y-4">
         <Section title="Profile">
           <div className="grid gap-4 md:grid-cols-2">
             <FormInput id="landlord-display-name" label="Display name" maxLength={80} value={form.displayName || ''} error={errors.displayName} onChange={(event) => update('displayName', event.target.value)} />
-            <SelectInput label="Type" value={form.landlordType || 'private_landlord'} onChange={(event) => update('landlordType', event.target.value)} options={[{ label: 'Private landlord', value: 'private_landlord' }, { label: 'Letting agent', value: 'agent' }]} />
-            <FormInput id="landlord-company" label="Company / agency" maxLength={90} value={form.companyName || ''} error={errors.companyName} onChange={(event) => update('companyName', event.target.value)} />
+            <div className="surface-line rounded-[18px] bg-slate-50 px-4 py-3">
+              <div className="text-sm font-medium text-slate-700">Type</div>
+              <div className="mt-1 text-sm font-semibold text-slate-950">Private landlord</div>
+            </div>
             <FormInput id="landlord-property-count" label="Number of properties" type="number" min="0" inputMode="numeric" value={form.propertyCount || ''} error={errors.propertyCount} onChange={(event) => update('propertyCount', event.target.value)} />
             <FormInput id="landlord-phone" label="Phone" inputMode="tel" maxLength={30} value={form.phone || ''} error={errors.phone} onChange={(event) => update('phone', event.target.value)} />
             <FormInput id="landlord-email" label="Email" type="email" inputMode="email" value={form.email || ''} error={errors.email} onChange={(event) => update('email', event.target.value)} />
@@ -266,7 +267,7 @@ function LandlordProfile() {
         <div className="rounded-[22px] border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           New landlords can create draft listings, but public publishing can require landlord and property review.
         </div>
-        <RoleSwitch onTenant={() => switchRole('tenant')} onLandlord={() => switchRole('landlord', form.landlordType)} />
+        <RoleSwitch onTenant={() => switchRole('tenant')} onLandlord={() => switchRole('landlord', 'private_landlord')} />
         <Button type="submit" className="w-full">Save landlord profile</Button>
       </form>
     </ProfileShell>

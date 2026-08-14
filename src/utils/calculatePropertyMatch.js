@@ -104,7 +104,7 @@ export function calculatePropertyMatch(tenantProfile, property) {
     if (tenantProfile.ownerOccupiedAcceptable === false && property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM) {
       hardStops.push('Owner-occupied excluded by tenant preference.')
     } else if (property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM) {
-      reasons.push('Owner lives here, which fits your room preference.')
+      reasons.push('Owner lives in the property.')
     }
 
     const bathroom = normalizeBathroomArrangement(property.bathroomArrangement)

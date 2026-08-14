@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
@@ -25,7 +25,7 @@ import {
   normalizeListingFormValues,
   validateListingForReview,
 } from '../config/listingCategories'
-import { getPhotoLabelOptions, normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
+import { getDurableListingImages, getDurablePhotoMetadata, getPhotoLabelOptions, isSessionObjectUrl, normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
 import useAppState from '../context/useAppState'
 import { getTodayIsoDate } from '../utils/dateUtils'
 
@@ -89,6 +89,7 @@ export default function CreateListing() {
   const editingProperty = useMemo(() => landlordProperties.find((property) => property.id === propertyId), [landlordProperties, propertyId])
   const [form, setForm] = useState(() => (editingProperty ? propertyToForm(editingProperty) : createInitialForm()))
   const [photoItems, setPhotoItems] = useState(() => normalizePhotoMetadata(editingProperty?.photoMetadata || editingProperty?.images || [], editingProperty?.listingCategory))
+  const photoItemsRef = useRef(photoItems)
   const [errors, setErrors] = useState({})
   const [isSaving, setIsSaving] = useState(false)
   const listingPhotos = useMemo(() => normalizePhotoMetadata(photoItems, form.listingCategory), [form.listingCategory, photoItems])
@@ -96,6 +97,17 @@ export default function CreateListing() {
   const today = getTodayIsoDate()
   const roomListing = isRoomListing(form.listingCategory)
   const lockedCategory = editingProperty && !canChangeListingCategory(editingProperty, form.listingCategory).allowed
+
+  useEffect(() => {
+    photoItemsRef.current = photoItems
+  }, [photoItems])
+
+  useEffect(() => {
+    return () => {
+      const sessionUrls = photoItemsRef.current.map((photo) => photo.src).filter(isSessionObjectUrl)
+      sessionUrls.forEach((src) => URL.revokeObjectURL(src))
+    }
+  }, [])
 
   const updateField = (field, value) => {
     setForm((current) => normalizeListingFormValues({ ...current, [field]: value }))
@@ -140,6 +152,7 @@ export default function CreateListing() {
     const nextPhotos = validation.accepted.map(({ file, fileKey }) => ({
       id: `photo-${Date.now()}-${fileKey}`,
       src: URL.createObjectURL(file),
+      sessionOnly: true,
       label: getPhotoLabelOptions(form.listingCategory)[0],
       name: file.name,
       size: file.size,
@@ -156,7 +169,11 @@ export default function CreateListing() {
   }
 
   const removePhoto = (photoId) => {
-    setPhotoItems((current) => normalizePhotoMetadata(current.filter((photo) => photo.id !== photoId), form.listingCategory))
+    setPhotoItems((current) => {
+      const removedPhoto = current.find((photo) => photo.id === photoId)
+      if (removedPhoto?.src && isSessionObjectUrl(removedPhoto.src)) URL.revokeObjectURL(removedPhoto.src)
+      return normalizePhotoMetadata(current.filter((photo) => photo.id !== photoId), form.listingCategory)
+    })
   }
 
   const movePhoto = (photoId, direction) => {
@@ -191,6 +208,7 @@ export default function CreateListing() {
 
     setIsSaving(true)
     const normalized = normalizeListingForStorage(form)
+    const durablePhotoMetadata = getDurablePhotoMetadata(listingPhotos, form.listingCategory)
     const payload = {
       ...normalized,
       title: form.title.trim(),
@@ -204,10 +222,10 @@ export default function CreateListing() {
       billsIncluded: Boolean(form.billsIncluded),
       availableFrom: form.availableFrom,
       minStayMonths: Number(form.minStayMonths || 1),
-      images: previewImages,
+      images: getDurableListingImages(listingPhotos, defaultImage, form.listingCategory),
       viewingType: form.viewingType,
       listingStatus,
-      photoMetadata: listingPhotos.map(({ id, label, name, size, type, src, isCover }) => ({ id, label, name, size, type, src, isCover })),
+      photoMetadata: durablePhotoMetadata.map(({ id, label, name, size, type, src, isCover }) => ({ id, label, name, size, type, src, isCover })),
       amenities: buildAmenities(form),
       features: buildFeatures(form),
       listingRules: buildListingRules(form),

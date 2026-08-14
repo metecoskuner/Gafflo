@@ -11,7 +11,7 @@ import {
 } from '../config/domainOptions'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import { LISTING_CATEGORIES, normalizeListingForStorage } from '../config/listingCategories'
-import { normalizePhotoMetadata } from '../config/photoMetadata'
+import { getDurableListingImages, getDurablePhotoMetadata } from '../config/photoMetadata'
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
 import { smartMatchAccess } from '../config/smartMatch'
@@ -140,8 +140,8 @@ function normalizeStoredProperty(property) {
     listingStatus: property.listingStatus || (isLegacyCreatedListing ? 'pending_verification' : 'published'),
     listingRules: property.listingRules || property.houseRules || [],
     features: property.features || property.amenities || [propertyType],
-    images: property.images?.length ? property.images : [defaultPropertyImage],
-    photoMetadata: normalizePhotoMetadata(property.photoMetadata || property.images || [defaultPropertyImage], normalizedListing.listingCategory),
+    images: getDurableListingImages(property.photoMetadata || property.images || [], defaultPropertyImage, normalizedListing.listingCategory),
+    photoMetadata: getDurablePhotoMetadata(property.photoMetadata || property.images || [defaultPropertyImage], normalizedListing.listingCategory),
     viewingType: property.viewingType || 'In-person',
     updatedAt: property.updatedAt || property.createdAt || '',
     availabilityConfirmedAt: property.availabilityConfirmedAt || '',
@@ -797,7 +797,8 @@ export function AppStateProvider({ children }) {
         availabilityConfirmedAt: now,
         listingStatus: property.listingStatus || 'draft',
         features: property.amenities?.slice(0, 4) || [],
-        images: property.images?.length ? property.images : ['https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80'],
+        images: getDurableListingImages(property.photoMetadata || property.images || [], defaultPropertyImage, property.listingCategory),
+        photoMetadata: getDurablePhotoMetadata(property.photoMetadata || property.images || [defaultPropertyImage], property.listingCategory),
         viewingSlots: normalizeViewingSlots(property.viewingSlots).length ? normalizeViewingSlots(property.viewingSlots) : getFutureViewingSlots(),
         trust: {
           emailVerified: Boolean(landlordProfile.trust?.emailVerified),

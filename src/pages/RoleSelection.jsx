@@ -1,9 +1,16 @@
+import { useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import useAppState from '../context/useAppState'
 
 export default function RoleSelection() {
   const { selectRole } = useAppState()
+  const navigate = useNavigate()
+
+  const chooseRole = (role, landlordType = null) => {
+    selectRole(role, landlordType)
+    navigate(role === 'landlord' ? '/dashboard' : '/discover', { replace: true })
+  }
 
   return (
     <div className="page-shell mx-auto min-h-screen w-full max-w-[920px] px-4 py-4 md:px-6 md:py-8">
@@ -25,7 +32,7 @@ export default function RoleSelection() {
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Tenant</div>
             <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950 min-[390px]:text-2xl">I’m looking for a place</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">Find an entire home or a room that fits your needs.</p>
-            <Button className="mt-4 w-full" onClick={() => selectRole('tenant')}>
+            <Button className="mt-4 w-full" onClick={() => chooseRole('tenant')}>
               Continue as tenant
             </Button>
           </article>
@@ -34,7 +41,7 @@ export default function RoleSelection() {
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Landlord</div>
             <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950 min-[390px]:text-2xl">I have a place to rent</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">List an entire property or a room and manage enquiries.</p>
-            <Button className="mt-4 w-full" onClick={() => selectRole('landlord', 'private_landlord')}>
+            <Button className="mt-4 w-full" onClick={() => chooseRole('landlord', 'private_landlord')}>
               Continue as landlord
             </Button>
           </article>
