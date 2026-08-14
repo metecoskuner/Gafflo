@@ -7,6 +7,14 @@ import {
   normalizeRoomParentPropertyType,
   normalizeRoomType,
   normalizeSmoking,
+  bathroomArrangementOptions,
+  furnishedOptions,
+  parkingOptions,
+  petPolicyOptions,
+  propertyTypeOptions,
+  roomParentPropertyTypeOptions,
+  roomTypeOptions,
+  smokingOptions,
 } from './domainOptions'
 
 export const LISTING_CATEGORIES = {
@@ -109,13 +117,15 @@ export function normalizeListingForStorage(listing = {}) {
 export function normalizeListingDraftForStorage(listing = {}) {
   const listingCategory = normalizeListingCategory(listing.listingCategory, listing)
   const isRoom = isRoomListing(listingCategory)
-  const propertyType = isRoom ? normalizeRoomParentPropertyType(listing.parentPropertyType || listing.propertyType) : normalizePropertyType(listing.propertyType)
+  const propertyType = isRoom
+    ? normalizeDraftEnum(listing.parentPropertyType || listing.propertyType, normalizeRoomParentPropertyType, roomParentPropertyTypeOptions)
+    : normalizeDraftEnum(listing.propertyType, normalizePropertyType, propertyTypeOptions)
   return {
     ...listing,
     listingCategory,
     propertyType,
     parentPropertyType: isRoom ? propertyType : undefined,
-    roomType: isRoom ? normalizeRoomType(listing.roomType) : undefined,
+    roomType: isRoom ? normalizeDraftEnum(listing.roomType, normalizeRoomType, roomTypeOptions) : undefined,
     ownerLivesInProperty: listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM,
     bedrooms: isRoom ? nullablePositiveInteger(listing.bedrooms) : propertyType === 'studio' ? 0 : nullablePositiveInteger(listing.bedrooms),
     totalBedrooms: isRoom ? nullablePositiveInteger(listing.totalBedrooms) : undefined,
@@ -123,12 +133,12 @@ export function normalizeListingDraftForStorage(listing = {}) {
     maxOccupants: nullablePositiveInteger(listing.maxOccupants),
     currentHouseholdSize: isRoom ? nullableNonNegativeInteger(listing.currentHouseholdSize) : undefined,
     maxHouseholdSize: isRoom ? nullablePositiveInteger(listing.maxHouseholdSize) : undefined,
-    bathroomArrangement: isRoom ? normalizeBathroomArrangement(listing.bathroomArrangement) : undefined,
+    bathroomArrangement: isRoom ? normalizeDraftEnum(listing.bathroomArrangement, normalizeBathroomArrangement, bathroomArrangementOptions) : undefined,
     minStayMonths: nullablePositiveInteger(listing.minStayMonths),
-    furnished: normalizeFurnished(listing.furnished),
-    parking: normalizeParking(listing.parking),
-    smokingAllowed: normalizeSmoking(listing.smokingAllowed),
-    petsAllowed: normalizePetPolicy(listing.petsAllowed),
+    furnished: normalizeDraftEnum(listing.furnished, normalizeFurnished, furnishedOptions),
+    parking: normalizeDraftEnum(listing.parking, normalizeParking, parkingOptions),
+    smokingAllowed: normalizeDraftEnum(listing.smokingAllowed, normalizeSmoking, smokingOptions),
+    petsAllowed: normalizeDraftEnum(listing.petsAllowed, normalizePetPolicy, petPolicyOptions),
   }
 }
 
@@ -283,6 +293,12 @@ function nullablePositiveNumber(value) {
   if (value === '' || value === null || value === undefined) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function normalizeDraftEnum(value, normalizer, options) {
+  if (value === '' || value === null || value === undefined) return null
+  const normalized = normalizer(value)
+  return options.some((option) => option.value === normalized) ? normalized : null
 }
 
 function getReviewPhotoCount(listing = {}, options = {}) {

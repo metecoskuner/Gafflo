@@ -19,6 +19,7 @@ import {
 } from '../config/listingCategories'
 import { canListingReceiveEnquiry, canTransitionListing, getListingActions } from '../config/listingLifecycle'
 import { getTrustSignals, getTrustStatusLabel } from '../config/rentalJourney'
+import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
@@ -404,6 +405,47 @@ describe('frontend integrity helpers', () => {
     })
     expect(normalizeListingFormState(roomDraft)).toMatchObject({ totalBedrooms: '', currentHouseholdSize: '', maxHouseholdSize: '', maxOccupants: '' })
     expect(normalizeListingDraftForStorage({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', bedrooms: '' }).bedrooms).toBe(0)
+  })
+
+  it('preserves missing enum values for incomplete saved drafts', () => {
+    const apartmentDraft = normalizeListingDraftForStorage({
+      listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY,
+      propertyType: '',
+      furnished: '',
+      parking: '',
+      smokingAllowed: '',
+      petsAllowed: '',
+    })
+    expect(apartmentDraft).toMatchObject({
+      propertyType: null,
+      furnished: null,
+      parking: null,
+      smokingAllowed: null,
+      petsAllowed: null,
+    })
+
+    const roomDraft = normalizeListingDraftForStorage({
+      listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
+      parentPropertyType: '',
+      roomType: '',
+      bathroomArrangement: '',
+    })
+    expect(roomDraft).toMatchObject({
+      propertyType: null,
+      parentPropertyType: null,
+      roomType: null,
+      bathroomArrangement: null,
+    })
+  })
+
+  it('normalizes legacy coupleRequirement on load but stores only applyingAsCouple', () => {
+    const loaded = normalizeTenantProfileForState({ householdSize: 2, coupleRequirement: true })
+    expect(loaded).toMatchObject({ householdSize: 2, applyingAsCouple: true })
+    expect(loaded).not.toHaveProperty('coupleRequirement')
+
+    const stored = normalizeTenantProfileForStorage({ householdSize: 2, coupleRequirement: true }, { targetCity: 'Dublin' })
+    expect(stored).toMatchObject({ householdSize: 2, applyingAsCouple: true })
+    expect(stored).not.toHaveProperty('coupleRequirement')
   })
 
   it('persists valid completed listings with canonical numeric values', () => {

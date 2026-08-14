@@ -3,16 +3,14 @@ import { canTransitionApplication, nextViewingStatusForApplication } from '../co
 import {
   ANY_VALUE,
   normalizeFurnished,
-  normalizeLeaseMonths,
   normalizeParking,
-  normalizePet,
   normalizePetPolicy,
   normalizeSmoking,
 } from '../config/domainOptions'
-import { cityOptions, normalizePreferredAreas } from '../config/locationOptions'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
-import { LISTING_CATEGORIES, normalizeListingDraftForStorage, normalizeListingForStorage } from '../config/listingCategories'
+import { normalizeListingDraftForStorage, normalizeListingForStorage } from '../config/listingCategories'
+import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getDurableListingImages, getDurablePhotoMetadata } from '../config/photoMetadata'
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
@@ -73,8 +71,9 @@ const defaultTenantProfile = {
   billsIncludedPreferred: false,
   ownerOccupiedAcceptable: true,
   applyingAsCouple: false,
-  coupleRequirement: false,
 }
+
+const defaultTenantProfileLoadDefaults = Object.fromEntries(Object.entries(defaultTenantProfile).filter(([key]) => key !== 'applyingAsCouple'))
 
 const defaultLandlordProfile = {
   id: currentOwnerId,
@@ -116,10 +115,6 @@ const defaultPropertyFilters = {
 
 const defaultPropertyImage =
   'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80'
-
-function normalize(value) {
-  return String(value || '').trim().toLowerCase()
-}
 
 function normalizeStoredProperty(property) {
   const isLegacyCreatedListing = property.source === 'created' && !property.ownerId
@@ -238,7 +233,7 @@ function canTenantSendMessage(conversation, enquiry) {
 
 export function AppStateProvider({ children }) {
   const [account, setAccountState] = useState(() => getAccount())
-  const [tenantProfile, setTenantProfileState] = useState(() => normalizeTenantProfile({ ...defaultTenantProfile, ...getTenantProfile(), id: currentTenantId }))
+  const [tenantProfile, setTenantProfileState] = useState(() => normalizeTenantProfileForState({ ...defaultTenantProfileLoadDefaults, ...getTenantProfile(), id: currentTenantId }))
   const [landlordProfile, setLandlordProfileState] = useState(() => ({ ...defaultLandlordProfile, ...getLandlordProfile(), id: currentOwnerId }))
   const [localProperties, setLocalPropertiesState] = useState(() => getLocalProperties())
   const [savedPropertyIds, setSavedPropertyIdsState] = useState(() => getSavedPropertyIds())
@@ -435,25 +430,7 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'info', message: `Switched to ${role === 'tenant' ? 'tenant' : 'landlord'} mode.` })
     },
     saveTenantProfile(profile) {
-      const next = {
-        ...defaultTenantProfile,
-        ...profile,
-        id: currentTenantId,
-        leaseLength: normalizeLeaseMonths(profile.leaseLength, 12),
-        furnishedPreference: [ANY_VALUE, 'Any'].includes(profile.furnishedPreference) ? ANY_VALUE : normalizeFurnished(profile.furnishedPreference),
-        pets: normalizePet(profile.pets),
-        smoking: normalizeSmoking(profile.smoking),
-        parkingNeeded: normalize(profile.parkingNeeded) === 'yes' ? 'yes' : 'no',
-        targetCity: cityOptions.includes(profile.targetCity) ? profile.targetCity : defaultTenantProfile.targetCity,
-        preferredAreas: normalizePreferredAreas(profile.preferredAreas, profile.targetCity),
-        lookingFor: ['any', LISTING_CATEGORIES.ENTIRE_PROPERTY, 'room'].includes(profile.lookingFor) ? profile.lookingFor : 'any',
-        privateBathroomPreferred: Boolean(profile.privateBathroomPreferred),
-        billsIncludedPreferred: Boolean(profile.billsIncludedPreferred),
-        ownerOccupiedAcceptable: profile.ownerOccupiedAcceptable !== false,
-        applyingAsCouple: isApplyingAsCouple(profile) && Number(profile.householdSize) >= 2,
-        coupleRequirement: isApplyingAsCouple(profile) && Number(profile.householdSize) >= 2,
-        notifications: undefined,
-      }
+      const next = normalizeTenantProfileForStorage({ ...profile, id: currentTenantId }, defaultTenantProfile)
       setTenantProfile(next)
       setTenantProfileState(next)
       setToast({ type: 'success', message: 'Tenant profile saved.' })
@@ -869,17 +846,4 @@ export function AppStateProvider({ children }) {
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
-}
-
-function isApplyingAsCouple(profile = {}) {
-  return profile.applyingAsCouple === true || (profile.applyingAsCouple === undefined && profile.coupleRequirement === true)
-}
-
-function normalizeTenantProfile(profile = {}) {
-  const applyingAsCouple = isApplyingAsCouple(profile) && Number(profile.householdSize || 1) >= 2
-  return {
-    ...profile,
-    applyingAsCouple,
-    coupleRequirement: applyingAsCouple,
-  }
 }
