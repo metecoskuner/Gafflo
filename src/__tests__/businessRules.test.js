@@ -317,8 +317,30 @@ describe('listing categories', () => {
   })
 
   it('calculates listing completeness per category', () => {
-    expect(getListingCompleteness({ ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', maxOccupants: 1 }, '2030-01-01').complete).toBe(true)
+    expect(getListingCompleteness({ ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'studio', maxOccupants: 1 }, '2030-01-01', { photoCount: 1 }).complete).toBe(true)
     expect(getListingCompleteness({ ...validBase, listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM, roomType: 'double' }, '2030-01-01').complete).toBe(false)
+  })
+
+  it('keeps listing completeness consistent with review photo requirements', () => {
+    const entire = { ...validBase, listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: 1, maxOccupants: 2 }
+    expect(getListingCompleteness(entire, '2030-01-01', { photoCount: 1 }).complete).toBe(true)
+    expect(getListingCompleteness(entire, '2030-01-01').complete).toBe(false)
+    expect(getListingCompleteness(entire, '2030-01-01').missing).toContain('images')
+  })
+
+  it('marks room listings incomplete without a required room photo', () => {
+    const room = {
+      ...validBase,
+      listingCategory: LISTING_CATEGORIES.PRIVATE_ROOM,
+      roomType: 'double',
+      bathroomArrangement: 'shared',
+      maxOccupants: 1,
+      totalBedrooms: 3,
+      currentHouseholdSize: 0,
+      maxHouseholdSize: 1,
+    }
+    expect(getListingCompleteness(room, '2030-01-01').complete).toBe(false)
+    expect(getListingCompleteness(room, '2030-01-01').missing).toContain('images')
   })
 })
 

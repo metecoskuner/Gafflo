@@ -272,7 +272,7 @@ export default function CreateListing() {
         </div>
       </section>
 
-      <form onSubmit={(event) => handleSubmit(event, 'pending_verification')} className="space-y-4 pb-24">
+      <form noValidate onSubmit={(event) => handleSubmit(event, 'pending_verification')} className="space-y-4 pb-24">
         <FormSection title="What are you listing?" description="Choose the listing category before entering the details.">
           <div className="grid gap-2 min-[390px]:gap-3 md:grid-cols-3">
             {listingCategoryOptions.map((option) => (

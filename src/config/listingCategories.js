@@ -136,6 +136,7 @@ export const normalizeListingFormValues = normalizeListingFormState
 export function validateListingForReview(listing = {}, today = '', options = {}) {
   const normalized = normalizeListingForStorage(listing)
   const errors = {}
+  const reviewPhotoCount = getReviewPhotoCount(listing, options)
 
   addTextError(errors, 'title', listing.title, 8, 90, 'Add a clear listing title.')
   if (!positiveNumber(listing.rent, 0)) errors.rent = 'Monthly rent must be more than EUR0.'
@@ -145,7 +146,7 @@ export function validateListingForReview(listing = {}, today = '', options = {})
   if (today && listing.availableFrom && listing.availableFrom < today) errors.availableFrom = 'Available-from date cannot be in the past.'
   if (!positiveInteger(listing.minStayMonths, 0)) errors.minStayMonths = 'Minimum stay must be at least 1 month.'
   addTextError(errors, 'description', listing.description, 40, 900, 'Add at least 40 characters so renters understand the listing.')
-  if (Number(options.photoCount || 0) < 1) errors.images = isRoomListing(normalized.listingCategory) ? 'Add at least one room photo before requesting review.' : 'Add at least one listing photo before requesting review.'
+  if (reviewPhotoCount < 1) errors.images = isRoomListing(normalized.listingCategory) ? 'Add at least one room photo before requesting review.' : 'Add at least one listing photo before requesting review.'
 
   if (normalized.listingCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY) {
     if (!listing.propertyType || !['apartment', 'house', 'studio'].includes(normalized.propertyType)) errors.propertyType = 'Choose a property type.'
@@ -165,13 +166,13 @@ export function validateListingForReview(listing = {}, today = '', options = {})
   return { valid: Object.keys(errors).length === 0, errors, listing: normalized }
 }
 
-export function getListingCompleteness(listing = {}, today = '') {
-  const { errors } = validateListingForReview(listing, today)
+export function getListingCompleteness(listing = {}, today = '', options = {}) {
+  const { errors } = validateListingForReview(listing, today, options)
   const category = normalizeListingCategory(listing.listingCategory, listing)
   const requiredFields =
     category === LISTING_CATEGORIES.ENTIRE_PROPERTY
-      ? ['rent', 'area', 'availableFrom', 'propertyType', 'description']
-      : ['roomType', 'rent', 'area', 'availableFrom', 'bathroomArrangement', 'maxOccupants', 'totalBedrooms', 'currentHouseholdSize', 'maxHouseholdSize', 'description']
+      ? ['rent', 'area', 'availableFrom', 'propertyType', 'description', 'images']
+      : ['roomType', 'rent', 'area', 'availableFrom', 'bathroomArrangement', 'maxOccupants', 'totalBedrooms', 'currentHouseholdSize', 'maxHouseholdSize', 'description', 'images']
   const missing = requiredFields.filter((field) => errors[field])
   if (category === LISTING_CATEGORIES.ENTIRE_PROPERTY && normalizePropertyType(listing.propertyType) !== 'studio' && errors.bedrooms) missing.push('bedrooms')
   return { complete: missing.length === 0, missing, errors }
@@ -241,6 +242,16 @@ function positiveInteger(value, fallback = 0) {
 function positiveNumber(value, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function getReviewPhotoCount(listing = {}, options = {}) {
+  if (Number.isFinite(Number(options.photoCount))) return Math.max(0, Number(options.photoCount))
+  const photos = listing.photoMetadata || listing.images || []
+  const values = Array.isArray(photos) ? photos : [photos]
+  return values.filter((photo) => {
+    const src = typeof photo === 'string' ? photo : photo?.src || photo?.url || photo?.previewUrl || ''
+    return Boolean(src) && !String(src).startsWith('blob:')
+  }).length
 }
 
 function stringifyFormNumber(value) {
