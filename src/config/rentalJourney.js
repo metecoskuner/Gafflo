@@ -176,4 +176,12 @@ export function getTenantProfileCompleteness(profile) {
     total: checks.length,
   }
 }
+
+// True once the tenant has provided the match-driving facts that first-run onboarding
+// deliberately skips (budget, move-in date, household size). Used to show a restrained,
+// dismissable-feeling nudge after they've already seen real matches — never to block anything.
+export function hasCoreMatchFacts(profile = {}) {
+  const budgetReady = Number(profile.budgetMin) >= 0 && Number(profile.budgetMax) > 0 && Number(profile.budgetMin) <= Number(profile.budgetMax)
+  return budgetReady && Boolean(profile.moveInDate) && Number(profile.householdSize) >= 1
+}
 import { canListingReceiveEnquiry } from './listingLifecycle'

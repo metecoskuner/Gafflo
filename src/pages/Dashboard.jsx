@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import MatchBadge from '../components/MatchBadge'
-import { getViewingRows } from '../config/rentalJourney'
+import { getViewingRows, hasCoreMatchFacts } from '../config/rentalJourney'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
@@ -14,7 +14,7 @@ export default function Dashboard() {
 
 function TenantDashboard() {
   const navigate = useNavigate()
-  const { activeProperties, savedProperties, tenantEnquiries } = useAppState()
+  const { activeProperties, savedProperties, tenantEnquiries, tenantProfile } = useAppState()
   const topProperty = [...activeProperties].sort((a, b) => b.match.score - a.match.score)[0]
   const viewings = getViewingRows(tenantEnquiries, 'tenant')
 
@@ -58,6 +58,22 @@ function TenantDashboard() {
             </div>
             <p className="text-sm leading-7 text-slate-600">{topProperty.match.reasons[0]}</p>
             <Button onClick={() => navigate(`/properties/${topProperty.id}`)}>View top fit</Button>
+          </div>
+        </section>
+      ) : null}
+
+      {!hasCoreMatchFacts(tenantProfile) ? (
+        <section className="card-surface card-shadow rounded-[22px] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-950">Make your matches more accurate</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Add your budget, move-in date and household size to sharpen your Rental Fit scores.
+              </p>
+            </div>
+            <Button variant="secondary" className="shrink-0" onClick={() => navigate('/profile')}>
+              Complete profile
+            </Button>
           </div>
         </section>
       ) : null}

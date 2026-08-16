@@ -74,7 +74,12 @@ function TenantProfile() {
         return ''
       },
       moveInDate: () => (isPastIsoDate(value, today) ? 'Move-in date cannot be in the past.' : ''),
-      householdSize: () => (!Number.isFinite(Number(value)) || Number(value) < 1 ? 'Household size must be at least 1.' : ''),
+      // Empty/unset is a valid "not answered yet" state, not an error — only a filled-in but
+      // invalid value (e.g. 0 or negative) should block saving.
+      householdSize: () => {
+        if (value === '' || value === null || value === undefined) return ''
+        return !Number.isFinite(Number(value)) || Number(value) < 1 ? 'Household size must be at least 1.' : ''
+      },
       bio: () => (String(value || '').length > 600 ? 'Keep your introduction under 600 characters.' : ''),
       applyingAsCouple: () => (value && Number(nextForm.householdSize) < 2 ? 'Set room applicants to 2 people if you are applying as a couple.' : ''),
     }
@@ -132,9 +137,11 @@ function TenantProfile() {
 
     saveTenantProfile({
       ...form,
-      budgetMin: Math.max(0, Number(form.budgetMin || 0)),
-      budgetMax: Math.max(0, Number(form.budgetMax || 0)),
-      householdSize: Math.max(1, Number(form.householdSize || 1)),
+      // Leave budget/household size as null when the field is still empty — saving an
+      // unrelated edit (e.g. bio) must never fabricate a €0 budget or a household of 1.
+      budgetMin: form.budgetMin === '' || form.budgetMin === null ? null : Math.max(0, Number(form.budgetMin)),
+      budgetMax: form.budgetMax === '' || form.budgetMax === null ? null : Math.max(0, Number(form.budgetMax)),
+      householdSize: form.householdSize === '' || form.householdSize === null ? null : Math.max(1, Number(form.householdSize)),
       preferredAreas: normalizePreferredAreas(form.preferredAreas, form.targetCity),
       notifications: undefined,
       areaDraft: undefined,

@@ -65,19 +65,20 @@ async function expectNoHorizontalOverflow(page) {
   expect(metrics.bodyScrollLeft).toBe(0)
 }
 
-test('fresh tenant role selection routes through onboarding, then to discover with real answers saved', async ({ page }) => {
+test('fresh tenant onboarding asks only city and looking-for, then routes to discover leaving the rest unknown', async ({ page }) => {
   await seedState(page, { account: null, profile: null })
   await page.goto('/')
   await page.getByRole('button', { name: 'Continue as tenant' }).click()
   await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Smart Match' })).toHaveCount(0)
 
+  // Only two questions on this screen — budget, move-in date and household size are gone.
+  await expect(page.getByLabel('Min')).toHaveCount(0)
+  await expect(page.getByLabel('Move-in date')).toHaveCount(0)
+  await expect(page.getByLabel(/household size|room applicants/i)).toHaveCount(0)
+
   await page.getByLabel('Target city').selectOption('Dublin')
-  await page.getByLabel('Min').fill('1200')
-  await page.getByLabel('Max').fill('1800')
-  await page.getByLabel('Move-in date').fill('2030-02-01')
   await page.getByRole('button', { name: 'A room' }).click()
-  await page.getByLabel('Room applicants (including you)').fill('2')
   await page.getByRole('button', { name: 'See my matches' }).click()
 
   await expect(page).toHaveURL(/\/discover$/)
@@ -85,22 +86,40 @@ test('fresh tenant role selection routes through onboarding, then to discover wi
 
   const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
   expect(storedProfile.targetCity).toBe('Dublin')
-  expect(storedProfile.budgetMin).toBe(1200)
-  expect(storedProfile.budgetMax).toBe(1800)
-  expect(storedProfile.moveInDate).toBe('2030-02-01')
   expect(storedProfile.lookingFor).toBe('room')
-  expect(storedProfile.householdSize).toBe(2)
+  // Never fabricated — these stay unknown until the tenant explicitly provides them.
+  expect(storedProfile.budgetMin).toBeNull()
+  expect(storedProfile.budgetMax).toBeNull()
+  expect(storedProfile.moveInDate).toBeNull()
+  expect(storedProfile.householdSize).toBeNull()
 })
 
-test('onboarding blocks continuing until the minimum match-driving facts are filled in', async ({ page }) => {
+test('onboarding never shows validation errors before a submit attempt, and only blocks on the two required answers', async ({ page }) => {
   await seedState(page, { account: null, profile: null })
   await page.goto('/')
   await page.getByRole('button', { name: 'Continue as tenant' }).click()
-  await page.getByRole('button', { name: 'See my matches' }).click()
 
+  // A fresh screen must never open already showing red error states.
+  await expect(page.getByText('Choose a target city.')).toHaveCount(0)
+  await expect(page.getByText('Choose what you are looking for.')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'See my matches' }).click()
   await expect(page.getByText('Choose a target city.')).toBeVisible()
   await expect(page.getByText('Choose what you are looking for.')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
+})
+
+test('onboarding fits within 320-430px viewports without needing to scroll', async ({ page }) => {
+  await seedState(page, { account: null, profile: null })
+  // Paired with each width's typical device height (iPhone SE, 8, 12, 14 Pro Max).
+  for (const { width, height } of [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 390, height: 844 }, { width: 430, height: 932 }]) {
+    await page.setViewportSize({ width, height })
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Continue as tenant' }).click()
+    await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
+    const overflowsViewport = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)
+    expect(overflowsViewport, `onboarding should not need to scroll at ${width}x${height}`).toBe(false)
+  }
 })
 
 test('returning tenant with a saved profile is never sent through onboarding', async ({ page }) => {
@@ -108,6 +127,58 @@ test('returning tenant with a saved profile is never sent through onboarding', a
   await page.goto('/discover')
   await expect(page.getByRole('heading', { name: 'Smart Match' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toHaveCount(0)
+})
+
+test('a tenant who skipped budget in onboarding still sees ranked matches, never a false hard stop', async ({ page }) => {
+  await seedState(page, {
+    account: tenantAccount,
+    profile: { id: 'tenant-local', targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null },
+  })
+  await page.goto('/discover')
+  await expect(page.getByRole('heading', { name: 'Smart Match' })).toBeVisible()
+  const card = page.getByRole('button', { name: /^Open (?!filters)/ }).first()
+  await expect(card).toBeVisible()
+
+  const scoreText = await card.getByText(/% rental fit/).innerText()
+  const score = Number(scoreText.replace(/[^0-9]/g, ''))
+  // A hard-stop score is capped at 58. A real score here proves the missing budget was left
+  // unknown and unscored, not silently treated as a €0 maximum that would crash every match.
+  expect(score).toBeGreaterThan(58)
+
+  await card.click()
+  await expect(page.getByText('Budget is not set yet, so rent fit is not scored.')).toBeVisible()
+})
+
+test('saving the profile without touching budget or household size does not fabricate values', async ({ page }) => {
+  await seedState(page, {
+    account: tenantAccount,
+    profile: { id: 'tenant-local', name: '', targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null },
+  })
+  await page.goto('/profile')
+  await page.getByLabel('Name').fill('Sam Rivera')
+  await page.getByRole('button', { name: 'Save tenant profile' }).click()
+
+  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
+  expect(storedProfile.name).toBe('Sam Rivera')
+  expect(storedProfile.budgetMin).toBeNull()
+  expect(storedProfile.budgetMax).toBeNull()
+  expect(storedProfile.householdSize).toBeNull()
+})
+
+test('tenant dashboard nudges to complete the profile only when core match facts are missing', async ({ page }) => {
+  await seedState(page, {
+    account: tenantAccount,
+    profile: { id: 'tenant-local', targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null },
+  })
+  await page.goto('/dashboard')
+  await expect(page.getByRole('heading', { name: 'Make your matches more accurate' })).toBeVisible()
+
+  await seedState(page, {
+    account: tenantAccount,
+    profile: { id: 'tenant-local', targetCity: 'Dublin', lookingFor: 'any', budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01', householdSize: 1 },
+  })
+  await page.goto('/dashboard')
+  await expect(page.getByRole('heading', { name: 'Make your matches more accurate' })).toHaveCount(0)
 })
 
 test('routes fresh landlord role selection to dashboard', async ({ page }) => {

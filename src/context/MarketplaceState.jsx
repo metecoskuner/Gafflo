@@ -50,16 +50,19 @@ import {
 const currentTenantId = 'tenant-local'
 const currentOwnerId = 'owner-private-1'
 
+// budgetMin/budgetMax/moveInDate/householdSize are deliberately null, not a fabricated number —
+// these are optional facts a tenant provides on their own terms, never invented on their behalf.
+// See utils/calculatePropertyMatch.js for how matching treats them as unknown, not €0/no-date/1.
 const defaultTenantProfile = {
   id: currentTenantId,
   name: '',
   targetCity: 'Dublin',
   preferredAreas: [],
-  budgetMin: 1200,
-  budgetMax: 2200,
-  moveInDate: '',
+  budgetMin: null,
+  budgetMax: null,
+  moveInDate: null,
   leaseLength: '12 months',
-  householdSize: 1,
+  householdSize: null,
   employmentStatus: 'Full-time',
   studentStatus: 'No',
   pets: 'No pets',

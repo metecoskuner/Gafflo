@@ -31,7 +31,7 @@ import {
 } from '../config/entitlements'
 import { LANDLORD_PLAN, pricingPlans, TENANT_PLAN } from '../config/pricingPlans'
 import { sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
-import { getTrustSignals, getTrustStatusLabel } from '../config/rentalJourney'
+import { getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
@@ -129,6 +129,43 @@ describe('matching and dates', () => {
     expect(isPastIsoDate('2027-02-01', '2027-02-02')).toBe(true)
     const result = calculatePropertyMatch(tenant, { ...property, availableFrom: 'not-a-date' })
     expect(result.warnings).toContain('Move-in timing is incomplete, so date fit is not scored.')
+  })
+
+  it('never treats a skipped budget as a €0 maximum — unknown budget is unscored, not a hard stop', () => {
+    const skippedBudget = { ...tenant, budgetMin: null, budgetMax: null }
+    const result = calculatePropertyMatch(skippedBudget, property)
+    expect(result.warnings).toContain('Budget is not set yet, so rent fit is not scored.')
+    expect(result.hardStops).toHaveLength(0)
+    expect(result.reasons).not.toContain('The monthly rent is within your budget.')
+    expect(result.reasons).not.toContain('The monthly rent is below your stated minimum budget.')
+    expect(result.score).toBeGreaterThan(58)
+
+    // undefined and '' must be treated the same as null.
+    expect(calculatePropertyMatch({ ...tenant, budgetMin: undefined, budgetMax: undefined }, property).warnings).toContain(
+      'Budget is not set yet, so rent fit is not scored.',
+    )
+    expect(calculatePropertyMatch({ ...tenant, budgetMin: '', budgetMax: '' }, property).warnings).toContain(
+      'Budget is not set yet, so rent fit is not scored.',
+    )
+  })
+
+  it('scores a partial budget by treating the unset side as unbounded, not as zero', () => {
+    const maxOnly = calculatePropertyMatch({ ...tenant, budgetMin: null, budgetMax: 1500 }, property)
+    expect(maxOnly.reasons).toContain('The monthly rent is within your budget.')
+    expect(maxOnly.hardStops).toHaveLength(0)
+
+    const minOnly = calculatePropertyMatch({ ...tenant, budgetMin: 1000, budgetMax: null }, { ...property, rent: 5000 })
+    expect(minOnly.reasons).toContain('The monthly rent is within your budget.')
+    expect(minOnly.hardStops).toHaveLength(0)
+  })
+
+  it('does not silently invent a household size or move-in date for a skipped onboarding profile', () => {
+    const minimalProfile = { targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null }
+    const result = calculatePropertyMatch(minimalProfile, property)
+    expect(result.warnings).toContain('Move-in timing is incomplete, so date fit is not scored.')
+    expect(result.warnings).toContain('Budget is not set yet, so rent fit is not scored.')
+    expect(result.hardStops).toHaveLength(0)
+    expect(result.score).toBeGreaterThan(58)
   })
 
   it('applies room matching hard stops and preferences', () => {
@@ -577,6 +614,14 @@ describe('frontend integrity helpers', () => {
     const property = { trust: { internalDemoState: true, landlordVerification: 'verified', propertyVerification: 'verified' } }
     expect(getTrustSignals(property)).toEqual([])
     expect(getTrustStatusLabel('verified', property.trust)).toBe('Not shown')
+  })
+
+  it('only reports core match facts complete once budget, move-in date and household size are all real', () => {
+    const skipped = { targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null }
+    expect(hasCoreMatchFacts(skipped)).toBe(false)
+    expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800 })).toBe(false)
+    expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01' })).toBe(false)
+    expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01', householdSize: 1 })).toBe(true)
   })
 
   it('hides agent fixtures from the current visible MVP property set', () => {

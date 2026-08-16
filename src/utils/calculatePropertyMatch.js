@@ -19,6 +19,12 @@ function normalizeAreaList(preferredAreas = []) {
   return normalizePreferredAreas(preferredAreas).map((item) => normalize(item))
 }
 
+// True only for a real, provided number — distinguishes "the tenant said €0" from "the tenant
+// hasn't said anything yet" (null/undefined/''), which must never be scored as a €0 budget.
+function isKnownNumber(value) {
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+}
+
 export function calculatePropertyMatch(tenantProfile, property) {
   if (!tenantProfile) {
     return {
@@ -63,16 +69,26 @@ export function calculatePropertyMatch(tenantProfile, property) {
     warnings.push('This area is not in your preferred list.')
   }
 
-  if (property.rent >= Number(tenantProfile.budgetMin) && property.rent <= Number(tenantProfile.budgetMax)) {
-    score += 22
-    reasons.push('The monthly rent is within your budget.')
-  } else if (property.rent > Number(tenantProfile.budgetMax)) {
-    const gap = property.rent - Number(tenantProfile.budgetMax)
-    if (gap > 300) hardStops.push('The rent is materially above your maximum budget.')
-    else warnings.push('The monthly rent is above your maximum budget.')
-  } else if (property.rent < Number(tenantProfile.budgetMin)) {
-    score += 8
-    reasons.push('The monthly rent is below your stated minimum budget.')
+  const hasBudgetMin = isKnownNumber(tenantProfile.budgetMin)
+  const hasBudgetMax = isKnownNumber(tenantProfile.budgetMax)
+  if (!hasBudgetMin && !hasBudgetMax) {
+    // Budget was never provided (e.g. skipped during onboarding) — this is unknown, not a €0
+    // budget, so it must never be scored or treated as a mismatch.
+    warnings.push('Budget is not set yet, so rent fit is not scored.')
+  } else {
+    const budgetMin = hasBudgetMin ? Number(tenantProfile.budgetMin) : 0
+    const budgetMax = hasBudgetMax ? Number(tenantProfile.budgetMax) : Infinity
+    if (property.rent >= budgetMin && property.rent <= budgetMax) {
+      score += 22
+      reasons.push('The monthly rent is within your budget.')
+    } else if (property.rent > budgetMax) {
+      const gap = property.rent - budgetMax
+      if (gap > 300) hardStops.push('The rent is materially above your maximum budget.')
+      else warnings.push('The monthly rent is above your maximum budget.')
+    } else if (property.rent < budgetMin) {
+      score += 8
+      reasons.push('The monthly rent is below your stated minimum budget.')
+    }
   }
 
   const moveInGap = directionalDayGap(tenantProfile.moveInDate, property.availableFrom)
