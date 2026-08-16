@@ -28,7 +28,7 @@ function TenantDashboard() {
           Compare listings by budget, location, move-in timing, rules and application readiness.
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <Button onClick={() => navigate('/discover')}>Discover properties</Button>
+          <Button variant="light" onClick={() => navigate('/discover')}>Discover properties</Button>
           <Button variant="secondary" className="border-white/16 bg-white/8 text-white hover:bg-white/14" onClick={() => navigate('/profile')}>
             Update profile
           </Button>
@@ -85,7 +85,7 @@ function LandlordDashboard() {
           See new interest, messages and viewings without digging through menus.
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <Button onClick={() => navigate('/properties')}>Manage properties</Button>
+          <Button variant="light" onClick={() => navigate('/properties')}>Manage properties</Button>
           <Button variant="secondary" className="border-white/16 bg-white/8 text-white hover:bg-white/14" onClick={() => navigate('/applicants')}>
             Review applicants
           </Button>

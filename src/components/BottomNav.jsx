@@ -39,7 +39,7 @@ export default function BottomNav() {
             }
           >
             <span className="relative text-lg leading-none">
-              {item.icon}
+              <span aria-hidden="true">{item.icon}</span>
               {item.to === '/saved' && savedProperties.length > 0 ? (
                 <span className="absolute -right-3 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-bold text-white">
                   {savedProperties.length}

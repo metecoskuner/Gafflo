@@ -156,7 +156,6 @@ export default function SavedProperties() {
                     </>
                   )}
                   <InfoTile label="Furnished" value={domainLabel('furnished', property.furnished)} />
-                  <InfoTile label="Available" value={formatDate(property.availableFrom)} />
                 </div>
 
                 <div className="flex flex-wrap gap-2">

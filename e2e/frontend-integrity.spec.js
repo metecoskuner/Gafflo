@@ -245,7 +245,7 @@ test('create and reopen draft preserves blank numeric field', async ({ page }) =
   await page.getByRole('button', { name: 'Save draft' }).click()
   await expect(page).toHaveURL(/\/properties$/)
 
-  await page.locator('article').filter({ hasText: 'Draft Numeric Blank' }).getByRole('button', { name: 'Edit' }).click()
+  await page.locator('article').filter({ hasText: 'Draft Numeric Blank' }).getByRole('button', { name: 'Continue editing' }).click()
   await expect(page.getByLabel('Bedrooms')).toHaveValue('')
 
   const storedDraft = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.properties'))[0])
@@ -379,7 +379,7 @@ test('request review blocks session-only photos and explains why', async ({ page
   await page.getByLabel('Add photos').setInputFiles({ name: 'listing.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-image-bytes-for-testing') })
 
   await page.getByRole('button', { name: 'Request review' }).click()
-  await expect(page.getByText(/session only/i)).toBeVisible()
+  await expect(page.getByText(/review can.t be requested yet/i)).toBeVisible()
   await expect(page).toHaveURL(/\/listings\/new$/)
 
   const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.properties') || '[]'))
@@ -407,6 +407,8 @@ test('tenant can still view a previously saved listing after it becomes inactive
   await page.goto(`/properties/${pausedSavedListing.id}`)
   await expect(page.getByRole('heading', { name: pausedSavedListing.title })).toBeVisible()
   await expect(page.getByText('Listing no longer active')).toBeVisible()
+  await expect(page.getByText('rental fit')).toHaveCount(0)
+  await expect(page.getByText(/Why this .*fits you/)).toHaveCount(0)
 })
 
 test('editing a published listing cannot silently move it back into review', async ({ page }) => {

@@ -261,7 +261,7 @@ export default function CreateListing() {
   }
 
   return (
-    <div className="mx-auto grid max-w-3xl gap-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+    <div className="mx-auto max-w-3xl space-y-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">
       <section className="card-surface card-shadow overflow-hidden rounded-[28px]">
         <div className="relative h-56 min-[390px]:h-64">
           <img src={previewImages[0]} alt="Listing preview" className="h-full w-full object-cover" />
@@ -363,7 +363,7 @@ function PhotoSection({ category, error, fallbackImage, onChange, onCover, onLab
   const displayPhotos = photos.length ? photos : [{ id: 'fallback', src: fallbackImage, label: labels[0], isCover: true }]
 
   return (
-    <FormSection title="Photos" description="Uploaded files are previews only — they are kept for this browser session and are not saved with the listing. There's no photo storage yet, so at least one durably-saved photo is required before requesting review.">
+    <FormSection title="Photos" description="Add photos to show renters the space. Photo upload will be completed when secure photo storage is connected — for now, photos are shown as a preview and you can still save this listing as a draft.">
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700">Add photos</span>
         <input

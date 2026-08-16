@@ -318,7 +318,7 @@ function LandlordProfile() {
 
 function ProfileShell({ eyebrow, title, description, children }) {
   return (
-    <div className="mx-auto grid max-w-4xl gap-5">
+    <div className="mx-auto max-w-4xl space-y-5">
       <section className="card-surface card-shadow rounded-[30px] px-5 py-6 md:px-7">
         <p className="text-sm font-semibold text-emerald-600">{eyebrow}</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 md:text-[2.2rem]">{title}</h1>

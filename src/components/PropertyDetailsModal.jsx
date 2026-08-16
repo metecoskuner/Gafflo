@@ -79,8 +79,11 @@ export default function PropertyDetailsModal({ standalone = false }) {
   const isSaved = savedPropertyIds.includes(property.id)
   const isHistorical = access.mode === 'historical'
   const tenantContext = shouldShowTenantMatch(role)
-  const warnings = tenantContext ? property.match.warnings || [] : []
-  const hardStops = tenantContext ? property.match.hardStops || [] : []
+  // Rental fit only makes sense for a listing that is still actively available — an inactive
+  // listing the tenant reached through saved/enquiry history should not look like a live match.
+  const showFitContent = tenantContext && !isHistorical
+  const warnings = showFitContent ? property.match.warnings || [] : []
+  const hardStops = showFitContent ? property.match.hardStops || [] : []
   const canEnquire = canListingReceiveEnquiry(property)
   const roomListing = isRoomListing(property.listingCategory)
   const ownerOccupied = property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM
@@ -123,7 +126,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
                       <span className="text-base font-medium text-slate-500"> / month</span>
                     </div>
                   </div>
-                  {tenantContext ? <MatchBadge score={property.match.score} /> : null}
+                  {showFitContent ? <MatchBadge score={property.match.score} /> : null}
                 </div>
 
                 <div className="mt-4 grid grid-cols-3 gap-2">
@@ -236,7 +239,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
                 </ul>
               </DetailSection>
 
-              {tenantContext ? (
+              {showFitContent ? (
                 <section className="rounded-[22px] border border-emerald-100 bg-emerald-50/80 p-4">
                   <p className="text-sm font-semibold text-emerald-950">Why this {roomListing ? 'room' : 'listing'} fits you</p>
                   <ul className="mt-3 space-y-2 text-sm text-emerald-950">
@@ -311,7 +314,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
             ) : (
               <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
                 <Button
-                  variant={isSaved ? 'secondary' : 'primary'}
+                  variant="secondary"
                   data-account-action="save-property"
                   onClick={() => (isSaved ? removeSavedProperty(property.id) : saveProperty(property.id))}
                 >

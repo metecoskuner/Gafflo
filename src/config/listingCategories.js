@@ -187,7 +187,7 @@ export function validateListingForReview(listing = {}, today = '', options = {})
   addTextError(errors, 'description', listing.description, 40, 900, 'Add at least 40 characters so renters understand the listing.')
   if (reviewPhotoCount < 1) {
     errors.images = options.hasSessionOnlyPhotos
-      ? "Uploaded photos are kept for this browser session only — there's no photo storage yet, so review can't be requested until a durably-saved photo is added. Save as a draft to keep your work."
+      ? 'Photo upload will be completed when secure photo storage is connected, so review can’t be requested yet. Save this listing as a draft to keep your progress.'
       : isRoomListing(normalized.listingCategory)
         ? 'Add at least one room photo before requesting review.'
         : 'Add at least one listing photo before requesting review.'

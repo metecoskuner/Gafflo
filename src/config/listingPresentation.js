@@ -1,7 +1,6 @@
 import { domainLabel } from './domainOptions'
 import { LISTING_CATEGORIES, isRoomListing } from './listingCategories'
 import { formatDate } from '../utils/dateUtils'
-import { formatCurrency } from '../utils/formatCurrency'
 
 export function getSmartMatchFacts(property) {
   if (isRoomListing(property.listingCategory)) {
@@ -9,9 +8,29 @@ export function getSmartMatchFacts(property) {
       { label: 'Room', value: domainLabel('roomType', property.roomType) },
       { label: 'Bathroom', value: domainLabel('bathroomArrangement', property.bathroomArrangement) },
       { label: 'Bills', value: property.billsIncluded ? 'Included' : 'Separate' },
-      { label: 'Household', value: `${property.currentHouseholdSize || 1}/${property.maxHouseholdSize || 2}` },
-      { label: 'Furnished', value: domainLabel('furnished', property.furnished) },
       { label: 'Owner', value: property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? 'Owner lives here' : 'Not owner occupied' },
+      { label: 'Available', value: formatDate(property.availableFrom) },
+    ]
+  }
+
+  return [
+    { label: 'Type', value: domainLabel('propertyType', property.propertyType) },
+    { label: 'Beds', value: property.bedrooms ? `${property.bedrooms}` : 'Studio' },
+    { label: 'Available', value: formatDate(property.availableFrom) },
+    { label: 'Furnished', value: domainLabel('furnished', property.furnished) },
+    { label: 'Parking', value: domainLabel('parking', property.parking) },
+  ]
+}
+
+// Rent, area/city, and availability are already shown in the card's image caption above these
+// facts, so this list only adds genuinely new information instead of repeating it.
+export function getBrowseFacts(property) {
+  if (isRoomListing(property.listingCategory)) {
+    return [
+      { label: 'Room', value: domainLabel('roomType', property.roomType) },
+      { label: 'Bathroom', value: domainLabel('bathroomArrangement', property.bathroomArrangement) },
+      { label: 'Bills', value: property.billsIncluded ? 'Included' : 'Separate' },
+      { label: 'Owner', value: property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? 'Owner lives here' : 'Shared home' },
     ]
   }
 
@@ -20,30 +39,6 @@ export function getSmartMatchFacts(property) {
     { label: 'Beds', value: property.bedrooms ? `${property.bedrooms}` : 'Studio' },
     { label: 'Furnished', value: domainLabel('furnished', property.furnished) },
     { label: 'Parking', value: domainLabel('parking', property.parking) },
-    { label: 'Bills', value: property.billsIncluded ? 'Included' : 'Separate' },
-    { label: 'Available', value: formatDate(property.availableFrom) },
-  ]
-}
-
-export function getBrowseFacts(property) {
-  if (isRoomListing(property.listingCategory)) {
-    return [
-      { label: 'Rent', value: `${formatCurrency(property.rent)}/mo` },
-      { label: 'Room', value: domainLabel('roomType', property.roomType) },
-      { label: 'Bathroom', value: domainLabel('bathroomArrangement', property.bathroomArrangement) },
-      { label: 'Bills', value: property.billsIncluded ? 'Included' : 'Separate' },
-      { label: 'Owner', value: property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? 'Owner lives here' : 'Shared home' },
-      { label: 'Available', value: formatDate(property.availableFrom) },
-    ]
-  }
-
-  return [
-    { label: 'Rent', value: `${formatCurrency(property.rent)}/mo` },
-    { label: 'Type', value: domainLabel('propertyType', property.propertyType) },
-    { label: 'Beds', value: property.bedrooms ? `${property.bedrooms}` : 'Studio' },
-    { label: 'Area', value: property.area },
-    { label: 'Available', value: formatDate(property.availableFrom) },
-    { label: 'Amenities', value: (property.amenities || property.features || []).slice(0, 2).join(', ') || 'Details inside' },
   ]
 }
 

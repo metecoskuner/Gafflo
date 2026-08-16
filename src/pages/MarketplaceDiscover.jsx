@@ -381,7 +381,7 @@ function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null, 
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
   const roomListing = isRoomListing(property.listingCategory)
-  const facts = getSmartMatchFacts(property).slice(0, roomListing ? 5 : 5)
+  const facts = getSmartMatchFacts(property)
   const updated = formatFreshness(property.updatedAt)
   const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
 
@@ -488,7 +488,7 @@ function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInt
       </button>
       <div className="space-y-3 p-4 min-[390px]:p-5">
         <div className="grid grid-cols-2 gap-2">
-          {facts.slice(0, 4).map((fact) => <Info key={fact.label} label={fact.label} value={fact.value} />)}
+          {facts.map((fact) => <Info key={fact.label} label={fact.label} value={fact.value} />)}
         </div>
         <div className="flex flex-wrap gap-2">
           {trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}

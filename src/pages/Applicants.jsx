@@ -97,7 +97,7 @@ export default function Applicants() {
                 <p className="text-sm text-slate-500">{property.area}, {property.city}</p>
               </div>
               <span className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
-                {propertyApplicants.length} applicants
+                {propertyApplicants.length} {propertyApplicants.length === 1 ? 'applicant' : 'applicants'}
               </span>
             </div>
 

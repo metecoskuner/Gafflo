@@ -542,7 +542,7 @@ describe('frontend integrity helpers', () => {
       maxOccupants: 1,
     }
     const withSessionPhotos = validateListingForReview(listing, '2029-01-01', { photoCount: 0, hasSessionOnlyPhotos: true })
-    expect(withSessionPhotos.errors.images).toMatch(/session only/i)
+    expect(withSessionPhotos.errors.images).toMatch(/secure photo storage is connected/i)
     const withNoPhotos = validateListingForReview(listing, '2029-01-01', { photoCount: 0, hasSessionOnlyPhotos: false })
     expect(withNoPhotos.errors.images).toBe('Add at least one listing photo before requesting review.')
   })

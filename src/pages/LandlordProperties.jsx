@@ -14,6 +14,39 @@ const statusTabs = ['published', 'pending_verification', 'draft', 'paused', 'rej
 export default function LandlordProperties() {
   const navigate = useNavigate()
   const { landlordProperties, landlordEnquiries, updatePropertyStatus } = useAppState()
+
+  const renderAction = (kind, property, prominent) => {
+    const variant = prominent ? 'dark' : 'secondary'
+    if (kind === 'preview') {
+      return (
+        <Button key="preview" variant={variant} onClick={() => navigate(`/properties/${property.id}`)}>
+          {property.listingStatus === 'rented' ? 'View history' : 'Preview'}
+        </Button>
+      )
+    }
+    if (kind === 'edit') {
+      return (
+        <Button key="edit" variant={variant} onClick={() => navigate(`/listings/${property.id}/edit`)}>
+          {['draft', 'rejected'].includes(property.listingStatus) ? 'Continue editing' : 'Edit'}
+        </Button>
+      )
+    }
+    if (kind === 'applicants') {
+      return (
+        <Button key="applicants" variant={variant} onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>
+          Applicants
+        </Button>
+      )
+    }
+    const action = getListingActions(property.listingStatus).find((item) => item.status === kind)
+    if (!action) return null
+    return (
+      <Button key={kind} variant={variant} onClick={() => updatePropertyStatus(property.id, kind)}>
+        {action.label}
+      </Button>
+    )
+  }
+
   const counts = useMemo(
     () =>
       statusTabs.reduce((acc, status) => {
@@ -62,7 +95,7 @@ export default function LandlordProperties() {
       <section className="grid gap-4">
         {landlordProperties.map((property) => {
           const applicantCount = landlordEnquiries.filter((enquiry) => enquiry.propertyId === property.id).length
-          const actions = getPrimaryListingActions(property.listingStatus)
+          const plan = getPropertyActionPlan(property.listingStatus)
           const roomListing = isRoomListing(property.listingCategory)
           return (
             <article key={property.id} className="card-surface card-shadow overflow-hidden rounded-[30px]">
@@ -78,7 +111,7 @@ export default function LandlordProperties() {
                           {listingStatusLabels[property.listingStatus] || property.listingStatus}
                         </span>
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                          {applicantCount} applicants
+                          {applicantCount} {applicantCount === 1 ? 'applicant' : 'applicants'}
                         </span>
                       </div>
                       <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">{property.title}</h2>
@@ -97,18 +130,8 @@ export default function LandlordProperties() {
                     )}
                   </div>
                   <div className="grid gap-2 min-[380px]:grid-cols-2 md:grid-cols-3">
-                    {actions.includes('preview') ? <Button variant="secondary" onClick={() => navigate(`/properties/${property.id}`)}>Preview</Button> : null}
-                    {actions.includes('edit') ? <Button variant="secondary" onClick={() => navigate(`/listings/${property.id}/edit`)}>Edit</Button> : null}
-                    {getListingActions(property.listingStatus).filter((action) => actions.includes(action.status)).map((action) => (
-                      <Button
-                        key={action.status}
-                        variant={action.destructive ? 'dark' : 'secondary'}
-                        onClick={() => updatePropertyStatus(property.id, action.status)}
-                      >
-                        {action.label}
-                      </Button>
-                    ))}
-                    {actions.includes('applicants') ? <Button variant="dark" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>Applicants</Button> : null}
+                    {renderAction(plan.primary, property, true)}
+                    {plan.secondary.map((kind) => renderAction(kind, property, false))}
                   </div>
                 </div>
               </div>
@@ -120,17 +143,18 @@ export default function LandlordProperties() {
   )
 }
 
-function getPrimaryListingActions(status) {
+// One clear primary action per listing status, with the rest as lower-emphasis secondary actions.
+function getPropertyActionPlan(status) {
   const normalized = status === 'active' ? 'published' : status
-  const actionsByStatus = {
-    draft: ['edit', 'pending_verification'],
-    pending_verification: ['preview'],
-    published: ['preview', 'edit', 'paused', 'applicants', 'rented'],
-    paused: ['preview', 'edit', 'published', 'rented'],
-    rented: ['preview'],
-    rejected: ['edit', 'pending_verification'],
+  const plansByStatus = {
+    draft: { primary: 'edit', secondary: ['pending_verification'] },
+    pending_verification: { primary: 'preview', secondary: [] },
+    published: { primary: 'applicants', secondary: ['edit', 'paused', 'rented', 'preview'] },
+    paused: { primary: 'published', secondary: ['edit', 'rented', 'preview'] },
+    rented: { primary: 'preview', secondary: [] },
+    rejected: { primary: 'edit', secondary: ['pending_verification'] },
   }
-  return actionsByStatus[normalized] || ['preview']
+  return plansByStatus[normalized] || { primary: 'preview', secondary: [] }
 }
 
 function Info({ label, value }) {

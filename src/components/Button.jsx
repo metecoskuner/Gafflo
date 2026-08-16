@@ -17,6 +17,10 @@ export default function Button({
       'shadow-soft bg-indigo-950 text-white hover:bg-indigo-900 active:scale-[0.985]',
     ghost:
       'bg-transparent text-slate-700 hover:bg-white/80 active:scale-[0.985] active:bg-white',
+    // For the primary action on a dark surface (e.g. a hero section), where the default
+    // primary/dark variants would blend into the background.
+    light:
+      'shadow-soft bg-white text-indigo-950 hover:bg-slate-100 active:scale-[0.985]',
   }
   const stateClass = success ? 'is-success-pulse ring-2 ring-emerald-100' : ''
 
