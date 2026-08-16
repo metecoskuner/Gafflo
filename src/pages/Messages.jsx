@@ -4,6 +4,7 @@ import ApplicationStatus from '../components/ApplicationStatus'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import MatchBadge from '../components/MatchBadge'
+import { filterVisibleEnquiryHistory } from '../config/entitlements'
 import { isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
@@ -12,11 +13,16 @@ import { getFutureViewingSlots } from '../utils/dateUtils'
 export default function Messages() {
   const navigate = useNavigate()
   const { conversationId } = useParams()
-  const { conversations, dismissToast, role, toast, unarchiveConversation } = useAppState()
-  const sortedConversations = useMemo(
-    () => [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [conversations],
-  )
+  const { conversations, dismissToast, role, tenantPlan, toast, unarchiveConversation } = useAppState()
+  const sortedConversations = useMemo(() => {
+    const sorted = [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    if (role !== 'tenant') return sorted
+    // Gafflo+ tenants see everything; Free tenants keep every active conversation and lose
+    // only closed enquiries older than 30 days — see entitlements.filterVisibleEnquiryHistory.
+    const enquiriesInView = sorted.map((conversation) => conversation.enquiry).filter(Boolean)
+    const visibleEnquiryIds = new Set(filterVisibleEnquiryHistory(enquiriesInView, tenantPlan).map((enquiry) => enquiry.id))
+    return sorted.filter((conversation) => !conversation.enquiry || visibleEnquiryIds.has(conversation.enquiry.id))
+  }, [conversations, role, tenantPlan])
 
   if (conversationId) {
     const conversation = conversations.find((item) => item.id === conversationId)

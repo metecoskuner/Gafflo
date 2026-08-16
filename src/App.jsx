@@ -10,6 +10,7 @@ import { ANY_VALUE, domainLabel, furnishedOptions, propertyTypeOptions, roomType
 import { cityOptions } from './config/locationOptions'
 import { LISTING_CATEGORIES, listingCategoryOptions } from './config/listingCategories'
 import { AppStateProvider } from './context/MarketplaceState'
+import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from './utils/dateUtils'
 import Dashboard from './pages/Dashboard'
@@ -19,6 +20,7 @@ import SavedProperties from './pages/SavedProperties'
 import DiscoverProperties from './pages/DiscoverProperties'
 import TenantProfile from './pages/Profile'
 import RoleSelection from './pages/RoleSelection'
+import TenantOnboarding from './pages/TenantOnboarding'
 import LandlordProperties from './pages/LandlordProperties'
 import Applicants from './pages/Applicants'
 
@@ -41,6 +43,29 @@ const emptyPropertyFilters = {
   leaseLength: ANY_VALUE,
 }
 
+const advancedFilterFields = [
+  'propertyType',
+  'roomType',
+  'privateBathroom',
+  'billsIncluded',
+  'ownerOccupied',
+  'couplesAccepted',
+  'bedrooms',
+  'pets',
+  'parking',
+  'furnishedPreference',
+]
+
+// Gafflo+ gates these fields for real — a Free tenant's applied filters never carry an
+// advanced value even if one was set before a downgrade or left over in draft state.
+function stripAdvancedFilters(filters) {
+  const next = { ...filters }
+  advancedFilterFields.forEach((field) => {
+    next[field] = emptyPropertyFilters[field]
+  })
+  return next
+}
+
 function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -49,7 +74,7 @@ function AppLayout() {
   const shouldRenderPropertyDetailsRoutes = Boolean(backgroundLocation) || /^\/(properties|rooms)\/[^/]+$/.test(location.pathname)
   const isLandingPage = routeLocation.pathname === '/'
   const isAppRoute = !isLandingPage
-  const { activeFilterCount, hasSelectedRole, role } = useAppState()
+  const { activeFilterCount, hasOnboardedTenant, hasSelectedRole, role } = useAppState()
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
 
@@ -74,6 +99,7 @@ function AppLayout() {
   }, [routeLocation.pathname])
 
   if (!hasSelectedRole) return <RoleSelection />
+  if (role === 'tenant' && !hasOnboardedTenant) return <TenantOnboarding />
 
   return (
     <>
@@ -229,10 +255,13 @@ function FilterSheet({ onClose }) {
     propertyFilters,
     resetPropertyFilters,
     setPropertyFilters,
+    tenantPlan,
   } = useAppState()
+  const navigate = useNavigate()
   const [draftFilters, setDraftFilters] = useState(propertyFilters)
   const [filterErrors, setFilterErrors] = useState({})
   const today = getTodayIsoDate()
+  const canAdvanced = canUseAdvancedFilters(tenantPlan)
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -298,7 +327,7 @@ function FilterSheet({ onClose }) {
 
   const applyFilters = () => {
     if (!validateFilters()) return
-    setPropertyFilters(draftFilters)
+    setPropertyFilters(canAdvanced ? draftFilters : stripAdvancedFilters(draftFilters))
     onClose()
   }
 
@@ -412,34 +441,39 @@ function FilterSheet({ onClose }) {
             </FilterGroup>
 
             {showEntireFilters ? (
-              <FilterGroup title="Entire property fit" plusLabel>
+              <FilterGroup title="Entire property fit" plusLabel locked={!canAdvanced} onUpgrade={() => { onClose(); navigate('/profile') }}>
                 <div className="grid gap-3">
                   <FilterSelect
                     label="Property type"
+                    disabled={!canAdvanced}
                     value={draftFilters.propertyType}
                     onChange={(event) => updateDraft('propertyType', event.target.value)}
                     options={propertyTypeFilterOptions}
                   />
                   <FilterSelect
                     label="Furnished"
+                    disabled={!canAdvanced}
                     value={draftFilters.furnishedPreference}
                     onChange={(event) => updateDraft('furnishedPreference', event.target.value)}
                     options={furnishedFilterOptions}
                   />
                   <FilterSelect
                     label="Minimum bedrooms"
+                    disabled={!canAdvanced}
                     value={draftFilters.bedrooms}
                     onChange={(event) => updateDraft('bedrooms', event.target.value)}
                     options={bedroomOptions}
                   />
                   <FilterSelect
                     label="Pets"
+                    disabled={!canAdvanced}
                     value={draftFilters.pets}
                     onChange={(event) => updateDraft('pets', event.target.value)}
                     options={petOptions}
                   />
                   <FilterSelect
                     label="Parking"
+                    disabled={!canAdvanced}
                     value={draftFilters.parking}
                     onChange={(event) => updateDraft('parking', event.target.value)}
                     options={parkingOptions}
@@ -449,46 +483,53 @@ function FilterSheet({ onClose }) {
             ) : null}
 
             {showRoomFilters ? (
-              <FilterGroup title="Room fit" plusLabel>
+              <FilterGroup title="Room fit" plusLabel locked={!canAdvanced} onUpgrade={() => { onClose(); navigate('/profile') }}>
                 <div className="grid gap-3">
                   <FilterSelect
                     label="Room type"
+                    disabled={!canAdvanced}
                     value={draftFilters.roomType}
                     onChange={(event) => updateDraft('roomType', event.target.value)}
                     options={roomTypeFilterOptions}
                   />
                   <FilterSelect
                     label="Private bathroom"
+                    disabled={!canAdvanced}
                     value={draftFilters.privateBathroom}
                     onChange={(event) => updateDraft('privateBathroom', event.target.value)}
                     options={['Any', 'Required']}
                   />
                   <FilterSelect
                     label="Bills included"
+                    disabled={!canAdvanced}
                     value={draftFilters.billsIncluded}
                     onChange={(event) => updateDraft('billsIncluded', event.target.value)}
                     options={['Any', 'Required']}
                   />
                   <FilterSelect
                     label="Owner occupied"
+                    disabled={!canAdvanced}
                     value={draftFilters.ownerOccupied}
                     onChange={(event) => updateDraft('ownerOccupied', event.target.value)}
                     options={['Any', 'Required', 'Excluded']}
                   />
                   <FilterSelect
                     label="Couples accepted"
+                    disabled={!canAdvanced}
                     value={draftFilters.couplesAccepted}
                     onChange={(event) => updateDraft('couplesAccepted', event.target.value)}
                     options={['Any', 'Required']}
                   />
                   <FilterSelect
                     label="Furnished"
+                    disabled={!canAdvanced}
                     value={draftFilters.furnishedPreference}
                     onChange={(event) => updateDraft('furnishedPreference', event.target.value)}
                     options={furnishedFilterOptions}
                   />
                   <FilterSelect
                     label="Parking"
+                    disabled={!canAdvanced}
                     value={draftFilters.parking}
                     onChange={(event) => updateDraft('parking', event.target.value)}
                     options={parkingOptions}
@@ -519,16 +560,25 @@ function FilterSheet({ onClose }) {
   )
 }
 
-function FilterGroup({ title, plusLabel = false, children }) {
+function FilterGroup({ title, plusLabel = false, locked = false, onUpgrade, children }) {
   return (
     <section className="surface-line rounded-[24px] bg-white/76 p-4">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
         {plusLabel ? (
-          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-indigo-700">Plus</span>
+          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-indigo-700">Gafflo+</span>
         ) : null}
       </div>
-      <div className="mt-3">{children}</div>
+      <div className={`mt-3 ${locked ? 'opacity-60' : ''}`}>{children}</div>
+      {locked ? (
+        <button
+          type="button"
+          onClick={onUpgrade}
+          className="mt-3 text-xs font-semibold text-indigo-700 underline decoration-indigo-200 underline-offset-2 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+        >
+          Unlock these filters with Gafflo+
+        </button>
+      ) : null}
     </section>
   )
 }

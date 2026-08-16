@@ -23,7 +23,7 @@ const tenantProfile = {
   parkingNeeded: 'no',
 }
 
-async function seedState(page, { account = tenantAccount, profile = tenantProfile, properties, enquiries, conversations, saved, dismissed } = {}) {
+async function seedState(page, { account = tenantAccount, profile = tenantProfile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan } = {}) {
   await page.addInitScript((state) => {
     window.localStorage.clear()
     if (state.account) window.localStorage.setItem('gafflo.account', JSON.stringify(state.account))
@@ -33,7 +33,9 @@ async function seedState(page, { account = tenantAccount, profile = tenantProfil
     if (state.conversations) window.localStorage.setItem('gafflo.conversations', JSON.stringify(state.conversations))
     if (state.saved) window.localStorage.setItem('gafflo.saved-properties', JSON.stringify(state.saved))
     if (state.dismissed) window.localStorage.setItem('gafflo.dismissed-properties', JSON.stringify(state.dismissed))
-  }, { account, profile, properties, enquiries, conversations, saved, dismissed })
+    if (state.tenantPlan) window.localStorage.setItem('gafflo.tenant-plan', JSON.stringify(state.tenantPlan))
+    if (state.landlordPlan) window.localStorage.setItem('gafflo.landlord-plan', JSON.stringify(state.landlordPlan))
+  }, { account, profile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan })
 }
 
 async function visibleSmartCardLabel(page) {
@@ -63,12 +65,49 @@ async function expectNoHorizontalOverflow(page) {
   expect(metrics.bodyScrollLeft).toBe(0)
 }
 
-test('routes fresh tenant role selection to discover', async ({ page }) => {
+test('fresh tenant role selection routes through onboarding, then to discover with real answers saved', async ({ page }) => {
   await seedState(page, { account: null, profile: null })
   await page.goto('/')
   await page.getByRole('button', { name: 'Continue as tenant' }).click()
+  await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Smart Match' })).toHaveCount(0)
+
+  await page.getByLabel('Target city').selectOption('Dublin')
+  await page.getByLabel('Min').fill('1200')
+  await page.getByLabel('Max').fill('1800')
+  await page.getByLabel('Move-in date').fill('2030-02-01')
+  await page.getByRole('button', { name: 'A room' }).click()
+  await page.getByLabel('Room applicants (including you)').fill('2')
+  await page.getByRole('button', { name: 'See my matches' }).click()
+
   await expect(page).toHaveURL(/\/discover$/)
   await expect(page.getByRole('heading', { name: 'Smart Match' })).toBeVisible()
+
+  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
+  expect(storedProfile.targetCity).toBe('Dublin')
+  expect(storedProfile.budgetMin).toBe(1200)
+  expect(storedProfile.budgetMax).toBe(1800)
+  expect(storedProfile.moveInDate).toBe('2030-02-01')
+  expect(storedProfile.lookingFor).toBe('room')
+  expect(storedProfile.householdSize).toBe(2)
+})
+
+test('onboarding blocks continuing until the minimum match-driving facts are filled in', async ({ page }) => {
+  await seedState(page, { account: null, profile: null })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Continue as tenant' }).click()
+  await page.getByRole('button', { name: 'See my matches' }).click()
+
+  await expect(page.getByText('Choose a target city.')).toBeVisible()
+  await expect(page.getByText('Choose what you are looking for.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
+})
+
+test('returning tenant with a saved profile is never sent through onboarding', async ({ page }) => {
+  await seedState(page)
+  await page.goto('/discover')
+  await expect(page.getByRole('heading', { name: 'Smart Match' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toHaveCount(0)
 })
 
 test('routes fresh landlord role selection to dashboard', async ({ page }) => {
@@ -155,6 +194,28 @@ test('filter drawer closes, applies, resets, and leaves the app scrollable', asy
     return shell.scrollTop > 0 && document.body.style.position !== 'fixed'
   })
   expect(shellCanScroll).toBe(true)
+})
+
+test('advanced filters stay locked and inert for Free tenants', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page)
+  await page.goto('/discover')
+
+  await page.getByRole('button', { name: 'Open filters' }).click()
+  await page.getByLabel('Listing category').selectOption('entire_property')
+  await expect(page.getByText('Unlock these filters with Gafflo+')).toBeVisible()
+  await expect(page.getByLabel('Property type')).toBeDisabled()
+})
+
+test('Gafflo+ tenants can use advanced filters', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page, { tenantPlan: 'gafflo_plus' })
+  await page.goto('/discover')
+
+  await page.getByRole('button', { name: 'Open filters' }).click()
+  await page.getByLabel('Listing category').selectOption('entire_property')
+  await expect(page.getByText('Unlock these filters with Gafflo+')).toHaveCount(0)
+  await expect(page.getByLabel('Property type')).toBeEnabled()
 })
 
 test('property details open, scroll, close, and keep 390px geometry stable', async ({ page }) => {
@@ -519,6 +580,41 @@ test('messages inbox only shows conversations for the current role and identity'
   await expect(page.getByText('This belongs to another tenant')).toHaveCount(0)
 })
 
+test('Free tenants lose old closed enquiry history after 30 days, Gafflo+ tenants keep it', async ({ page }) => {
+  const oldTimestamp = '2020-01-01T00:00:00.000Z'
+  const oldClosedConversation = {
+    id: 'conversation-old-closed',
+    propertyId: 'property-rathmines-2bed',
+    enquiryId: 'enquiry-old-closed',
+    tenantId: 'tenant-local',
+    ownerId: 'owner-private-1',
+    archived: false,
+    unreadFor: null,
+    createdAt: oldTimestamp,
+    updatedAt: oldTimestamp,
+    messages: [{ id: 'm-old', sender: 'tenant', body: 'An old closed enquiry conversation', createdAt: oldTimestamp }],
+  }
+  const oldClosedEnquiry = {
+    id: 'enquiry-old-closed',
+    propertyId: 'property-rathmines-2bed',
+    tenantId: 'tenant-local',
+    ownerId: 'owner-private-1',
+    status: 'rejected',
+    createdAt: oldTimestamp,
+    updatedAt: oldTimestamp,
+    message: 'An old closed enquiry conversation',
+    viewing: { status: 'none', proposedSlots: [], selectedSlot: '' },
+  }
+
+  await seedState(page, { enquiries: [oldClosedEnquiry], conversations: [oldClosedConversation] })
+  await page.goto('/messages')
+  await expect(page.getByText('An old closed enquiry conversation')).toHaveCount(0)
+
+  await seedState(page, { enquiries: [oldClosedEnquiry], conversations: [oldClosedConversation], tenantPlan: 'gafflo_plus' })
+  await page.goto('/messages')
+  await expect(page.getByText('An old closed enquiry conversation')).toBeVisible()
+})
+
 test('draft listing with no rent set shows a clear placeholder instead of a fake price', async ({ page }) => {
   const rentlessDraft = {
     id: 'property-rentless-draft',
@@ -568,24 +664,50 @@ test('top app bar stays attached to the top edge and visible while content scrol
   await expectNoHorizontalOverflow(page)
 })
 
-test('tenant profile shows a Gafflo+ upgrade entry point with the canonical price', async ({ page }) => {
+test('tenant profile shows a Gafflo+ upgrade entry point with only real, wired benefits', async ({ page }) => {
   await seedState(page)
   await page.goto('/profile')
 
   await expect(page.getByText('Gafflo+')).toBeVisible()
   await expect(page.getByText('€4.99')).toBeVisible()
   await page.getByRole('button', { name: 'Explore benefits' }).click()
-  await expect(page.getByText('Advanced filters')).toBeVisible()
+  await expect(page.getByText('Advanced filters', { exact: true })).toBeVisible()
+  await expect(page.getByText('Full application history', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pay now' })).toHaveCount(0)
+  // Rewind, alerts, compare and the follow-up message are not implemented yet — they must not
+  // be advertised as current Gafflo+ benefits (see config/pricingPlans.js).
+  await expect(page.getByText('Rewind your last pass')).toHaveCount(0)
+  await expect(page.getByText('Compare listings side by side')).toHaveCount(0)
+  await expect(page.getByText(/alerts/i)).toHaveCount(0)
 })
 
-test('landlord profile shows a Landlord Plus upgrade entry point with the canonical price', async ({ page }) => {
+test('landlord profile shows a Landlord Plus upgrade entry point with only real, wired benefits', async ({ page }) => {
   await seedState(page, { account: landlordAccount, profile: null })
   await page.goto('/profile')
 
   await expect(page.getByText('Landlord Plus')).toBeVisible()
   await expect(page.getByText('€19.99')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Purchase' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Explore benefits' }).click()
+  await expect(page.getByText('Up to 3 active listings')).toBeVisible()
+  // Applicant tools, templates, analytics and the boost credit have no UI behind them yet.
+  await expect(page.getByText('Advanced applicant filters')).toHaveCount(0)
+  await expect(page.getByText('Private applicant notes')).toHaveCount(0)
+  await expect(page.getByText('Reusable message templates')).toHaveCount(0)
+  await expect(page.getByText('Listing performance analytics')).toHaveCount(0)
+  await expect(page.getByText('Listing Boost credit')).toHaveCount(0)
+})
+
+test('free landlord cannot resume a listing beyond the active listing allowance', async ({ page }) => {
+  await seedState(page, { account: landlordAccount })
+  await page.goto('/properties')
+
+  await page.locator('article').filter({ hasText: 'Drumcondra' }).getByRole('button', { name: 'Resume' }).click()
+  await expect(page.getByRole('heading', { name: 'You’re at your active listing limit' })).toBeVisible()
+  await expect(page.getByText('Landlord Plus')).toBeVisible()
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect(page.locator('article').filter({ hasText: 'Drumcondra' }).getByText('Paused')).toBeVisible()
 })
 
 test('a boosted listing is labelled Promoted in Browse but never appears in Smart Match', async ({ page }) => {
@@ -608,4 +730,57 @@ test('bottom nav remains visible and does not block a lower primary action', asy
   await page.getByRole('button', { name: 'View top fit' }).scrollIntoViewIfNeeded()
   await page.getByRole('button', { name: 'View top fit' }).click()
   await expect(page.getByText('Property details').first()).toBeVisible()
+})
+
+test('landlord dashboard keeps only decision-oriented metrics, not ones owned by Properties or Applicants', async ({ page }) => {
+  await seedState(page, { account: landlordAccount })
+  await page.goto('/dashboard')
+
+  await expect(page.getByText('New interested tenants', { exact: true })).toBeVisible()
+  await expect(page.getByText('Unread messages')).toBeVisible()
+  await expect(page.getByText('Upcoming viewings').first()).toBeVisible()
+  // These now live only on Properties (status tabs) and Applicants (pipeline tabs).
+  await expect(page.getByText('Active properties')).toHaveCount(0)
+  await expect(page.getByText('Shortlisted tenants')).toHaveCount(0)
+})
+
+test('smart match card caps secondary status pills at two high-value signals', async ({ page }) => {
+  const now = new Date().toISOString()
+  const property = buildTestProperty({
+    id: 'property-pill-cap-test',
+    title: 'Signal-dense test listing in Waterford',
+    city: 'Waterford',
+    area: 'City Centre',
+    rent: 1500,
+    createdAt: now,
+  })
+  const enquiry = {
+    id: 'enquiry-pill-cap-test',
+    propertyId: property.id,
+    tenantId: 'tenant-local',
+    ownerId: 'owner-private-1',
+    status: 'landlord interested',
+    createdAt: now,
+    updatedAt: now,
+    message: 'Interested.',
+    viewing: { status: 'none', proposedSlots: [], selectedSlot: '' },
+  }
+
+  await seedState(page, {
+    profile: { ...tenantProfile, targetCity: 'Waterford', preferredAreas: [], budgetMin: 1400, budgetMax: 1600, moveInDate: '2030-01-01' },
+    properties: [property],
+    enquiries: [enquiry],
+    conversations: [],
+    saved: [property.id],
+    dismissed: [],
+  })
+  await page.goto('/discover')
+
+  const card = page.getByRole('button', { name: `Open ${property.title}` })
+  await expect(card).toBeVisible()
+  // Four signals are eligible here (enquiry status, new, saved, freshness) — only the two
+  // highest-value ones (application status, then freshness/trust) should render on the card.
+  await expect(card.getByText('Landlord interested')).toBeVisible()
+  await expect(card.getByText('New', { exact: true })).toBeVisible()
+  await expect(card.getByText('Saved', { exact: true })).toHaveCount(0)
 })

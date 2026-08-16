@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
+import PricingEntryCard from '../components/PricingEntryCard'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, listingCategoryLabel, LISTING_CATEGORIES } from '../config/listingCategories'
 import { getListingActions, listingStatusLabels } from '../config/listingLifecycle'
+import { getLandlordPlanConfig, LANDLORD_PLAN } from '../config/pricingPlans'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
@@ -14,6 +16,7 @@ const statusTabs = ['published', 'pending_verification', 'draft', 'paused', 'rej
 export default function LandlordProperties() {
   const navigate = useNavigate()
   const { landlordProperties, landlordEnquiries, updatePropertyStatus } = useAppState()
+  const [allowanceBlock, setAllowanceBlock] = useState(null)
   const counts = useMemo(
     () =>
       statusTabs.reduce((acc, status) => {
@@ -103,7 +106,10 @@ export default function LandlordProperties() {
                       <Button
                         key={action.status}
                         variant={action.destructive ? 'dark' : 'secondary'}
-                        onClick={() => updatePropertyStatus(property.id, action.status)}
+                        onClick={() => {
+                          const result = updatePropertyStatus(property.id, action.status)
+                          if (result && result.reason === 'allowance') setAllowanceBlock(result)
+                        }}
                       >
                         {action.label}
                       </Button>
@@ -116,6 +122,49 @@ export default function LandlordProperties() {
           )
         })}
       </section>
+
+      {allowanceBlock ? (
+        <ListingAllowanceSheet
+          activeCount={allowanceBlock.activeCount}
+          allowance={allowanceBlock.allowance}
+          onClose={() => setAllowanceBlock(null)}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function ListingAllowanceSheet({ activeCount, allowance, onClose }) {
+  const landlordPlus = getLandlordPlanConfig(LANDLORD_PLAN.LANDLORD_PLUS)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
+      <button type="button" aria-label="Close" className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="listing-allowance-title"
+        className="card-shadow relative flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-y-auto rounded-t-[28px] bg-white p-5 md:max-h-[85vh] md:max-w-md md:rounded-[28px]"
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Active listing limit</p>
+        <h2 id="listing-allowance-title" className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
+          You&rsquo;re at your active listing limit
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Your plan allows {allowance} active listing{allowance === 1 ? '' : 's'}, and you currently have {activeCount}. Pause another
+          listing to free up a slot, or upgrade for more active listings.
+        </p>
+        <div className="mt-4">
+          <PricingEntryCard
+            eyebrow="Upgrade"
+            name={landlordPlus.name}
+            priceMonthly={landlordPlus.priceMonthly}
+            tagline="More active listings for your properties."
+            features={landlordPlus.features}
+          />
+        </div>
+        <Button variant="secondary" className="mt-4 w-full" onClick={onClose}>Close</Button>
+      </div>
     </div>
   )
 }

@@ -67,10 +67,8 @@ function TenantDashboard() {
 
 function LandlordDashboard() {
   const navigate = useNavigate()
-  const { conversations, landlordEnquiries, landlordProperties } = useAppState()
-  const active = landlordProperties.filter((property) => ['published', 'active'].includes(property.listingStatus)).length
+  const { conversations, landlordEnquiries } = useAppState()
   const newInterest = landlordEnquiries.filter((enquiry) => enquiry.status === 'sent').length
-  const shortlisted = landlordEnquiries.filter((enquiry) => enquiry.status === 'shortlisted').length
   const unreadMessages = conversations.filter((conversation) => conversation.unreadFor === 'landlord').length
   const viewings = landlordEnquiries.filter((enquiry) => ['viewing proposed', 'viewing confirmed'].includes(enquiry.viewing?.status)).length
   const viewingRows = getViewingRows(landlordEnquiries, 'landlord')
@@ -92,12 +90,10 @@ function LandlordDashboard() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
-        <Metric label="Active properties" value={String(active)} />
+      <section className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
         <Metric label="New interested tenants" value={String(newInterest)} />
-        <Metric label="Shortlisted tenants" value={String(shortlisted)} />
         <Metric label="Unread messages" value={String(unreadMessages)} />
-        <Metric label="Upcoming viewings" value={String(viewings)} className="min-[390px]:col-span-2" />
+        <Metric label="Upcoming viewings" value={String(viewings)} />
       </section>
 
       <UpcomingViewings rows={viewingRows} role="landlord" onOpenMessages={() => navigate('/messages')} />

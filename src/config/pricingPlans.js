@@ -42,17 +42,14 @@ export const pricingPlans = {
       priceMonthly: 4.99,
       smartMatchCardsPerDay: 100,
       interestsPerDay: 25,
+      // Every line here must correspond to real, wired UI behaviour — see entitlements.js.
+      // Rewind, instant/high-fit/saved-search alerts, listing compare and the 48h follow-up
+      // are deliberately not listed: none has real UI behind it yet, so none is advertised.
       features: [
         '100 Smart Match cards a day',
         '25 Interested actions a day',
-        'Rewind your last pass',
         'Advanced filters',
-        'Instant new-listing alerts',
-        'High-fit and saved-search alerts',
-        'Price and status change alerts',
         'Full application history',
-        'Compare listings side by side',
-        'One follow-up message if a landlord hasn’t responded after 48h',
       ],
     },
   },
@@ -75,15 +72,9 @@ export const pricingPlans = {
       name: 'Landlord Plus',
       priceMonthly: 19.99,
       activeListingAllowance: 3,
-      features: [
-        'Up to 3 active listings',
-        'Advanced applicant filters and compare',
-        'Private applicant notes',
-        'Reusable message templates',
-        'Advanced viewing tools',
-        'Listing performance analytics',
-        'One Listing Boost credit a month',
-      ],
+      // Advanced applicant filters/notes/templates/viewing tools/analytics are deliberately
+      // not listed: none has real UI behind it yet. Only list what is actually wired.
+      features: ['Up to 3 active listings'],
     },
   },
   listingProducts: {

@@ -15,7 +15,7 @@ import { getDurableListingImages, getDurablePhotoMetadata } from '../config/phot
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
 import { smartMatchAccess } from '../config/smartMatch'
-import { getEffectiveInterestAllowance, getEffectiveSmartMatchAllowance, getInterestAllowance, getSmartMatchAllowance } from '../config/entitlements'
+import { getActiveListingAllowance, getEffectiveInterestAllowance, getEffectiveSmartMatchAllowance, getInterestAllowance, getSmartMatchAllowance } from '../config/entitlements'
 import { normalizeViewingSlots, validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { mockConversations, mockEnquiries, mockProperties, mockTenants } from '../data/marketplace'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
@@ -235,6 +235,10 @@ function canTenantSendMessage(conversation, enquiry) {
 export function AppStateProvider({ children }) {
   const [account, setAccountState] = useState(() => getAccount())
   const [tenantProfile, setTenantProfileState] = useState(() => normalizeTenantProfileForState({ ...defaultTenantProfileLoadDefaults, ...getTenantProfile(), id: currentTenantId }))
+  // A genuinely fresh local profile (nothing ever saved to storage) means onboarding has not
+  // run yet. Once saved — via onboarding or the full profile form — this stays true for good,
+  // so a returning tenant is never sent through onboarding again.
+  const [hasOnboardedTenant, setHasOnboardedTenant] = useState(() => Boolean(getTenantProfile()))
   const [landlordProfile, setLandlordProfileState] = useState(() => ({ ...defaultLandlordProfile, ...getLandlordProfile(), id: currentOwnerId }))
   const [tenantPlan] = useState(() => getTenantPlan())
   const [landlordPlan] = useState(() => getLandlordPlan())
@@ -411,6 +415,7 @@ export function AppStateProvider({ children }) {
     role: account?.role || null,
     landlordType: account?.landlordType || null,
     hasSelectedRole: Boolean(account?.role),
+    hasOnboardedTenant,
     tenants,
     tenantProfile,
     landlordProfile,
@@ -446,7 +451,18 @@ export function AppStateProvider({ children }) {
       const next = normalizeTenantProfileForStorage({ ...profile, id: currentTenantId }, defaultTenantProfile)
       setTenantProfile(next)
       setTenantProfileState(next)
+      setHasOnboardedTenant(true)
       setToast({ type: 'success', message: 'Tenant profile saved.' })
+    },
+    // Persists only the minimum match-driving facts collected during onboarding. Everything
+    // else stays at neutral defaults until the tenant chooses to fill in Profile — never a
+    // fabricated preference (an invented budget, an invented city) presented as their own.
+    completeTenantOnboarding(essentials) {
+      if (account?.role !== 'tenant') return
+      const next = normalizeTenantProfileForStorage({ ...defaultTenantProfileLoadDefaults, ...essentials, id: currentTenantId }, defaultTenantProfile)
+      setTenantProfile(next)
+      setTenantProfileState(next)
+      setHasOnboardedTenant(true)
     },
     saveLandlordProfile(profile) {
       const next = { ...defaultLandlordProfile, ...profile, id: currentOwnerId, propertyCount: undefined }
@@ -843,13 +859,32 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'success', message: 'Listing updated.' })
       return propertyId
     },
+    // Returns { ok: true } on success, or { ok: false, reason } when the operation could not be
+    // completed — the caller must show that honestly (e.g. an upgrade explanation for
+    // reason === 'allowance') rather than treating a blocked change as if it succeeded.
     updatePropertyStatus(propertyId, listingStatus) {
-      if (account?.role !== 'landlord') return
+      if (account?.role !== 'landlord') return { ok: false, reason: 'not-landlord' }
       const allowedStatuses = ['published', 'pending_verification', 'draft', 'paused', 'rejected', 'rented']
-      if (!allowedStatuses.includes(listingStatus)) return
+      if (!allowedStatuses.includes(listingStatus)) return { ok: false, reason: 'invalid-status' }
       const currentProperty = properties.find((property) => property.id === propertyId && property.ownerId === currentOwnerId)
-      if (!currentProperty || currentProperty.listingStatus === listingStatus) return
-      if (!canTransitionListing(currentProperty.listingStatus, listingStatus)) return
+      if (!currentProperty || currentProperty.listingStatus === listingStatus) return { ok: false, reason: 'no-op' }
+      if (!canTransitionListing(currentProperty.listingStatus, listingStatus)) return { ok: false, reason: 'invalid-transition' }
+
+      // Frontend-only allowance check — this narrows what the UI offers, it is not a
+      // server-enforced limit. A Free landlord already over the allowance from existing/demo
+      // listings keeps those listings; only a *new* move into an active status is blocked.
+      const activeStatuses = ['published', 'active']
+      const enteringActive = activeStatuses.includes(listingStatus) && !activeStatuses.includes(currentProperty.listingStatus)
+      if (enteringActive) {
+        const allowance = getActiveListingAllowance(landlordPlan)
+        const activeCount = landlordProperties.filter(
+          (property) => property.id !== propertyId && activeStatuses.includes(property.listingStatus),
+        ).length
+        if (activeCount >= allowance) {
+          return { ok: false, reason: 'allowance', allowance, activeCount }
+        }
+      }
+
       const localExists = localProperties.some((property) => property.id === propertyId)
       const fixture = mockProperties.find((property) => property.id === propertyId)
       const now = new Date().toISOString()
@@ -860,6 +895,7 @@ export function AppStateProvider({ children }) {
           : localProperties
       persistProperties(next)
       setToast({ type: 'info', message: `Listing ${getListingStatusLabel(listingStatus)}.` })
+      return { ok: true }
     },
   }
 

@@ -169,6 +169,7 @@ function SmartMatchDeck({
   noActiveListings,
   freePlanMessage,
 }) {
+  const navigate = useNavigate()
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
   const [dragIntent, setDragIntent] = useState(null)
   const pointerStart = useRef(null)
@@ -292,6 +293,15 @@ function SmartMatchDeck({
             {noFilterResults ? 'Reset filters' : 'Start over'}
           </Button>
         </div>
+        {smartLimitReached ? (
+          <button
+            type="button"
+            onClick={() => navigate('/profile')}
+            className="mt-4 text-xs font-semibold text-indigo-700 underline decoration-indigo-200 underline-offset-2 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+          >
+            Explore Gafflo+
+          </button>
+        ) : null}
       </section>
     )
   }
@@ -372,6 +382,15 @@ function SmartMatchDeck({
           {interestLimitReached ? 'Limit reached' : 'Interested'}
         </Button>
       </div>
+      {smartLimitReached || interestLimitReached ? (
+        <button
+          type="button"
+          onClick={() => navigate('/profile')}
+          className="mt-3 block w-full text-center text-xs font-semibold text-indigo-700 underline decoration-indigo-200 underline-offset-2 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+        >
+          Explore Gafflo+
+        </button>
+      ) : null}
     </section>
   )
 }
@@ -426,14 +445,27 @@ function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null, 
           </ul>
         </div>
         <div className="flex flex-wrap gap-2">
-          {isNew ? <Pill tone="new">New</Pill> : trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}
-          {isSaved ? <Pill tone="green">Saved</Pill> : null}
-          {enquiryStatus ? <Pill tone="dark">{enquiryStatus}</Pill> : null}
-          {availability ? <Pill tone="green">{availability}</Pill> : !availability && updated ? <Pill tone="trust">{updated}</Pill> : null}
+          {getSecondarySignalPills({ enquiryStatus, isNew, trustSignal, isSaved, availability, updated }).map(({ tone, label }) => (
+            <Pill key={label} tone={tone}>{label}</Pill>
+          ))}
         </div>
       </div>
     </article>
   )
+}
+
+// Caps the swipe card's secondary status pills to the ~2 signals most likely to change a
+// tenant's decision (an existing application first, then freshness/trust) — everything else
+// still reaches the tenant through Property Details, which is one tap away.
+function getSecondarySignalPills({ enquiryStatus, isNew, trustSignal, isSaved, availability, updated }) {
+  return [
+    enquiryStatus ? { tone: 'dark', label: enquiryStatus } : null,
+    isNew ? { tone: 'new', label: 'New' } : trustSignal ? { tone: 'trust', label: trustSignal } : null,
+    isSaved ? { tone: 'green', label: 'Saved' } : null,
+    availability ? { tone: 'green', label: availability } : updated ? { tone: 'trust', label: updated } : null,
+  ]
+    .filter(Boolean)
+    .slice(0, 2)
 }
 
 function SwipeIntentBadge({ intent, opacity, ready }) {

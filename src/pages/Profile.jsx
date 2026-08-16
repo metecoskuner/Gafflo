@@ -149,7 +149,7 @@ function TenantProfile() {
             eyebrow="Upgrade"
             name={gaffloPlus.name}
             priceMonthly={gaffloPlus.priceMonthly}
-            tagline="More Smart Match cards, more Interested actions and alerts when a strong fit appears."
+            tagline="More Smart Match cards, more Interested actions, advanced filters and full application history."
             features={gaffloPlus.features}
           />
         ) : null}
@@ -320,8 +320,8 @@ function LandlordProfile() {
             eyebrow="Upgrade"
             name={landlordPlus.name}
             priceMonthly={landlordPlus.priceMonthly}
-            tagline="More active listings, applicant tools and a monthly Listing Boost credit."
-            note={`Free includes ${freeListingAllowance} active listing. Individual listings can also be boosted for extra Browse visibility.`}
+            tagline="More active listings for your properties."
+            note={`Free includes ${freeListingAllowance} active listing.`}
             features={landlordPlus.features}
           />
         ) : null}
@@ -438,11 +438,20 @@ function Check({ label, checked, error, onChange }) {
   )
 }
 
+// Demo/local-QA tool only — there is no auth yet, so this is how both sides of the product
+// get previewed on one device. Deliberately styled apart from the real profile sections above
+// (dashed border, warning tone, explicit "Demo tool" label) so it never reads as a normal
+// account feature. Remove once real accounts exist — do not carry this forward as a feature.
 function RoleSwitch({ onTenant, onLandlord }) {
   return (
-    <section className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-      <div className="text-sm font-semibold text-slate-950">Switch Gafflo view</div>
-      <p className="mt-1 text-sm leading-6 text-slate-600">Preview the tenant or landlord side from this device.</p>
+    <section className="rounded-[24px] border border-dashed border-amber-300 bg-amber-50/60 p-4">
+      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-amber-800">
+        Demo tool
+      </span>
+      <div className="mt-2 text-sm font-semibold text-slate-950">Switch Gafflo view</div>
+      <p className="mt-1 text-sm leading-6 text-slate-600">
+        Local-only preview of both sides of Gafflo before accounts exist. Not part of the real product.
+      </p>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Button variant="secondary" onClick={onTenant}>Tenant mode</Button>
         <Button variant="secondary" onClick={onLandlord}>Landlord mode</Button>
