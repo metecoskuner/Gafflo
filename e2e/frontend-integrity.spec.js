@@ -577,15 +577,30 @@ test('tenant profile shows a Gafflo+ entry point with the canonical price', asyn
   await expect(page.getByRole('button', { name: 'Gafflo+ coming soon' })).toHaveCount(0)
 })
 
-test('Gafflo+ entry opens the premium presentation with canonical price, free-vs-plus content and the trust statement', async ({ page }) => {
+test('Gafflo+ entry opens the plan screen with the canonical price and a quick Free-vs-Plus glance', async ({ page }) => {
   await page.setViewportSize(viewport390)
   await seedState(page)
   await page.goto('/profile')
 
   await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Get ahead in your rental search.' })
+  const dialog = page.getByRole('dialog', { name: 'Gafflo+' })
   await expect(dialog).toBeVisible()
-  await expect(dialog.getByText('€4.99')).toBeVisible()
+  await expect(dialog.getByText('Get ahead in your rental search.')).toBeVisible()
+  await expect(dialog.getByText('€4.99').first()).toBeVisible()
+  await expect(dialog.getByText('Everything in Free + premium benefits')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('Gafflo+ "See all benefits" opens the full benefits screen with free-vs-plus content and the trust statement', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page)
+  await page.goto('/profile')
+  await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
+
+  await page.getByRole('button', { name: 'See all benefits' }).click()
+  const dialog = page.getByRole('dialog', { name: 'All the advantages' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('Instant listing alerts')).toBeVisible()
   await expect(dialog.getByText('Advanced filters').first()).toBeVisible()
   await expect(dialog.getByText('Standard application history')).toBeVisible()
   await expect(dialog.getByText('Everything in Free')).toBeVisible()
@@ -595,14 +610,19 @@ test('Gafflo+ entry opens the premium presentation with canonical price, free-vs
   await expectNoHorizontalOverflow(page)
 })
 
-test('Gafflo+ presentation CTA is non-transactional', async ({ page }) => {
+test('Gafflo+ benefits screen CTA is non-transactional, and the back button returns to the plan screen', async ({ page }) => {
   await seedState(page)
   await page.goto('/profile')
   await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
+  await page.getByRole('button', { name: 'Compare plans' }).click()
 
   await expect(page.getByRole('button', { name: 'Gafflo+ coming soon' })).toBeDisabled()
   await expect(page.getByText('Payments aren’t available in this preview yet.')).toBeVisible()
   await expect(page.getByRole('button', { name: /^(Subscribe|Buy|Start subscription|Pay now|Purchase)$/ })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Back to Gafflo+ plan' }).click()
+  await expect(page.getByRole('dialog', { name: 'Gafflo+' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'See all benefits' })).toBeVisible()
 })
 
 test('Gafflo+ presentation closes via the X button, the backdrop, and Escape, and leaves the app scrollable', async ({ page }) => {
