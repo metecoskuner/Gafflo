@@ -158,7 +158,7 @@ export default function Applicants() {
                           {action.label}
                         </Button>
                       ))}
-                    <Button variant="dark" onClick={() => navigate(`/messages/${openConversationForEnquiry(enquiry.id)}`)}>
+                    <Button variant="primary" onClick={() => navigate(`/messages/${openConversationForEnquiry(enquiry.id)}`)}>
                       Message
                     </Button>
                     {getApplicationActions(enquiry.status).some((action) => action.status === 'viewing proposed') ? (

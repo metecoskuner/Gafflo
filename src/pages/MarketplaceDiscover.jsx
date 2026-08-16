@@ -369,7 +369,7 @@ function SmartMatchDeck({
         >
           {isSaved ? 'Saved' : 'Save'}
         </Button>
-        <Button variant="dark" className="min-h-14" data-account-action="send-interest" disabled={interestLimitReached || smartLimitReached} onClick={() => triggerButtonAction('interested')}>
+        <Button variant="primary" className="min-h-14" data-account-action="send-interest" disabled={interestLimitReached || smartLimitReached} onClick={() => triggerButtonAction('interested')}>
           {interestLimitReached ? 'Limit reached' : 'Interested'}
         </Button>
       </div>
@@ -501,7 +501,7 @@ function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInt
         ) : null}
         <div className="grid grid-cols-2 gap-2">
           <Button variant={isSaved ? 'secondary' : 'primary'} data-account-action="save-property" onClick={onSave}>{isSaved ? 'Saved' : 'Save'}</Button>
-          <Button variant="dark" data-account-action={enquiryStatus ? 'open-message' : 'send-interest'} onClick={onInterest}>{enquiryStatus ? 'Open' : 'Interested'}</Button>
+          <Button variant="primary" data-account-action={enquiryStatus ? 'open-message' : 'send-interest'} onClick={onInterest}>{enquiryStatus ? 'Open' : 'Interested'}</Button>
         </div>
       </div>
     </article>

@@ -16,7 +16,7 @@ export default function LandlordProperties() {
   const { landlordProperties, landlordEnquiries, updatePropertyStatus } = useAppState()
 
   const renderAction = (kind, property, prominent) => {
-    const variant = prominent ? 'dark' : 'secondary'
+    const variant = prominent ? 'primary' : 'secondary'
     if (kind === 'preview') {
       return (
         <Button key="preview" variant={variant} onClick={() => navigate(`/properties/${property.id}`)}>
@@ -159,9 +159,9 @@ function getPropertyActionPlan(status) {
 
 function Info({ label, value }) {
   return (
-    <div className="surface-line rounded-[18px] bg-slate-50/78 px-3 py-3">
+    <div className="surface-line min-w-0 rounded-[18px] bg-slate-50/78 px-3 py-3">
       <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-slate-800">{value}</div>
+      <div className="mt-1 break-words text-sm font-semibold leading-5 text-slate-800">{value}</div>
     </div>
   )
 }

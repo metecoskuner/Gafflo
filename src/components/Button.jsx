@@ -9,16 +9,19 @@ export default function Button({
   ...props
 }) {
   const variants = {
+    // The main product CTA — the forward-moving action in a group (e.g. "Interested", "Applicants").
     primary:
       'shadow-pressable bg-indigo-950 text-white hover:bg-indigo-900 active:scale-[0.985]',
+    // Lower-emphasis outlined/surface action — everything that isn't the one primary action.
     secondary:
       'surface-line bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 active:scale-[0.985] active:bg-slate-100',
+    // Reserved for the affirming side of a confirm/cancel prompt (e.g. "Confirm block", "Archive",
+    // "Not suitable") — intentionally not used as a general CTA so it never competes with `primary`.
     dark:
       'shadow-soft bg-indigo-950 text-white hover:bg-indigo-900 active:scale-[0.985]',
     ghost:
       'bg-transparent text-slate-700 hover:bg-white/80 active:scale-[0.985] active:bg-white',
-    // For the primary action on a dark surface (e.g. a hero section), where the default
-    // primary/dark variants would blend into the background.
+    // The primary action on a dark surface (e.g. a hero section), where `primary`/`dark` would blend in.
     light:
       'shadow-soft bg-white text-indigo-950 hover:bg-slate-100 active:scale-[0.985]',
   }

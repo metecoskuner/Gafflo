@@ -309,7 +309,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
             {role === 'landlord' ? (
               <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
                 <Button variant="secondary" onClick={() => navigate('/properties')}>Back to properties</Button>
-                <Button variant="dark" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>View applicants</Button>
+                <Button variant="primary" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>View applicants</Button>
               </div>
             ) : (
               <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
@@ -321,7 +321,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
                   {isSaved ? 'Saved' : 'Save'}
                 </Button>
                 <Button
-                  variant="dark"
+                  variant="primary"
                   data-account-action={enquiry ? 'open-message' : 'send-interest'}
                   disabled={!enquiry && !canEnquire}
                   onClick={handleEnquire}
