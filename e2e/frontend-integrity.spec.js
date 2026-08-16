@@ -588,6 +588,8 @@ test('Gafflo+ entry opens the plan screen with the canonical price and a quick F
   await expect(dialog.getByText('Get ahead in your rental search.')).toBeVisible()
   await expect(dialog.getByText('€4.99').first()).toBeVisible()
   await expect(dialog.getByText('Everything in Free + premium benefits')).toBeVisible()
+  await expect(dialog.getByText('Planned Gafflo+ pricing', { exact: false })).toBeVisible()
+  await expect(dialog.getByText('Cancel anytime')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
 })
 

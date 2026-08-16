@@ -90,9 +90,12 @@ function PlanScreen({ freePlan, plusPlan, onClose, onSeeBenefits }) {
           <p className="mt-2 text-base leading-6 text-slate-600">Get ahead in your rental search.</p>
         </div>
 
-        <div className="inline-flex items-baseline gap-1.5 rounded-full bg-[var(--gafflo-brand-ink)] px-5 py-2.5 text-white">
-          <span className="text-lg font-semibold tracking-tight">€{plusPlan.priceMonthly.toFixed(2)}</span>
-          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-indigo-200">/ month</span>
+        <div>
+          <div className="inline-flex items-baseline gap-1.5 rounded-full bg-[var(--gafflo-brand-ink)] px-5 py-2.5 text-white">
+            <span className="text-lg font-semibold tracking-tight">€{plusPlan.priceMonthly.toFixed(2)}</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-indigo-200">/ month</span>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Planned Gafflo+ pricing — not available to purchase yet.</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-left">
@@ -108,13 +111,12 @@ function PlanScreen({ freePlan, plusPlan, onClose, onSeeBenefits }) {
             price={`€${plusPlan.priceMonthly.toFixed(2)}`}
             priceNote="per month"
             description="More power, better results."
+            badge="Recommended"
             highlight
           >
             Everything in Free + premium benefits
           </PlanSummaryCard>
         </div>
-
-        <p className="text-xs text-slate-500">Cancel anytime. No commitment.</p>
       </div>
 
       <div className="shrink-0 border-t border-slate-100 bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 min-[390px]:px-6">
@@ -137,9 +139,14 @@ function PlanScreen({ freePlan, plusPlan, onClose, onSeeBenefits }) {
   )
 }
 
-function PlanSummaryCard({ label, price, priceNote, description, features, highlight = false, children }) {
+function PlanSummaryCard({ label, price, priceNote, description, features, highlight = false, badge, children }) {
   return (
-    <div className={`rounded-[20px] p-4 ${highlight ? 'border-2 border-indigo-300 bg-indigo-50/70' : 'surface-line bg-slate-50/80'}`}>
+    <div className={`relative rounded-[20px] p-4 ${highlight ? 'border-2 border-indigo-300 bg-indigo-50/70' : 'surface-line bg-slate-50/80'}`}>
+      {badge ? (
+        <span className="absolute -top-2.5 right-4 rounded-full bg-indigo-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.06em] text-white shadow-soft">
+          {badge}
+        </span>
+      ) : null}
       <div className={`text-sm font-semibold ${highlight ? 'text-indigo-700' : 'text-slate-700'}`}>{label}</div>
       <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
       <div className="mt-3">

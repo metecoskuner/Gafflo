@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import BottomNav from './components/BottomNav'
-import { BrandMark } from './components/BrandLogo'
+import { BrandLockup } from './components/BrandLogo'
 import Footer from './components/Footer'
 import Navbar from './components/Navbar'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
@@ -183,9 +183,9 @@ function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateLis
           type="button"
           aria-label="Go to Gafflo home"
           onClick={() => navigate(homeRoute)}
-          className="flex h-11 min-w-11 items-center justify-center rounded-xl outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
+          className="flex h-11 items-center rounded-xl px-1 outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
         >
-          <BrandMark size="sm" />
+          <BrandLockup />
         </button>
 
         <div className="flex items-center gap-2">
