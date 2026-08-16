@@ -26,20 +26,14 @@ export function BrandMark({ className = '', size = 'md' }) {
   )
 }
 
-export default function BrandLogo({
-  className = '',
-  size = 'md',
-  theme = 'light',
-  textClassName = '',
-}) {
+export default function BrandLogo({ className = '', size = 'md', theme = 'light' }) {
   const sizes = sizeClasses[size] || sizeClasses.md
-  const inferredTheme = theme === 'dark' || textClassName.includes('text-white') ? 'dark' : 'light'
-  const src = inferredTheme === 'dark' ? '/brand/gafflo-logo-dark.png' : '/brand/gafflo-logo-light.png'
+  const src = theme === 'dark' ? '/brand/gafflo-logo-dark.png' : '/brand/gafflo-logo-light.png'
 
   return (
     <img
       src={src}
-      alt="Gafflo"
+      alt="Gafflo — Find a place that fits"
       className={`block shrink-0 object-contain ${sizes.logo} ${className}`}
     />
   )

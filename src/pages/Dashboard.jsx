@@ -20,8 +20,8 @@ function TenantDashboard() {
 
   return (
     <div className="space-y-5">
-      <section className="card-shadow overflow-hidden rounded-[34px] bg-indigo-950 px-5 py-6 text-white md:px-8 md:py-10">
-        <BrandLogo size="sm" textClassName="text-white" />
+      <section className="card-shadow overflow-hidden rounded-[34px] bg-[var(--gafflo-brand-ink)] px-5 py-6 text-white md:px-8 md:py-10">
+        <BrandLogo size="sm" theme="dark" />
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Tenant dashboard</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-5xl">Find a place that fits the tenancy.</h1>
         <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
@@ -77,8 +77,8 @@ function LandlordDashboard() {
 
   return (
     <div className="space-y-5">
-      <section className="card-shadow overflow-hidden rounded-[30px] bg-indigo-950 px-5 py-6 text-white md:px-8 md:py-9">
-        <BrandLogo size="sm" textClassName="text-white" />
+      <section className="card-shadow overflow-hidden rounded-[30px] bg-[var(--gafflo-brand-ink)] px-5 py-6 text-white md:px-8 md:py-9">
+        <BrandLogo size="sm" theme="dark" />
         <p className="mt-6 text-sm font-semibold text-emerald-200">Landlord home</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Your properties at a glance.</h1>
         <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">

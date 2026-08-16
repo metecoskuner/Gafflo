@@ -568,15 +568,69 @@ test('top app bar stays attached to the top edge and visible while content scrol
   await expectNoHorizontalOverflow(page)
 })
 
-test('tenant profile shows a Gafflo+ upgrade entry point with the canonical price', async ({ page }) => {
+test('tenant profile shows a Gafflo+ entry point with the canonical price', async ({ page }) => {
   await seedState(page)
   await page.goto('/profile')
 
-  await expect(page.getByText('Gafflo+')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Gafflo+' })).toBeVisible()
   await expect(page.getByText('€4.99')).toBeVisible()
-  await page.getByRole('button', { name: 'Explore benefits' }).click()
-  await expect(page.getByText('Advanced filters')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Pay now' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Gafflo+ coming soon' })).toHaveCount(0)
+})
+
+test('Gafflo+ entry opens the premium presentation with canonical price, free-vs-plus content and the trust statement', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page)
+  await page.goto('/profile')
+
+  await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Get ahead in your rental search.' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('€4.99')).toBeVisible()
+  await expect(dialog.getByText('Advanced filters').first()).toBeVisible()
+  await expect(dialog.getByText('Standard application history')).toBeVisible()
+  await expect(dialog.getByText('Everything in Free')).toBeVisible()
+  await expect(
+    dialog.getByText('Gafflo+ never changes your Rental Fit score or moves your application ahead of other renters.'),
+  ).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('Gafflo+ presentation CTA is non-transactional', async ({ page }) => {
+  await seedState(page)
+  await page.goto('/profile')
+  await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
+
+  await expect(page.getByRole('button', { name: 'Gafflo+ coming soon' })).toBeDisabled()
+  await expect(page.getByText('Payments aren’t available in this preview yet.')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(Subscribe|Buy|Start subscription|Pay now|Purchase)$/ })).toHaveCount(0)
+})
+
+test('Gafflo+ presentation closes via the X button, the backdrop, and Escape, and leaves the app scrollable', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page)
+  await page.goto('/profile')
+
+  await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.mouse.click(8, 8)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Explore Gafflo+' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  const shellCanScroll = await page.evaluate(() => {
+    const shell = document.querySelector('#app-shell-scroll')
+    shell.scrollTop = 40
+    return shell.scrollTop > 0
+  })
+  expect(shellCanScroll).toBe(true)
 })
 
 test('landlord profile shows a Landlord Plus upgrade entry point with the canonical price', async ({ page }) => {
