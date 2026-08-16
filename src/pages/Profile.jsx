@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
+import GaffloPlusPreview from '../components/GaffloPlusPreview'
 import PricingEntryCard from '../components/PricingEntryCard'
 import SelectInput from '../components/SelectInput'
 import { getActiveListingAllowance } from '../config/entitlements'
@@ -55,6 +56,7 @@ function TenantProfile() {
   )
   const areaOptions = useMemo(() => getAreaOptionsForCity(form.targetCity || 'Dublin'), [form.targetCity])
   const completeness = getTenantProfileCompleteness(form)
+  const [showGaffloPlus, setShowGaffloPlus] = useState(false)
 
   const validateField = (field, value, nextForm = form) => {
     const minBudget = Number(field === 'budgetMin' ? value : nextForm.budgetMin)
@@ -141,104 +143,109 @@ function TenantProfile() {
   }
 
   return (
-    <ProfileShell eyebrow="Tenant profile" title="Your rental profile" description="These details help rank properties and summarise enquiries. No documents are uploaded.">
-      <form onSubmit={submit} className="space-y-4">
-        <ProfileCompleteness completeness={completeness} />
-        {tenantPlan !== TENANT_PLAN.GAFFLO_PLUS ? (
-          <PricingEntryCard
-            eyebrow="Upgrade"
-            name={gaffloPlus.name}
-            priceMonthly={gaffloPlus.priceMonthly}
-            tagline="More Smart Match cards, more Interested actions, advanced filters and full application history."
-            features={gaffloPlus.features}
-          />
-        ) : null}
-        <Section title="Basics">
-          <div className="grid gap-3 min-[430px]:grid-cols-2">
-            <FormInput id="tenant-name" label="Name" value={form.name || ''} maxLength={80} error={errors.name} onChange={(event) => update('name', event.target.value)} />
-            <SelectInput label="Target city" value={form.targetCity || 'Dublin'} onChange={(event) => update('targetCity', event.target.value)} options={cityOptions.map(option)} />
-          </div>
-          <PreferredAreasInput
-            areaDraft={form.areaDraft || ''}
-            areas={form.preferredAreas || []}
-            city={form.targetCity || 'Dublin'}
-            options={areaOptions}
-            onAdd={addPreferredArea}
-            onDraft={(value) => update('areaDraft', value)}
-            onRemove={removePreferredArea}
-          />
-        </Section>
-
-        <Section title="Rental needs">
-          <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
-            <FormInput id="tenant-budget-min" label="Budget min (€)" type="number" min="0" inputMode="numeric" value={form.budgetMin || ''} error={errors.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} />
-            <FormInput id="tenant-budget-max" label="Budget max (€)" type="number" min="0" inputMode="numeric" value={form.budgetMax || ''} error={errors.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} />
-            <FormInput id="tenant-move-in" label="Move-in date" type="date" min={today} value={isPastIsoDate(form.moveInDate, today) ? '' : form.moveInDate || ''} error={errors.moveInDate} onChange={(event) => update('moveInDate', event.target.value)} />
-            <SelectInput label="Lease length" value={form.leaseLength || '12'} onChange={(event) => update('leaseLength', event.target.value)} options={leasePreferenceOptions} />
-            <FormInput id="tenant-household-size" label={form.lookingFor === 'room' ? 'Room applicants' : 'Household size'} type="number" min="1" inputMode="numeric" value={form.householdSize || 1} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />
-            <SelectInput label="Furnished" value={form.furnishedPreference || ANY_VALUE} onChange={(event) => update('furnishedPreference', event.target.value)} options={withAny(furnishedOptions)} />
-          </div>
-          <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2">
-            <SelectInput
-              label="Looking for"
-              value={form.lookingFor || 'any'}
-              onChange={(event) => update('lookingFor', event.target.value)}
-              options={[
-                { label: 'Any', value: 'any' },
-                { label: 'Entire property', value: LISTING_CATEGORIES.ENTIRE_PROPERTY },
-                { label: 'Room', value: 'room' },
-              ]}
+    <>
+      <ProfileShell eyebrow="Tenant profile" title="Your rental profile" description="These details help rank properties and summarise enquiries. No documents are uploaded.">
+        <form onSubmit={submit} className="space-y-4">
+          <ProfileCompleteness completeness={completeness} />
+          {tenantPlan !== TENANT_PLAN.GAFFLO_PLUS ? (
+            <PricingEntryCard
+              eyebrow="Upgrade"
+              name={gaffloPlus.name}
+              priceMonthly={gaffloPlus.priceMonthly}
+              tagline="More Smart Match cards, more Interested actions, advanced filters and full application history."
+              features={gaffloPlus.features}
+              ctaLabel="Explore Gafflo+"
+              onExplore={() => setShowGaffloPlus(true)}
             />
-            {form.lookingFor === 'room' ? (
-              <Check label="Owner-occupied acceptable" checked={form.ownerOccupiedAcceptable !== false} onChange={() => update('ownerOccupiedAcceptable', form.ownerOccupiedAcceptable === false)} />
-            ) : null}
-          </div>
-          {form.lookingFor === 'room' ? (
-            <details className="mt-4 rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3" open>
-              <summary className="cursor-pointer text-sm font-semibold text-slate-950 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
-                Room preferences
-              </summary>
-              <div className="mt-3 grid gap-3 min-[430px]:grid-cols-2">
-                <Check label="Private bathroom preferred" checked={Boolean(form.privateBathroomPreferred)} onChange={() => toggle('privateBathroomPreferred')} />
-                <Check label="Bills included preferred" checked={Boolean(form.billsIncludedPreferred)} onChange={() => toggle('billsIncludedPreferred')} />
-                <Check label="Applying as a couple" checked={Boolean(form.applyingAsCouple)} error={errors.applyingAsCouple} onChange={() => toggle('applyingAsCouple')} />
-              </div>
-            </details>
           ) : null}
-        </Section>
+          <Section title="Basics">
+            <div className="grid gap-3 min-[430px]:grid-cols-2">
+              <FormInput id="tenant-name" label="Name" value={form.name || ''} maxLength={80} error={errors.name} onChange={(event) => update('name', event.target.value)} />
+              <SelectInput label="Target city" value={form.targetCity || 'Dublin'} onChange={(event) => update('targetCity', event.target.value)} options={cityOptions.map(option)} />
+            </div>
+            <PreferredAreasInput
+              areaDraft={form.areaDraft || ''}
+              areas={form.preferredAreas || []}
+              city={form.targetCity || 'Dublin'}
+              options={areaOptions}
+              onAdd={addPreferredArea}
+              onDraft={(value) => update('areaDraft', value)}
+              onRemove={removePreferredArea}
+            />
+          </Section>
 
-        <Section title="Application readiness">
-          <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
-            <SelectInput label="Employment" value={form.employmentStatus || 'Full-time'} onChange={(event) => update('employmentStatus', event.target.value)} options={employmentOptions.map(option)} />
-            <SelectInput label="Student" value={form.studentStatus || 'No'} onChange={(event) => update('studentStatus', event.target.value)} options={['No', 'Yes'].map(option)} />
-            <SelectInput label="Pets" value={form.pets || 'none'} onChange={(event) => update('pets', event.target.value)} options={petOptions} />
-            <SelectInput label="Smoking" value={form.smoking || 'no'} onChange={(event) => update('smoking', event.target.value)} options={smokingOptions} />
-            <SelectInput label="Parking needed" value={form.parkingNeeded || 'no'} onChange={(event) => update('parkingNeeded', event.target.value)} options={parkingNeedOptions} />
-          </div>
-          <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
-            <Check label="References ready" checked={Boolean(form.referencesReady)} onChange={() => toggle('referencesReady')} />
-            <Check label="Proof of income ready" checked={Boolean(form.incomeReady)} onChange={() => toggle('incomeReady')} />
-            <Check label="ID ready" checked={Boolean(form.idReady)} onChange={() => toggle('idReady')} />
-          </div>
-        </Section>
+          <Section title="Rental needs">
+            <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
+              <FormInput id="tenant-budget-min" label="Budget min (€)" type="number" min="0" inputMode="numeric" value={form.budgetMin || ''} error={errors.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} />
+              <FormInput id="tenant-budget-max" label="Budget max (€)" type="number" min="0" inputMode="numeric" value={form.budgetMax || ''} error={errors.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} />
+              <FormInput id="tenant-move-in" label="Move-in date" type="date" min={today} value={isPastIsoDate(form.moveInDate, today) ? '' : form.moveInDate || ''} error={errors.moveInDate} onChange={(event) => update('moveInDate', event.target.value)} />
+              <SelectInput label="Lease length" value={form.leaseLength || '12'} onChange={(event) => update('leaseLength', event.target.value)} options={leasePreferenceOptions} />
+              <FormInput id="tenant-household-size" label={form.lookingFor === 'room' ? 'Room applicants' : 'Household size'} type="number" min="1" inputMode="numeric" value={form.householdSize || 1} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />
+              <SelectInput label="Furnished" value={form.furnishedPreference || ANY_VALUE} onChange={(event) => update('furnishedPreference', event.target.value)} options={withAny(furnishedOptions)} />
+            </div>
+            <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2">
+              <SelectInput
+                label="Looking for"
+                value={form.lookingFor || 'any'}
+                onChange={(event) => update('lookingFor', event.target.value)}
+                options={[
+                  { label: 'Any', value: 'any' },
+                  { label: 'Entire property', value: LISTING_CATEGORIES.ENTIRE_PROPERTY },
+                  { label: 'Room', value: 'room' },
+                ]}
+              />
+              {form.lookingFor === 'room' ? (
+                <Check label="Owner-occupied acceptable" checked={form.ownerOccupiedAcceptable !== false} onChange={() => update('ownerOccupiedAcceptable', form.ownerOccupiedAcceptable === false)} />
+              ) : null}
+            </div>
+            {form.lookingFor === 'room' ? (
+              <details className="mt-4 rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3" open>
+                <summary className="cursor-pointer text-sm font-semibold text-slate-950 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
+                  Room preferences
+                </summary>
+                <div className="mt-3 grid gap-3 min-[430px]:grid-cols-2">
+                  <Check label="Private bathroom preferred" checked={Boolean(form.privateBathroomPreferred)} onChange={() => toggle('privateBathroomPreferred')} />
+                  <Check label="Bills included preferred" checked={Boolean(form.billsIncludedPreferred)} onChange={() => toggle('billsIncludedPreferred')} />
+                  <Check label="Applying as a couple" checked={Boolean(form.applyingAsCouple)} error={errors.applyingAsCouple} onChange={() => toggle('applyingAsCouple')} />
+                </div>
+              </details>
+            ) : null}
+          </Section>
 
-        <Section title="Introduction">
-          <FormInput id="tenant-bio" textarea rows={5} label="Short bio" maxLength={600} value={form.bio || ''} error={errors.bio} onChange={(event) => update('bio', event.target.value)} />
-        </Section>
+          <Section title="Application readiness">
+            <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
+              <SelectInput label="Employment" value={form.employmentStatus || 'Full-time'} onChange={(event) => update('employmentStatus', event.target.value)} options={employmentOptions.map(option)} />
+              <SelectInput label="Student" value={form.studentStatus || 'No'} onChange={(event) => update('studentStatus', event.target.value)} options={['No', 'Yes'].map(option)} />
+              <SelectInput label="Pets" value={form.pets || 'none'} onChange={(event) => update('pets', event.target.value)} options={petOptions} />
+              <SelectInput label="Smoking" value={form.smoking || 'no'} onChange={(event) => update('smoking', event.target.value)} options={smokingOptions} />
+              <SelectInput label="Parking needed" value={form.parkingNeeded || 'no'} onChange={(event) => update('parkingNeeded', event.target.value)} options={parkingNeedOptions} />
+            </div>
+            <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
+              <Check label="References ready" checked={Boolean(form.referencesReady)} onChange={() => toggle('referencesReady')} />
+              <Check label="Proof of income ready" checked={Boolean(form.incomeReady)} onChange={() => toggle('incomeReady')} />
+              <Check label="ID ready" checked={Boolean(form.idReady)} onChange={() => toggle('idReady')} />
+            </div>
+          </Section>
 
-        <RoleSwitch
-          onTenant={() => {
-            switchRole('tenant')
-            navigate('/discover')
-          }}
-          onLandlord={() => {
-            switchRole('landlord', 'private_landlord')
-            navigate('/dashboard')
-          }}
-        />
-        <Button type="submit" className="w-full">Save tenant profile</Button>
-      </form>
-    </ProfileShell>
+          <Section title="Introduction">
+            <FormInput id="tenant-bio" textarea rows={5} label="Short bio" maxLength={600} value={form.bio || ''} error={errors.bio} onChange={(event) => update('bio', event.target.value)} />
+          </Section>
+
+          <RoleSwitch
+            onTenant={() => {
+              switchRole('tenant')
+              navigate('/discover')
+            }}
+            onLandlord={() => {
+              switchRole('landlord', 'private_landlord')
+              navigate('/dashboard')
+            }}
+          />
+          <Button type="submit" className="w-full">Save tenant profile</Button>
+        </form>
+      </ProfileShell>
+      {showGaffloPlus ? <GaffloPlusPreview onClose={() => setShowGaffloPlus(false)} /> : null}
+    </>
   )
 }
 

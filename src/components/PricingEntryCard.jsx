@@ -3,8 +3,20 @@ import Button from './Button'
 
 // Informational only — there is no purchase flow behind this yet. Wording stays
 // exploratory ("Explore benefits") and never implies a payment can be completed.
-export default function PricingEntryCard({ eyebrow, name, priceMonthly, tagline, features, note }) {
+// When `onExplore` is passed (e.g. the tenant Gafflo+ entry point), the CTA opens that
+// dedicated presentation instead of expanding the inline feature list.
+export default function PricingEntryCard({ eyebrow, name, priceMonthly, tagline, features, note, ctaLabel, onExplore }) {
   const [expanded, setExpanded] = useState(false)
+  const opensExternalPresentation = typeof onExplore === 'function'
+  const label = ctaLabel || (expanded ? 'Hide benefits' : 'Explore benefits')
+
+  const handleClick = () => {
+    if (opensExternalPresentation) {
+      onExplore()
+      return
+    }
+    setExpanded((current) => !current)
+  }
 
   return (
     <section className="card-surface card-shadow rounded-[26px] p-5">
@@ -22,7 +34,7 @@ export default function PricingEntryCard({ eyebrow, name, priceMonthly, tagline,
 
       {note ? <p className="mt-3 text-xs leading-5 text-slate-500">{note}</p> : null}
 
-      {expanded ? (
+      {!opensExternalPresentation && expanded ? (
         <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-700">
           {features.map((feature) => (
             <li key={feature} className="flex items-start gap-2">
@@ -37,10 +49,10 @@ export default function PricingEntryCard({ eyebrow, name, priceMonthly, tagline,
         type="button"
         variant="secondary"
         className="mt-4 w-full"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
+        aria-expanded={opensExternalPresentation ? undefined : expanded}
+        onClick={handleClick}
       >
-        {expanded ? 'Hide benefits' : 'Explore benefits'}
+        {label}
       </Button>
     </section>
   )

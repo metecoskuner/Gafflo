@@ -15,14 +15,8 @@ export default function RoleSelection() {
   return (
     <div className="page-shell mx-auto min-h-screen w-full max-w-[920px] px-4 py-4 md:px-6 md:py-8">
       <section className="card-surface card-shadow w-full overflow-hidden rounded-[28px] md:rounded-[34px]">
-        <div className="bg-indigo-950 px-5 py-5 text-white md:px-8 md:py-8">
-          <BrandLogo
-            size="lg"
-            textClassName="text-white"
-            taglineClassName="text-indigo-100"
-            showTagline
-            tagline="Find a place that fits"
-          />
+        <div className="bg-[var(--gafflo-brand-ink)] px-5 py-5 text-white md:px-8 md:py-8">
+          <BrandLogo size="lg" theme="dark" />
           <p className="mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Welcome to Gafflo</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-5xl">Choose how you want to use Gafflo</h1>
         </div>

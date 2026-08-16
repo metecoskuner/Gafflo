@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import BottomNav from './components/BottomNav'
-import BrandLogo from './components/BrandLogo'
+import { BrandLockup } from './components/BrandLogo'
 import Footer from './components/Footer'
 import Navbar from './components/Navbar'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
@@ -203,15 +203,15 @@ function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateLis
   const navigate = useNavigate()
 
   return (
-    <header className="absolute inset-x-0 top-0 z-40 border-b border-slate-200/85 bg-white/92 shadow-[0_1px_16px_-10px_rgba(15,23,42,0.22)] backdrop-blur-xl">
+    <header className="absolute inset-x-0 top-0 z-40 border-b border-slate-200/85 bg-white shadow-[0_1px_16px_-10px_rgba(15,23,42,0.22)]">
       <div className="mx-auto flex w-full max-w-[560px] items-center justify-between gap-3 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:max-w-[620px] md:px-6">
         <button
           type="button"
           aria-label="Go to Gafflo home"
           onClick={() => navigate(homeRoute)}
-          className="rounded-xl outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
+          className="flex h-11 items-center rounded-xl px-1 outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
         >
-          <BrandLogo size="sm" className="max-w-[112px] min-[375px]:max-w-none" />
+          <BrandLockup />
         </button>
 
         <div className="flex items-center gap-2">

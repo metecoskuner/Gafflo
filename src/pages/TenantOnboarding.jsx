@@ -75,8 +75,8 @@ export default function TenantOnboarding() {
   return (
     <div className="page-shell mx-auto min-h-screen w-full max-w-[560px] px-4 py-4 md:py-8">
       <section className="card-surface card-shadow w-full overflow-hidden rounded-[28px] md:rounded-[34px]">
-        <div className="bg-indigo-950 px-5 py-5 text-white md:px-8 md:py-7">
-          <BrandLogo size="sm" textClassName="text-white" />
+        <div className="bg-[var(--gafflo-brand-ink)] px-5 py-5 text-white md:px-8 md:py-7">
+          <BrandLogo size="sm" theme="dark" />
           <p className="mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Quick setup</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">Let&rsquo;s find your matches</h1>
           <p className="mt-2 text-sm leading-6 text-indigo-100">
