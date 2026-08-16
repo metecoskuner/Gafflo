@@ -27,6 +27,14 @@ export function canListingReceiveEnquiry(property) {
   return ['published', 'active'].includes(property?.listingStatus)
 }
 
+export function canViewListing({ role, viewerId, property, hasHistoricalRelationship = false }) {
+  if (!property) return { allowed: false, mode: 'none' }
+  if (role === 'landlord' && property.ownerId === viewerId) return { allowed: true, mode: 'own' }
+  if (canListingReceiveEnquiry(property)) return { allowed: true, mode: 'public' }
+  if (role === 'tenant' && hasHistoricalRelationship) return { allowed: true, mode: 'historical' }
+  return { allowed: false, mode: 'none' }
+}
+
 export function getListingActions(status) {
   const actions = [
     { status: 'pending_verification', label: 'Request review' },

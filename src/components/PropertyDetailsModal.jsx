@@ -5,6 +5,7 @@ import { domainLabel } from '../config/domainOptions'
 import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
 import { formatFreshness, shouldShowTenantMatch } from '../config/listingPresentation'
 import { canListingReceiveEnquiry } from '../config/rentalJourney'
+import { canViewListing, listingStatusLabels } from '../config/listingLifecycle'
 import { formatDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatCurrency'
 import ApplicationStatus from './ApplicationStatus'
@@ -15,7 +16,19 @@ import TrustSummary from './TrustSummary'
 
 export default function PropertyDetailsModal({ standalone = false }) {
   const { propertyId } = useParams()
-  const { blockPropertyOwner, createEnquiry, properties, reportListing, role, savedPropertyIds, saveProperty, removeSavedProperty, tenantEnquiries } = useAppState()
+  const {
+    blockPropertyOwner,
+    createEnquiry,
+    currentOwnerId,
+    currentTenantId,
+    properties,
+    reportListing,
+    role,
+    savedPropertyIds,
+    saveProperty,
+    removeSavedProperty,
+    tenantEnquiries,
+  } = useAppState()
   const navigate = useNavigate()
   const property = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
   const fallbackRoute = role === 'landlord' ? '/properties' : '/discover'
@@ -38,7 +51,12 @@ export default function PropertyDetailsModal({ standalone = false }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [close])
 
-  if (!property) {
+  const enquiry = property ? tenantEnquiries.find((item) => item.propertyId === property.id) : null
+  const hasHistoricalRelationship = role === 'tenant' && (Boolean(enquiry) || savedPropertyIds.includes(propertyId))
+  const viewerId = role === 'landlord' ? currentOwnerId : currentTenantId
+  const access = canViewListing({ role, viewerId, property, hasHistoricalRelationship })
+
+  if (!property || !access.allowed) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-[480px]">
@@ -59,10 +77,10 @@ export default function PropertyDetailsModal({ standalone = false }) {
   }
 
   const isSaved = savedPropertyIds.includes(property.id)
+  const isHistorical = access.mode === 'historical'
   const tenantContext = shouldShowTenantMatch(role)
   const warnings = tenantContext ? property.match.warnings || [] : []
   const hardStops = tenantContext ? property.match.hardStops || [] : []
-  const enquiry = tenantEnquiries.find((item) => item.propertyId === property.id)
   const canEnquire = canListingReceiveEnquiry(property)
   const roomListing = isRoomListing(property.listingCategory)
   const ownerOccupied = property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM
@@ -124,6 +142,15 @@ export default function PropertyDetailsModal({ standalone = false }) {
                   {availabilityConfirmed ? <Pill>{availabilityConfirmed}</Pill> : null}
                 </div>
               </section>
+
+              {isHistorical ? (
+                <section className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-800">Listing no longer active</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    This listing is {(listingStatusLabels[property.listingStatus] || 'no longer active').toLowerCase()} and is no longer part of public discovery. You can still see it because of your saved property or enquiry history.
+                  </p>
+                </section>
+              ) : null}
 
               <DetailSection title={roomListing ? 'Room' : 'Overview'}>
                 <p className="text-sm leading-7 text-slate-600">{property.description}</p>

@@ -210,7 +210,10 @@ function SmartMatchDeck({
   }, [resetDrag])
 
   const finishAction = (action, propertyId) => {
-    if (smartLimitReached || (action === 'interested' && interestLimitReached)) return
+    if (smartLimitReached || (action === 'interested' && interestLimitReached)) {
+      resetDrag()
+      return
+    }
     onLeaving({ propertyId, action })
     window.setTimeout(() => {
       if (action === 'interested') onInterest(propertyId)

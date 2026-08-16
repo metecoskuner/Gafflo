@@ -83,7 +83,7 @@ export default function LandlordProperties() {
                       </div>
                       <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">{property.title}</h2>
                       <p className="mt-1 text-sm text-slate-500">
-                        {property.area}, {property.city} · {formatCurrency(property.rent)}/mo · available {formatDate(property.availableFrom)}
+                        {property.area}, {property.city} · {property.rent != null ? `${formatCurrency(property.rent)}/mo` : 'Rent not set'} · available {formatDate(property.availableFrom)}
                       </p>
                     </div>
                   </div>

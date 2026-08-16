@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { expect, test } from '@playwright/test'
 
 const tenantAccount = { role: 'tenant', landlordType: null, completed: true }
@@ -328,6 +329,223 @@ test('mobile geometry stays stable on discover, property details, and dashboard'
   await page.goto('/dashboard')
   await expect(page.getByRole('heading', { name: 'Find a place that fits the tenancy.' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+})
+
+function buildTestProperty(overrides = {}) {
+  return {
+    id: 'property-test-listing',
+    ownerId: 'owner-private-1',
+    ownerName: 'Maeve Doyle',
+    ownerType: 'Private landlord',
+    listingStatus: 'published',
+    title: 'Quiet two-bedroom flat in Ranelagh',
+    description: 'A quiet two-bedroom flat close to the village with easy access to the city centre and parks.',
+    area: 'Ranelagh',
+    city: 'Dublin',
+    rent: 1900,
+    deposit: 1900,
+    billsIncluded: true,
+    availableFrom: '2030-01-01',
+    minStayMonths: 6,
+    listingCategory: 'entire_property',
+    propertyType: 'apartment',
+    bedrooms: 2,
+    bathrooms: 1,
+    maxOccupants: 3,
+    furnished: 'furnished',
+    parking: 'none',
+    petsAllowed: 'not_allowed',
+    smokingAllowed: 'no',
+    viewingType: 'In-person',
+    amenities: ['Internet'],
+    features: ['Apartment', '2 bedrooms'],
+    listingRules: ['No smoking indoors'],
+    images: ['https://images.example.test/one.jpg'],
+    photoMetadata: [{ id: 'p1', src: 'https://images.example.test/one.jpg', label: 'Cover', isCover: true }],
+    ...overrides,
+  }
+}
+
+test('request review blocks session-only photos and explains why', async ({ page }) => {
+  await seedState(page, { account: landlordAccount, properties: [] })
+  await page.goto('/listings/new')
+
+  await page.getByLabel('Title').fill('Bright renovated room in Rathmines with lots of light')
+  await page.getByLabel('Area').fill('Rathmines')
+  await page.getByLabel('Monthly rent (€)').fill('1400')
+  await page.getByLabel('Deposit (€)').fill('1400')
+  await page.getByLabel('Available from').fill('2030-01-01')
+  await page.getByLabel('Property description').fill('A bright, freshly renovated room close to shops, transport links and parks in Rathmines.')
+  await page.getByLabel('Add photos').setInputFiles({ name: 'listing.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-image-bytes-for-testing') })
+
+  await page.getByRole('button', { name: 'Request review' }).click()
+  await expect(page.getByText(/session only/i)).toBeVisible()
+  await expect(page).toHaveURL(/\/listings\/new$/)
+
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.properties') || '[]'))
+  expect(stored).toHaveLength(0)
+})
+
+test('tenant cannot open a listing that is not public and has no saved or enquiry history', async ({ page }) => {
+  const hiddenListing = buildTestProperty({ id: 'property-hidden-draft', listingStatus: 'draft' })
+  await seedState(page, { properties: [hiddenListing] })
+  await page.goto(`/properties/${hiddenListing.id}`)
+  await expect(page.getByText('Property not available')).toBeVisible()
+  await expect(page.getByText(hiddenListing.title)).toHaveCount(0)
+})
+
+test('landlord cannot open another landlord\'s hidden listing', async ({ page }) => {
+  const otherLandlordListing = buildTestProperty({ id: 'property-other-landlord-paused', ownerId: 'owner-agent-1', listingStatus: 'paused' })
+  await seedState(page, { account: landlordAccount, properties: [otherLandlordListing] })
+  await page.goto(`/properties/${otherLandlordListing.id}`)
+  await expect(page.getByText('Property not available')).toBeVisible()
+})
+
+test('tenant can still view a previously saved listing after it becomes inactive, marked as historical', async ({ page }) => {
+  const pausedSavedListing = buildTestProperty({ id: 'property-saved-paused', listingStatus: 'paused' })
+  await seedState(page, { properties: [pausedSavedListing], saved: [pausedSavedListing.id] })
+  await page.goto(`/properties/${pausedSavedListing.id}`)
+  await expect(page.getByRole('heading', { name: pausedSavedListing.title })).toBeVisible()
+  await expect(page.getByText('Listing no longer active')).toBeVisible()
+})
+
+test('editing a published listing cannot silently move it back into review', async ({ page }) => {
+  const published = buildTestProperty({ id: 'property-edit-published', listingStatus: 'published' })
+  await seedState(page, { account: landlordAccount, properties: [published] })
+  await page.goto(`/listings/${published.id}/edit`)
+
+  await page.getByLabel('Title').fill('Quiet two-bedroom flat in Ranelagh — repainted')
+  await page.getByRole('button', { name: 'Request review' }).click()
+  await expect(page).toHaveURL(/\/properties$/)
+
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.properties'))[0])
+  expect(stored.listingStatus).toBe('published')
+  expect(stored.title).toBe('Quiet two-bedroom flat in Ranelagh — repainted')
+})
+
+test('availability confirmation timestamp only refreshes when availableFrom actually changes', async ({ page }) => {
+  const listing = buildTestProperty({
+    id: 'property-availability-edit',
+    listingStatus: 'published',
+    availableFrom: '2030-01-01',
+    availabilityConfirmedAt: '2029-01-01T00:00:00.000Z',
+  })
+  await seedState(page, { account: landlordAccount, properties: [listing] })
+
+  await page.goto(`/listings/${listing.id}/edit`)
+  await page.getByLabel('Title').fill('Quiet two-bedroom flat in Ranelagh — repainted')
+  await page.getByRole('button', { name: 'Request review' }).click()
+  await expect(page).toHaveURL(/\/properties$/)
+  let stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.properties'))[0])
+  expect(stored.availabilityConfirmedAt).toBe('2029-01-01T00:00:00.000Z')
+
+  await page.goto(`/listings/${listing.id}/edit`)
+  await page.getByLabel('Available from').fill('2030-03-01')
+  await page.getByRole('button', { name: 'Request review' }).click()
+  await expect(page).toHaveURL(/\/properties$/)
+  stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.properties'))[0])
+  expect(stored.availabilityConfirmedAt).not.toBe('2029-01-01T00:00:00.000Z')
+})
+
+test('legacy sender labels do not bypass the duplicate message guard', async ({ page }) => {
+  const now = new Date().toISOString()
+  const legacyConversation = {
+    id: 'conversation-legacy-duplicate',
+    propertyId: 'property-rathmines-2bed',
+    enquiryId: 'enquiry-legacy-duplicate',
+    tenantId: 'tenant-local',
+    ownerId: 'owner-private-1',
+    archived: false,
+    unreadFor: null,
+    createdAt: now,
+    updatedAt: now,
+    // Legacy sender label from before the tenant/landlord rename — should still be recognised as "tenant".
+    messages: [{ id: 'message-legacy-1', sender: 'user', body: 'Is this still available?', createdAt: now }],
+  }
+  const legacyEnquiry = {
+    id: 'enquiry-legacy-duplicate',
+    propertyId: 'property-rathmines-2bed',
+    tenantId: 'tenant-local',
+    ownerId: 'owner-private-1',
+    status: 'landlord interested',
+    createdAt: now,
+    updatedAt: now,
+    message: 'Is this still available?',
+    viewing: { status: 'none', proposedSlots: [], selectedSlot: '' },
+  }
+  await seedState(page, { enquiries: [legacyEnquiry], conversations: [legacyConversation] })
+  await page.goto('/messages/conversation-legacy-duplicate')
+
+  // Re-sending the same body immediately should be recognised as a duplicate of the legacy-labelled
+  // message above, even though its stored sender is the pre-rename "user" value, not "tenant".
+  await page.getByPlaceholder('Write a message').fill('Is this still available?')
+  await page.getByRole('button', { name: 'Send message' }).click()
+
+  await expect(page.getByText('Is this still available?')).toHaveCount(1)
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.conversations'))[0])
+  expect(stored.messages).toHaveLength(1)
+})
+
+test('messages inbox only shows conversations for the current role and identity', async ({ page }) => {
+  const now = new Date().toISOString()
+  const ownConversation = {
+    id: 'conversation-own',
+    propertyId: 'property-rathmines-2bed',
+    enquiryId: 'enquiry-own',
+    tenantId: 'tenant-local',
+    ownerId: 'owner-private-1',
+    archived: false,
+    unreadFor: null,
+    createdAt: now,
+    updatedAt: now,
+    messages: [{ id: 'm1', sender: 'tenant', body: 'This is my conversation', createdAt: now }],
+  }
+  const otherTenantConversation = {
+    id: 'conversation-other-tenant',
+    propertyId: 'property-rathmines-2bed',
+    enquiryId: 'enquiry-other-tenant',
+    tenantId: 'tenant-aoife',
+    ownerId: 'owner-private-1',
+    archived: false,
+    unreadFor: null,
+    createdAt: now,
+    updatedAt: now,
+    messages: [{ id: 'm2', sender: 'tenant', body: 'This belongs to another tenant', createdAt: now }],
+  }
+  await seedState(page, { conversations: [ownConversation, otherTenantConversation] })
+  await page.goto('/messages')
+
+  await expect(page.getByText('This is my conversation')).toBeVisible()
+  await expect(page.getByText('This belongs to another tenant')).toHaveCount(0)
+})
+
+test('draft listing with no rent set shows a clear placeholder instead of a fake price', async ({ page }) => {
+  const rentlessDraft = {
+    id: 'property-rentless-draft',
+    ownerId: 'owner-private-1',
+    ownerName: 'Maeve Doyle',
+    ownerType: 'Private landlord',
+    listingStatus: 'draft',
+    title: 'Draft without a rent yet',
+    area: 'Rathmines',
+    city: 'Dublin',
+    rent: null,
+    availableFrom: '',
+    listingCategory: 'entire_property',
+    propertyType: null,
+    furnished: null,
+    parking: null,
+    petsAllowed: null,
+    smokingAllowed: null,
+    images: [],
+    photoMetadata: [],
+  }
+  await seedState(page, { account: landlordAccount, properties: [rentlessDraft] })
+  await page.goto('/properties')
+
+  await expect(page.getByRole('heading', { name: 'Draft without a rent yet' })).toBeVisible()
+  await expect(page.getByText('Rent not set')).toBeVisible()
+  await expect(page.getByText('€0/mo')).toHaveCount(0)
 })
 
 test('bottom nav remains visible and does not block a lower primary action', async ({ page }) => {

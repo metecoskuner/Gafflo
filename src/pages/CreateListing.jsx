@@ -99,6 +99,8 @@ export default function CreateListing() {
   const [isSaving, setIsSaving] = useState(false)
   const listingPhotos = useMemo(() => normalizePhotoMetadata(photoItems, form.listingCategory), [form.listingCategory, photoItems])
   const previewImages = useMemo(() => (listingPhotos.length ? listingPhotos.map((photo) => photo.src) : [defaultImage]), [listingPhotos])
+  const durablePhotoCount = useMemo(() => getDurablePhotoMetadata(listingPhotos, form.listingCategory).length, [listingPhotos, form.listingCategory])
+  const hasSessionOnlyPhotos = useMemo(() => listingPhotos.some((photo) => isSessionObjectUrl(photo.src)), [listingPhotos])
   const today = getTodayIsoDate()
   const roomListing = isRoomListing(form.listingCategory)
   const lockedCategory = editingProperty && !canChangeListingCategory(editingProperty, form.listingCategory).allowed
@@ -214,7 +216,7 @@ export default function CreateListing() {
   }
 
   const validate = () => {
-    const result = validateListingForReview(form, today, { photoCount: listingPhotos.length })
+    const result = validateListingForReview(form, today, { photoCount: durablePhotoCount, hasSessionOnlyPhotos })
     setErrors(result.errors)
     return result.valid
   }
@@ -361,7 +363,7 @@ function PhotoSection({ category, error, fallbackImage, onChange, onCover, onLab
   const displayPhotos = photos.length ? photos : [{ id: 'fallback', src: fallbackImage, label: labels[0], isCover: true }]
 
   return (
-    <FormSection title="Photos" description="Manage listing photos for previews. Uploaded files stay local to this browser session.">
+    <FormSection title="Photos" description="Uploaded files are previews only — they are kept for this browser session and are not saved with the listing. There's no photo storage yet, so at least one durably-saved photo is required before requesting review.">
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700">Add photos</span>
         <input

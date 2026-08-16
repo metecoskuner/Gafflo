@@ -17,7 +17,7 @@ import {
   validateListingForReview,
   validateRoomCapacity,
 } from '../config/listingCategories'
-import { canListingReceiveEnquiry, canTransitionListing, getListingActions } from '../config/listingLifecycle'
+import { canListingReceiveEnquiry, canTransitionListing, canViewListing, getListingActions } from '../config/listingLifecycle'
 import { getTrustSignals, getTrustStatusLabel } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
@@ -25,6 +25,7 @@ import { validateViewingChoice, validateViewingProposal } from '../config/viewin
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { directionalDayGap, isPastIsoDate } from '../utils/dateUtils'
 import { hasDuplicateEnquiry, hasDuplicateRecentMessage, sanitizeMessageBody } from '../utils/messagingRules'
+import { belongsToViewer } from '../utils/ownership'
 
 const tenant = {
   targetCity: 'Dublin',
@@ -219,6 +220,14 @@ describe('domain and listing rules', () => {
     expect(normalizePetPolicy('Pets allowed')).toBe('allowed')
   })
 
+  it('blocks generic edits from faking a listing status transition', () => {
+    expect(canTransitionListing('rented', 'published')).toBe(false)
+    expect(canTransitionListing('published', 'pending_verification')).toBe(false)
+    expect(canTransitionListing('published', 'draft')).toBe(false)
+    expect(canTransitionListing('rejected', 'pending_verification')).toBe(true)
+    expect(canTransitionListing('draft', 'pending_verification')).toBe(true)
+  })
+
   it('centralizes cities and canonical preferred areas', () => {
     expect(cityOptions).toEqual(['Dublin', 'Cork', 'Galway', 'Limerick', 'Waterford'])
     expect(normalizePreferredAreas([' rathmines ', 'Rathmines', 'Custom Dock'], 'Dublin')).toEqual(['Rathmines', 'Custom Dock'])
@@ -371,6 +380,44 @@ describe('listing categories', () => {
   })
 })
 
+describe('listing and conversation access control', () => {
+  const publicListing = { ownerId: 'owner-a', listingStatus: 'published' }
+  const hiddenListing = { ownerId: 'owner-a', listingStatus: 'paused' }
+
+  it('lets anyone view a public listing', () => {
+    expect(canViewListing({ role: 'tenant', viewerId: 'tenant-1', property: publicListing }).allowed).toBe(true)
+    expect(canViewListing({ role: 'tenant', viewerId: 'tenant-1', property: publicListing }).mode).toBe('public')
+  })
+
+  it('lets a landlord manage their own listing regardless of status', () => {
+    const result = canViewListing({ role: 'landlord', viewerId: 'owner-a', property: hiddenListing })
+    expect(result).toEqual({ allowed: true, mode: 'own' })
+  })
+
+  it('blocks a landlord from viewing another landlord\'s hidden listing', () => {
+    expect(canViewListing({ role: 'landlord', viewerId: 'owner-b', property: hiddenListing }).allowed).toBe(false)
+  })
+
+  it('blocks a tenant from an inactive listing with no history, but allows historical access', () => {
+    expect(canViewListing({ role: 'tenant', viewerId: 'tenant-1', property: hiddenListing }).allowed).toBe(false)
+    const historical = canViewListing({ role: 'tenant', viewerId: 'tenant-1', property: hiddenListing, hasHistoricalRelationship: true })
+    expect(historical).toEqual({ allowed: true, mode: 'historical' })
+  })
+
+  it('reports no access for a missing property', () => {
+    expect(canViewListing({ role: 'tenant', viewerId: 'tenant-1', property: null })).toEqual({ allowed: false, mode: 'none' })
+  })
+
+  it('scopes conversations and enquiries to the current role identity', () => {
+    const record = { ownerId: 'owner-a', tenantId: 'tenant-a' }
+    expect(belongsToViewer(record, 'landlord', 'tenant-a', 'owner-a')).toBe(true)
+    expect(belongsToViewer(record, 'landlord', 'tenant-a', 'owner-b')).toBe(false)
+    expect(belongsToViewer(record, 'tenant', 'tenant-a', 'owner-a')).toBe(true)
+    expect(belongsToViewer(record, 'tenant', 'tenant-b', 'owner-a')).toBe(false)
+    expect(belongsToViewer(null, 'tenant', 'tenant-a', 'owner-a')).toBe(false)
+  })
+})
+
 describe('frontend integrity helpers', () => {
   it('keeps editable blank numeric form state separate from storage normalization', () => {
     const form = normalizeListingFormState({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY, propertyType: 'apartment', bedrooms: '', bathrooms: '' })
@@ -477,6 +524,27 @@ describe('frontend integrity helpers', () => {
     expect(validateListingForReview(listing, '2029-01-01').errors.images).toBe('Add at least one listing photo before requesting review.')
     expect(validateListingForReview(listing, '2029-01-01', { photoCount: 1 }).valid).toBe(true)
     expect(getDurablePhotoMetadata([{ src: 'blob:http://localhost/photo' }], LISTING_CATEGORIES.ENTIRE_PROPERTY)).toEqual([])
+  })
+
+  it('explains that session-only photos cannot be submitted for review', () => {
+    const listing = {
+      title: 'Bright listing',
+      rent: 1200,
+      deposit: 1200,
+      area: 'Rathmines',
+      availableFrom: '2030-01-01',
+      minStayMonths: 6,
+      description: 'A clear listing description with enough detail for renters.',
+      listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY,
+      propertyType: 'apartment',
+      bedrooms: 1,
+      bathrooms: 1,
+      maxOccupants: 1,
+    }
+    const withSessionPhotos = validateListingForReview(listing, '2029-01-01', { photoCount: 0, hasSessionOnlyPhotos: true })
+    expect(withSessionPhotos.errors.images).toMatch(/session only/i)
+    const withNoPhotos = validateListingForReview(listing, '2029-01-01', { photoCount: 0, hasSessionOnlyPhotos: false })
+    expect(withNoPhotos.errors.images).toBe('Add at least one listing photo before requesting review.')
   })
 
   it('filters applicants by valid property query only', () => {

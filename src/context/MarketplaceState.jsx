@@ -21,6 +21,7 @@ import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { getFutureViewingSlots } from '../utils/dateUtils'
 import { getLocalDateKey } from '../utils/localDate'
 import { hasDuplicateEnquiry, hasDuplicateRecentMessage, sanitizeMessageBody } from '../utils/messagingRules'
+import { belongsToViewer } from '../utils/ownership'
 import AppStateContext from './AppStateContext'
 import {
   getAccount,
@@ -297,6 +298,7 @@ export function AppStateProvider({ children }) {
       conversations
         .map(normalizeStoredConversation)
         .filter((conversation) => !conversation.archived)
+        .filter((conversation) => belongsToViewer(conversation, account?.role, currentTenantId, currentOwnerId))
         .map((conversation) => ({
           ...conversation,
           property: properties.find((property) => property.id === conversation.propertyId) || null,
@@ -304,7 +306,7 @@ export function AppStateProvider({ children }) {
           tenant: tenants.find((tenant) => tenant.id === conversation.tenantId) || null,
         }))
         .filter((conversation) => conversation.property),
-    [conversations, enrichedEnquiries, properties, tenants],
+    [account?.role, conversations, enrichedEnquiries, properties, tenants],
   )
   const landlordProperties = useMemo(() => properties.filter((property) => property.ownerId === currentOwnerId), [properties])
   const landlordEnquiries = useMemo(() => enrichedEnquiries.filter((enquiry) => enquiry.ownerId === currentOwnerId), [enrichedEnquiries])
@@ -573,18 +575,19 @@ export function AppStateProvider({ children }) {
     },
     openConversationForEnquiry(enquiryId) {
       const enquiry = enquiries.find((item) => item.id === enquiryId)
-      return enquiry ? getOrCreateConversationForEnquiry(enquiry) : null
+      if (!enquiry || !belongsToViewer(enquiry, account?.role, currentTenantId, currentOwnerId)) return null
+      return getOrCreateConversationForEnquiry(enquiry)
     },
     markConversationRead(conversationId) {
       const reader = account?.role === 'landlord' ? 'landlord' : 'tenant'
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || target.unreadFor !== reader) return
+      if (!target || target.unreadFor !== reader || !belongsToViewer(target, reader, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, unreadFor: null } : conversation)))
     },
     updateEnquiryStatus(enquiryId, status) {
       if (account?.role !== 'landlord') return
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
-      if (!target || target.status === status || !canTransitionApplication(target.status, status)) return
+      if (!target || !belongsToViewer(target, 'landlord', currentTenantId, currentOwnerId) || target.status === status || !canTransitionApplication(target.status, status)) return
       const now = new Date().toISOString()
       persistEnquiries(
         enquiries.map((enquiry) => {
@@ -610,7 +613,7 @@ export function AppStateProvider({ children }) {
         return
       }
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
-      if (!target || !canTransitionApplication(target.status, 'viewing proposed')) return
+      if (!target || !belongsToViewer(target, 'landlord', currentTenantId, currentOwnerId) || !canTransitionApplication(target.status, 'viewing proposed')) return
       const currentSlots = normalizeViewingSlots(target.viewing?.proposedSlots)
       const sameSlots = currentSlots.length === validation.slots.length && currentSlots.every((slot, index) => slot.id === validation.slots[index].id)
       if (target.viewing?.status === 'viewing proposed' && sameSlots) return
@@ -630,7 +633,7 @@ export function AppStateProvider({ children }) {
       if (account?.role !== 'tenant') return
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
       const validation = validateViewingChoice(target?.viewing, slot)
-      if (!target || !canTransitionApplication(target.status, 'viewing confirmed') || !validation.valid) {
+      if (!target || !belongsToViewer(target, 'tenant', currentTenantId, currentOwnerId) || !canTransitionApplication(target.status, 'viewing confirmed') || !validation.valid) {
         if (!validation.valid) setToast({ type: 'info', message: validation.reason })
         return
       }
@@ -658,6 +661,7 @@ export function AppStateProvider({ children }) {
       persistConversations(
         conversations.map((conversation) => {
           if (conversation.id !== conversationId) return conversation
+          if (!belongsToViewer(conversation, sender, currentTenantId, currentOwnerId)) return conversation
           const normalizedConversation = normalizeStoredConversation(conversation)
           const enquiry = enrichedEnquiries.find((item) => item.id === normalizedConversation.enquiryId)
           if (sender === 'tenant' && !canTenantSendMessage(normalizedConversation, enquiry)) {
@@ -668,7 +672,7 @@ export function AppStateProvider({ children }) {
             setToast({ type: 'info', message: 'Messaging is blocked for this conversation.' })
             return conversation
           }
-          if (hasDuplicateRecentMessage(conversation, sender, trimmedBody, nowTime)) return conversation
+          if (hasDuplicateRecentMessage(normalizedConversation, sender, trimmedBody, nowTime)) return conversation
           return {
             ...conversation,
             archived: false,
@@ -681,24 +685,25 @@ export function AppStateProvider({ children }) {
     },
     archiveConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || target.archived) return
+      if (!target || target.archived || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, archived: true } : conversation)))
       setToast({ type: 'info', message: 'Conversation archived.', action: 'undo-archive', conversationId })
     },
     unarchiveConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || !target.archived) return
+      if (!target || !target.archived || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, archived: false } : conversation)))
       setToast({ type: 'info', message: 'Conversation restored.' })
     },
     muteConversation(conversationId) {
-      if (!conversations.some((conversation) => conversation.id === conversationId)) return
+      const target = conversations.find((conversation) => conversation.id === conversationId)
+      if (!belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, muted: !conversation.muted } : conversation)))
       setToast({ type: 'info', message: 'Conversation preference updated.' })
     },
     reportConversation(conversationId, reason) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || target.reported || !String(reason || '').trim()) return
+      if (!target || target.reported || !String(reason || '').trim() || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
       persistConversations(
         conversations.map((conversation) =>
           conversation.id === conversationId ? { ...conversation, reported: true, reportReason: reason || 'Not specified' } : conversation,
@@ -708,7 +713,7 @@ export function AppStateProvider({ children }) {
     },
     blockConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || target.blockedBy) return
+      if (!target || target.blockedBy || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
       const blockedBy = account?.role === 'landlord' ? 'landlord' : 'tenant'
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, blockedBy } : conversation)))
       setToast({ type: 'info', message: 'User blocked in this conversation.' })
@@ -804,16 +809,18 @@ export function AppStateProvider({ children }) {
       if (!currentProperty) return null
       const localExists = localProperties.some((property) => property.id === propertyId)
       const fixture = mockProperties.find((property) => property.id === propertyId)
-      const listingStatus = patch.listingStatus || currentProperty.listingStatus
+      const requestedStatus = patch.listingStatus || currentProperty.listingStatus
+      const listingStatus = canTransitionListing(currentProperty.listingStatus, requestedStatus) ? requestedStatus : currentProperty.listingStatus
       const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage({ ...currentProperty, ...patch }) : normalizeListingForStorage({ ...currentProperty, ...patch })
       const normalizedPatch = {
         ...normalizedListing,
+        listingStatus,
         furnished: patch.furnished ? normalizeFurnished(patch.furnished) : currentProperty.furnished,
         parking: patch.parking ? normalizeParking(patch.parking) : currentProperty.parking,
         smokingAllowed: patch.smokingAllowed ? normalizeSmoking(patch.smokingAllowed) : currentProperty.smokingAllowed,
         petsAllowed: patch.petsAllowed ? normalizePetPolicy(patch.petsAllowed) : currentProperty.petsAllowed,
         updatedAt: new Date().toISOString(),
-        availabilityConfirmedAt: patch.availableFrom && patch.availableFrom === currentProperty.availableFrom ? new Date().toISOString() : currentProperty.availabilityConfirmedAt,
+        availabilityConfirmedAt: patch.availableFrom && patch.availableFrom !== currentProperty.availableFrom ? new Date().toISOString() : currentProperty.availabilityConfirmedAt,
       }
       const update = (property) => (property.id === propertyId ? { ...property, ...normalizedPatch } : property)
       const next = localExists
