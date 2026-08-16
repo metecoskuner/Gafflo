@@ -13,3 +13,7 @@ export function hasDuplicateRecentMessage(conversation, sender, body, now) {
 export function hasDuplicateEnquiry(enquiries, propertyId, tenantId) {
   return enquiries.some((enquiry) => enquiry.propertyId === propertyId && enquiry.tenantId === tenantId)
 }
+
+export function hasLandlordMessage(conversation) {
+  return (conversation?.messages || []).some((message) => message.sender === 'landlord')
+}

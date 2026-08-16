@@ -1,20 +1,10 @@
+// Smart Match runtime behaviour only. Prices, feature lists and daily allowances live in
+// pricingPlans.js — read them via entitlements.js (getSmartMatchAllowance/getInterestAllowance)
+// so there is never a second, competing number for the same limit.
 export const smartMatchAccess = {
-  launchMode: true,
-  dailyCardAllowance: 30,
-  dailyInterestAllowance: 10,
+  // Launch access is a temporary promotion: while true, daily limits are not enforced for
+  // anyone, regardless of plan. It is not a paid entitlement — see entitlements.js.
+  launchAccessEnabled: true,
   browseAlwaysAvailable: true,
   freePlanMessage: "Today's Smart Matches are finished. Continue browsing normally or start over to review the stack again.",
-  premium: {
-    name: 'Gafflo+',
-    introductoryPriceMonthly: 3.99,
-    features: [
-      'Unlimited Smart Match cards',
-      'Higher Interest allowance',
-      'Rewind',
-      'Advanced filters',
-      'Instant new-match alerts',
-      'Multiple saved searches',
-      'Priority Smart Match queue',
-    ],
-  },
 }

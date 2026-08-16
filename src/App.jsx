@@ -88,7 +88,7 @@ function AppLayout() {
           />
           <main
             id="app-shell-scroll"
-            className="h-[100dvh] min-w-0 overflow-y-auto overflow-x-clip overscroll-x-none px-4 pb-[calc(var(--gafflo-bottom-nav-offset)+2.5rem)] pt-[calc(env(safe-area-inset-top)+5.5rem)] [touch-action:pan-y] md:px-6"
+            className="h-[100dvh] min-w-0 overflow-y-auto overflow-x-clip overscroll-x-none px-4 pb-[calc(var(--gafflo-bottom-nav-offset)+2.5rem)] pt-[var(--gafflo-app-header-offset)] [touch-action:pan-y] md:px-6"
           >
             <Routes location={routeLocation}>
               <Route path="/profile" element={<TenantProfile />} />
@@ -177,13 +177,13 @@ function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateLis
   const navigate = useNavigate()
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.7rem)] md:px-6">
-      <div className="pointer-events-auto flex w-full items-center justify-between gap-3 rounded-[22px] border border-white/75 bg-white/90 px-3 py-3 shadow-[0_18px_38px_-26px_rgba(30,27,75,0.34)] backdrop-blur-xl min-[375px]:px-4">
+    <header className="absolute inset-x-0 top-0 z-40 border-b border-slate-200/85 bg-white/92 shadow-[0_1px_16px_-10px_rgba(15,23,42,0.22)] backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-[560px] items-center justify-between gap-3 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:max-w-[620px] md:px-6">
         <button
           type="button"
           aria-label="Go to Gafflo home"
           onClick={() => navigate(homeRoute)}
-          className="rounded-2xl outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
+          className="rounded-xl outline-none transition active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-indigo-100"
         >
           <BrandLogo size="sm" className="max-w-[112px] min-[375px]:max-w-none" />
         </button>
@@ -193,7 +193,7 @@ function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateLis
           {onFilterOpen ? <HeaderIconButton ariaLabel="Open filters" badge={activeFilterCount} icon="☷" onClick={onFilterOpen} /> : null}
         </div>
       </div>
-    </div>
+    </header>
   )
 }
 
@@ -204,7 +204,7 @@ function HeaderIconButton({ ariaLabel, badge = 0, disabled = false, icon, onClic
       aria-label={ariaLabel}
       disabled={disabled}
       onClick={onClick}
-      className="relative flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/88 text-lg text-slate-700 shadow-soft transition hover:bg-white active:scale-[0.97] disabled:opacity-45"
+      className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-slate-50 text-lg text-slate-700 transition hover:bg-slate-100 active:scale-[0.97] disabled:opacity-45"
     >
       <span aria-hidden="true">{icon}</span>
       {badge > 0 ? (
@@ -412,7 +412,7 @@ function FilterSheet({ onClose }) {
             </FilterGroup>
 
             {showEntireFilters ? (
-              <FilterGroup title="Entire property fit">
+              <FilterGroup title="Entire property fit" plusLabel>
                 <div className="grid gap-3">
                   <FilterSelect
                     label="Property type"
@@ -449,7 +449,7 @@ function FilterSheet({ onClose }) {
             ) : null}
 
             {showRoomFilters ? (
-              <FilterGroup title="Room fit">
+              <FilterGroup title="Room fit" plusLabel>
                 <div className="grid gap-3">
                   <FilterSelect
                     label="Room type"
@@ -519,10 +519,15 @@ function FilterSheet({ onClose }) {
   )
 }
 
-function FilterGroup({ title, children }) {
+function FilterGroup({ title, plusLabel = false, children }) {
   return (
     <section className="surface-line rounded-[24px] bg-white/76 p-4">
-      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+        {plusLabel ? (
+          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-indigo-700">Plus</span>
+        ) : null}
+      </div>
       <div className="mt-3">{children}</div>
     </section>
   )

@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
+import PricingEntryCard from '../components/PricingEntryCard'
 import SelectInput from '../components/SelectInput'
+import { getActiveListingAllowance } from '../config/entitlements'
+import { getLandlordPlanConfig, getTenantPlanConfig, LANDLORD_PLAN, TENANT_PLAN } from '../config/pricingPlans'
 import {
   ANY_VALUE,
   furnishedOptions,
@@ -33,7 +36,8 @@ export default function Profile() {
 
 function TenantProfile() {
   const navigate = useNavigate()
-  const { switchRole, tenantProfile, saveTenantProfile } = useAppState()
+  const { switchRole, tenantPlan, tenantProfile, saveTenantProfile } = useAppState()
+  const gaffloPlus = getTenantPlanConfig(TENANT_PLAN.GAFFLO_PLUS)
   const today = getTodayIsoDate()
   const [form, setForm] = useState(() => ({
     ...tenantProfile,
@@ -140,6 +144,15 @@ function TenantProfile() {
     <ProfileShell eyebrow="Tenant profile" title="Your rental profile" description="These details help rank properties and summarise enquiries. No documents are uploaded.">
       <form onSubmit={submit} className="space-y-4">
         <ProfileCompleteness completeness={completeness} />
+        {tenantPlan !== TENANT_PLAN.GAFFLO_PLUS ? (
+          <PricingEntryCard
+            eyebrow="Upgrade"
+            name={gaffloPlus.name}
+            priceMonthly={gaffloPlus.priceMonthly}
+            tagline="More Smart Match cards, more Interested actions and alerts when a strong fit appears."
+            features={gaffloPlus.features}
+          />
+        ) : null}
         <Section title="Basics">
           <div className="grid gap-3 min-[430px]:grid-cols-2">
             <FormInput id="tenant-name" label="Name" value={form.name || ''} maxLength={80} error={errors.name} onChange={(event) => update('name', event.target.value)} />
@@ -231,9 +244,11 @@ function TenantProfile() {
 
 function LandlordProfile() {
   const navigate = useNavigate()
-  const { landlordProfile, saveLandlordProfile, switchRole } = useAppState()
+  const { landlordPlan, landlordProfile, saveLandlordProfile, switchRole } = useAppState()
   const [form, setForm] = useState(landlordProfile)
   const [errors, setErrors] = useState({})
+  const landlordPlus = getLandlordPlanConfig(LANDLORD_PLAN.LANDLORD_PLUS)
+  const freeListingAllowance = getActiveListingAllowance(LANDLORD_PLAN.FREE)
 
   const validateField = (field, value) => {
     const validators = {
@@ -300,6 +315,16 @@ function LandlordProfile() {
         <div className="rounded-[22px] border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           New landlords can create draft listings, but public publishing can require landlord and property review.
         </div>
+        {landlordPlan !== LANDLORD_PLAN.LANDLORD_PLUS ? (
+          <PricingEntryCard
+            eyebrow="Upgrade"
+            name={landlordPlus.name}
+            priceMonthly={landlordPlus.priceMonthly}
+            tagline="More active listings, applicant tools and a monthly Listing Boost credit."
+            note={`Free includes ${freeListingAllowance} active listing. Individual listings can also be boosted for extra Browse visibility.`}
+            features={landlordPlus.features}
+          />
+        ) : null}
         <RoleSwitch
           onTenant={() => {
             switchRole('tenant')
@@ -318,7 +343,7 @@ function LandlordProfile() {
 
 function ProfileShell({ eyebrow, title, description, children }) {
   return (
-    <div className="mx-auto grid max-w-4xl gap-5">
+    <div className="mx-auto max-w-4xl space-y-5">
       <section className="card-surface card-shadow rounded-[30px] px-5 py-6 md:px-7">
         <p className="text-sm font-semibold text-emerald-600">{eyebrow}</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 md:text-[2.2rem]">{title}</h1>

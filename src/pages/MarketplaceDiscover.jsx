@@ -6,6 +6,7 @@ import MatchBadge from '../components/MatchBadge'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, LISTING_CATEGORIES } from '../config/listingCategories'
 import { formatFreshness, getBrowseFacts, getSmartMatchFacts } from '../config/listingPresentation'
+import { isListingPromoted, sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
 import { getPrimaryTrustSignal, isNewProperty } from '../config/rentalJourney'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
@@ -34,14 +35,10 @@ export default function MarketplaceDiscover() {
   const [viewMode, setViewMode] = useState('smart')
   const [leaving, setLeaving] = useState(null)
   const [savedPulseId, setSavedPulseId] = useState(null)
-  const rankedSmartMatches = useMemo(
-    () => [...availableProperties].sort((a, b) => b.match.score - a.match.score),
-    [availableProperties],
-  )
-  const browseProperties = useMemo(
-    () => [...discoveryProperties].sort((a, b) => b.match.score - a.match.score),
-    [discoveryProperties],
-  )
+  // Smart Match ranking is compatibility-only — never sort this deck by exposure/boost.
+  const rankedSmartMatches = useMemo(() => sortBySmartMatchScore(availableProperties), [availableProperties])
+  // Browse may weight a paid boost's exposure; Rental Fit still decides order within each group.
+  const browseProperties = useMemo(() => sortForBrowseExposure(discoveryProperties), [discoveryProperties])
 
   const handleInterest = (propertyId) => {
     expressSmartMatchInterest(propertyId)
@@ -128,6 +125,7 @@ export default function MarketplaceDiscover() {
           smartLimitReached={!smartMatchUsage.isLaunchFree && smartMatchUsage.cardsRemaining <= 0}
           interestLimitReached={!smartMatchUsage.isLaunchFree && smartMatchUsage.interestsRemaining <= 0}
           noActiveListings={allActiveProperties.length === 0}
+          freePlanMessage={smartMatchUsage.access.freePlanMessage}
         />
       ) : (
         <section className="grid gap-4 md:grid-cols-2">
@@ -169,6 +167,7 @@ function SmartMatchDeck({
   smartLimitReached,
   interestLimitReached,
   noActiveListings,
+  freePlanMessage,
 }) {
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
   const [dragIntent, setDragIntent] = useState(null)
@@ -276,7 +275,7 @@ function SmartMatchDeck({
           ? 'No properties match these filters.'
           : "You've reviewed all eligible listings."
     const description = smartLimitReached
-      ? 'Browse remains available for all matching listings, and saved properties are unchanged.'
+      ? freePlanMessage
       : noActiveListings
         ? 'Check back after landlords publish listings.'
         : noFilterResults
@@ -459,6 +458,7 @@ function SwipeIntentBadge({ intent, opacity, ready }) {
 function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInterest, onSave }) {
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
+  const isPromoted = isListingPromoted(property)
   const roomListing = isRoomListing(property.listingCategory)
   const facts = getBrowseFacts(property)
   const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
@@ -470,7 +470,10 @@ function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInt
           <ImageWithSkeleton src={property.images[0]} alt={property.title} />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/82 via-slate-950/18 to-transparent" />
           <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
-            <MatchBadge score={property.match.score} />
+            <div className="flex flex-col items-start gap-2">
+              <MatchBadge score={property.match.score} />
+              {isPromoted ? <Pill tone="amber">Promoted</Pill> : null}
+            </div>
             <div className="flex flex-col items-end gap-2">
               {isNew ? <Pill tone="new">New</Pill> : null}
               <span className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">

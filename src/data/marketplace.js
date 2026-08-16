@@ -492,6 +492,15 @@ export const mockProperties = [
     viewingType: 'In-person',
     listingStatus: 'published',
     createdAt: '2026-08-02T12:00:00.000Z',
+    // Demo-safe promoted listing for UI testing only — not a real purchase, and not owned by
+    // the local landlord persona (owner-private-1), so "My properties" never shows a boost
+    // nobody paid for.
+    promotion: {
+      type: 'boost',
+      status: 'active',
+      startsAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      endsAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+    },
     listingRules: ['No smoking indoors', 'References requested', 'One-year lease preferred'],
     viewingSlots: ['Wednesday 18:00', 'Saturday 10:30', 'Saturday 12:00'],
     trust: {

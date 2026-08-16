@@ -8,6 +8,8 @@ const KEYS = {
   enquiries: 'gafflo.enquiries',
   conversations: 'gafflo.conversations',
   properties: 'gafflo.properties',
+  tenantPlan: 'gafflo.tenant-plan',
+  landlordPlan: 'gafflo.landlord-plan',
 }
 
 const LEGACY_KEYS = {
@@ -108,4 +110,23 @@ export function getLocalProperties() {
 
 export function setLocalProperties(properties) {
   setJson(KEYS.properties, properties)
+}
+
+// Local-only plan state for this prototype. No purchase flow sets these yet — they exist so
+// the entitlement architecture is real and testable now, and swappable for backend-issued
+// entitlements later without touching any call site.
+export function getTenantPlan() {
+  return getJson(KEYS.tenantPlan, 'free')
+}
+
+export function setTenantPlan(plan) {
+  setJson(KEYS.tenantPlan, plan)
+}
+
+export function getLandlordPlan() {
+  return getJson(KEYS.landlordPlan, 'free')
+}
+
+export function setLandlordPlan(plan) {
+  setJson(KEYS.landlordPlan, plan)
 }

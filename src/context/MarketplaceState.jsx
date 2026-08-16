@@ -15,12 +15,13 @@ import { getDurableListingImages, getDurablePhotoMetadata } from '../config/phot
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
 import { smartMatchAccess } from '../config/smartMatch'
+import { getEffectiveInterestAllowance, getEffectiveSmartMatchAllowance, getInterestAllowance, getSmartMatchAllowance } from '../config/entitlements'
 import { normalizeViewingSlots, validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { mockConversations, mockEnquiries, mockProperties, mockTenants } from '../data/marketplace'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { getFutureViewingSlots } from '../utils/dateUtils'
 import { getLocalDateKey } from '../utils/localDate'
-import { hasDuplicateEnquiry, hasDuplicateRecentMessage, sanitizeMessageBody } from '../utils/messagingRules'
+import { hasDuplicateEnquiry, hasDuplicateRecentMessage, hasLandlordMessage, sanitizeMessageBody } from '../utils/messagingRules'
 import { belongsToViewer } from '../utils/ownership'
 import AppStateContext from './AppStateContext'
 import {
@@ -28,10 +29,12 @@ import {
   getConversations,
   getDismissedPropertyIds,
   getEnquiries,
+  getLandlordPlan,
   getLandlordProfile,
   getLocalProperties,
   getSavedPropertyIds,
   getSmartMatchActivity,
+  getTenantPlan,
   getTenantProfile,
   setAccount,
   setConversations,
@@ -143,6 +146,7 @@ function normalizeStoredProperty(property) {
     viewingType: property.viewingType || 'In-person',
     updatedAt: property.updatedAt || property.createdAt || '',
     availabilityConfirmedAt: property.availabilityConfirmedAt || '',
+    promotion: property.promotion || null,
     smokingAllowed: normalizeSmoking(normalizedListing.smokingAllowed || 'No'),
     petsAllowed: normalizePetPolicy(normalizedListing.petsAllowed || 'Not comfortable'),
     viewingSlots: viewingSlots.length ? viewingSlots : getFutureViewingSlots(),
@@ -221,10 +225,6 @@ function isBlockedThread(conversations, propertyId, tenantId) {
   return conversations.some((conversation) => conversation.propertyId === propertyId && conversation.tenantId === tenantId && conversation.blockedBy)
 }
 
-function hasLandlordMessage(conversation) {
-  return (conversation?.messages || []).some((message) => message.sender === 'landlord')
-}
-
 function canTenantSendMessage(conversation, enquiry) {
   if (!conversation || conversation.blockedBy) return false
   if (!enquiry) return true
@@ -236,6 +236,8 @@ export function AppStateProvider({ children }) {
   const [account, setAccountState] = useState(() => getAccount())
   const [tenantProfile, setTenantProfileState] = useState(() => normalizeTenantProfileForState({ ...defaultTenantProfileLoadDefaults, ...getTenantProfile(), id: currentTenantId }))
   const [landlordProfile, setLandlordProfileState] = useState(() => ({ ...defaultLandlordProfile, ...getLandlordProfile(), id: currentOwnerId }))
+  const [tenantPlan] = useState(() => getTenantPlan())
+  const [landlordPlan] = useState(() => getLandlordPlan())
   const [localProperties, setLocalPropertiesState] = useState(() => getLocalProperties())
   const [savedPropertyIds, setSavedPropertyIdsState] = useState(() => getSavedPropertyIds())
   const [dismissedPropertyIds, setDismissedPropertyIdsState] = useState(() => getDismissedPropertyIds())
@@ -313,14 +315,21 @@ export function AppStateProvider({ children }) {
   const tenantEnquiries = useMemo(() => enrichedEnquiries.filter((enquiry) => enquiry.tenantId === currentTenantId), [enrichedEnquiries])
   const todayKey = getLocalDateKey()
   const todaysSmartMatchActivity = smartMatchActivity[todayKey] || { cards: 0, interests: 0 }
+  const smartMatchCardAllowance = getSmartMatchAllowance(tenantPlan)
+  const smartMatchInterestAllowance = getInterestAllowance(tenantPlan)
+  const effectiveSmartMatchCardAllowance = getEffectiveSmartMatchAllowance(tenantPlan, { launchAccessEnabled: smartMatchAccess.launchAccessEnabled })
+  const effectiveSmartMatchInterestAllowance = getEffectiveInterestAllowance(tenantPlan, { launchAccessEnabled: smartMatchAccess.launchAccessEnabled })
   const smartMatchUsage = {
     date: todayKey,
     cardsUsed: todaysSmartMatchActivity.cards || 0,
     interestsUsed: todaysSmartMatchActivity.interests || 0,
-    cardsRemaining: Math.max(0, smartMatchAccess.dailyCardAllowance - (todaysSmartMatchActivity.cards || 0)),
-    interestsRemaining: Math.max(0, smartMatchAccess.dailyInterestAllowance - (todaysSmartMatchActivity.interests || 0)),
+    cardsRemaining: Math.max(0, smartMatchCardAllowance - (todaysSmartMatchActivity.cards || 0)),
+    interestsRemaining: Math.max(0, smartMatchInterestAllowance - (todaysSmartMatchActivity.interests || 0)),
+    cardAllowance: smartMatchCardAllowance,
+    interestAllowance: smartMatchInterestAllowance,
+    plan: tenantPlan,
     access: smartMatchAccess,
-    isLaunchFree: smartMatchAccess.launchMode,
+    isLaunchFree: smartMatchAccess.launchAccessEnabled,
   }
 
   const persistAccount = useCallback((nextAccount) => {
@@ -405,6 +414,8 @@ export function AppStateProvider({ children }) {
     tenants,
     tenantProfile,
     landlordProfile,
+    tenantPlan,
+    landlordPlan,
     properties,
     activeProperties,
     discoveryProperties,
@@ -475,7 +486,7 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'info', message: 'Property dismissed.' })
     },
     passSmartMatchProperty(propertyId) {
-      if (!smartMatchAccess.launchMode && todaysSmartMatchActivity.cards >= smartMatchAccess.dailyCardAllowance) {
+      if (todaysSmartMatchActivity.cards >= effectiveSmartMatchCardAllowance) {
         setToast({ type: 'info', message: 'Daily Smart Match card limit reached. Browse is still available.' })
         return
       }
@@ -533,11 +544,11 @@ export function AppStateProvider({ children }) {
         : null
       let conversationId = existing ? getOrCreateConversationForEnquiry(existing) : null
       if (!conversationId) {
-        if (!smartMatchAccess.launchMode && todaysSmartMatchActivity.interests >= smartMatchAccess.dailyInterestAllowance) {
+        if (todaysSmartMatchActivity.interests >= effectiveSmartMatchInterestAllowance) {
           setToast({ type: 'info', message: 'Daily interest limit reached. You can still browse and save listings.' })
           return null
         }
-        if (!smartMatchAccess.launchMode && todaysSmartMatchActivity.cards >= smartMatchAccess.dailyCardAllowance) {
+        if (todaysSmartMatchActivity.cards >= effectiveSmartMatchCardAllowance) {
           setToast({ type: 'info', message: 'Daily Smart Match card limit reached. Browse is still available.' })
           return null
         }

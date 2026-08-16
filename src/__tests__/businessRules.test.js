@@ -18,6 +18,19 @@ import {
   validateRoomCapacity,
 } from '../config/listingCategories'
 import { canListingReceiveEnquiry, canTransitionListing, canViewListing, getListingActions } from '../config/listingLifecycle'
+import {
+  canBoostListing,
+  canRewind,
+  canSendPremiumFollowUp,
+  canUseAdvancedFilters,
+  getActiveListingAllowance,
+  getEffectiveInterestAllowance,
+  getEffectiveSmartMatchAllowance,
+  getInterestAllowance,
+  getSmartMatchAllowance,
+} from '../config/entitlements'
+import { LANDLORD_PLAN, pricingPlans, TENANT_PLAN } from '../config/pricingPlans'
+import { sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
 import { getTrustSignals, getTrustStatusLabel } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
@@ -572,5 +585,102 @@ describe('frontend integrity helpers', () => {
 
   it('keeps published mark-rented action reachable', () => {
     expect(getListingActions('published').map((action) => action.status)).toContain('rented')
+  })
+})
+
+describe('pricing and entitlements', () => {
+  it('has exactly one canonical Gafflo+ tenant price', () => {
+    expect(pricingPlans.tenant.gafflo_plus.priceMonthly).toBe(4.99)
+    expect(pricingPlans.tenant.free.priceMonthly).toBe(0)
+  })
+
+  it('keeps role and plan as separate concepts', () => {
+    expect(Object.values(TENANT_PLAN)).not.toContain('tenant')
+    expect(Object.values(LANDLORD_PLAN)).not.toContain('landlord')
+    expect(Object.keys(pricingPlans.tenant)).not.toContain('premium_landlord')
+  })
+
+  it('grants tenant Free the current baseline Smart Match and Interested allowances', () => {
+    expect(getSmartMatchAllowance(TENANT_PLAN.FREE)).toBe(30)
+    expect(getInterestAllowance(TENANT_PLAN.FREE)).toBe(10)
+    expect(canUseAdvancedFilters(TENANT_PLAN.FREE)).toBe(false)
+    expect(canRewind(TENANT_PLAN.FREE)).toBe(false)
+  })
+
+  it('grants Gafflo+ higher, but not unlimited, allowances', () => {
+    expect(getSmartMatchAllowance(TENANT_PLAN.GAFFLO_PLUS)).toBeGreaterThan(getSmartMatchAllowance(TENANT_PLAN.FREE))
+    expect(getInterestAllowance(TENANT_PLAN.GAFFLO_PLUS)).toBeGreaterThan(getInterestAllowance(TENANT_PLAN.FREE))
+    expect(Number.isFinite(getInterestAllowance(TENANT_PLAN.GAFFLO_PLUS))).toBe(true)
+    expect(canUseAdvancedFilters(TENANT_PLAN.GAFFLO_PLUS)).toBe(true)
+    expect(canRewind(TENANT_PLAN.GAFFLO_PLUS)).toBe(true)
+  })
+
+  it('gives landlord Free exactly one active listing and Landlord Plus more', () => {
+    expect(getActiveListingAllowance(LANDLORD_PLAN.FREE)).toBe(1)
+    expect(getActiveListingAllowance(LANDLORD_PLAN.LANDLORD_PLUS)).toBeGreaterThan(1)
+  })
+
+  it('treats launch access as a temporary promotion, separate from a paid plan', () => {
+    expect(getEffectiveSmartMatchAllowance(TENANT_PLAN.FREE, { launchAccessEnabled: true })).toBe(Infinity)
+    expect(getEffectiveSmartMatchAllowance(TENANT_PLAN.FREE, { launchAccessEnabled: false })).toBe(getSmartMatchAllowance(TENANT_PLAN.FREE))
+    expect(getEffectiveInterestAllowance(TENANT_PLAN.GAFFLO_PLUS, { launchAccessEnabled: false })).toBe(getInterestAllowance(TENANT_PLAN.GAFFLO_PLUS))
+  })
+
+  it('never lets plan affect the Rental Fit score', () => {
+    const freeScore = calculatePropertyMatch(tenant, property).score
+    const plusScore = calculatePropertyMatch({ ...tenant, plan: 'gafflo_plus' }, { ...property, plan: 'gafflo_plus' }).score
+    expect(plusScore).toBe(freeScore)
+  })
+
+  it('excludes an active boost from Smart Match score and ranking', () => {
+    const activeBoost = { type: 'boost', status: 'active', startsAt: '2030-05-30T00:00:00.000Z', endsAt: '2030-06-05T00:00:00.000Z' }
+    const now = new Date('2030-06-01T00:00:00.000Z')
+    const boostedProperty = { ...property, promotion: activeBoost }
+    expect(calculatePropertyMatch(tenant, boostedProperty).score).toBe(calculatePropertyMatch(tenant, property).score)
+
+    const lowerMatchBoosted = { id: 'boosted-low-match', match: { score: 40 }, listingStatus: 'published', promotion: activeBoost }
+    const higherMatchPlain = { id: 'plain-high-match', match: { score: 95 }, listingStatus: 'published', promotion: null }
+    expect(sortBySmartMatchScore([lowerMatchBoosted, higherMatchPlain]).map((item) => item.id)).toEqual(['plain-high-match', 'boosted-low-match'])
+    expect(sortForBrowseExposure([lowerMatchBoosted, higherMatchPlain], now).map((item) => item.id)).toEqual(['boosted-low-match', 'plain-high-match'])
+  })
+
+  it('only allows boosting a listing that is public and not already promoted', () => {
+    const now = new Date('2030-06-01T00:00:00.000Z')
+    const activeBoost = { type: 'boost', status: 'active', startsAt: '2030-05-30T00:00:00.000Z', endsAt: '2030-06-05T00:00:00.000Z' }
+    expect(canBoostListing({ listingStatus: 'published', promotion: null }, now)).toBe(true)
+    expect(canBoostListing({ listingStatus: 'draft', promotion: null }, now)).toBe(false)
+    expect(canBoostListing({ listingStatus: 'published', promotion: activeBoost }, now)).toBe(false)
+  })
+
+  it('allows an eligible Gafflo+ tenant exactly one premium follow-up after the waiting period', () => {
+    const enquiry = { status: 'sent', createdAt: '2030-01-01T00:00:00.000Z' }
+    const conversation = { blockedBy: null, messages: [{ sender: 'tenant', body: 'Hi' }] }
+    const now = new Date('2030-01-03T01:00:00.000Z')
+    expect(canSendPremiumFollowUp({ enquiry, conversation, plan: TENANT_PLAN.GAFFLO_PLUS, now })).toBe(true)
+    expect(canSendPremiumFollowUp({ enquiry, conversation, plan: TENANT_PLAN.FREE, now })).toBe(false)
+  })
+
+  it('denies a premium follow-up before the waiting period has elapsed', () => {
+    const enquiry = { status: 'sent', createdAt: '2030-01-01T00:00:00.000Z' }
+    const conversation = { blockedBy: null, messages: [] }
+    const now = new Date('2030-01-01T10:00:00.000Z')
+    expect(canSendPremiumFollowUp({ enquiry, conversation, plan: TENANT_PLAN.GAFFLO_PLUS, now })).toBe(false)
+  })
+
+  it('denies a premium follow-up once one has already been used for this enquiry', () => {
+    const enquiry = { status: 'sent', createdAt: '2030-01-01T00:00:00.000Z', premiumFollowUpUsedAt: '2030-01-04T00:00:00.000Z' }
+    const conversation = { blockedBy: null, messages: [] }
+    const now = new Date('2030-01-10T00:00:00.000Z')
+    expect(canSendPremiumFollowUp({ enquiry, conversation, plan: TENANT_PLAN.GAFFLO_PLUS, now })).toBe(false)
+  })
+
+  it('denies a premium follow-up for a blocked conversation or a closed enquiry', () => {
+    const now = new Date('2030-01-10T00:00:00.000Z')
+    const openEnquiry = { status: 'sent', createdAt: '2030-01-01T00:00:00.000Z' }
+    const blockedConversation = { blockedBy: 'landlord', messages: [] }
+    expect(canSendPremiumFollowUp({ enquiry: openEnquiry, conversation: blockedConversation, plan: TENANT_PLAN.GAFFLO_PLUS, now })).toBe(false)
+
+    const closedEnquiry = { status: 'closed', createdAt: '2030-01-01T00:00:00.000Z' }
+    expect(canSendPremiumFollowUp({ enquiry: closedEnquiry, conversation: { blockedBy: null, messages: [] }, plan: TENANT_PLAN.GAFFLO_PLUS, now })).toBe(false)
   })
 })

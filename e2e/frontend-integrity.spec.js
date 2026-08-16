@@ -548,6 +548,57 @@ test('draft listing with no rent set shows a clear placeholder instead of a fake
   await expect(page.getByText('€0/mo')).toHaveCount(0)
 })
 
+test('top app bar stays attached to the top edge and visible while content scrolls', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page)
+  await page.goto('/discover')
+
+  const header = page.locator('header')
+  const before = await header.boundingBox()
+  expect(before.y).toBeLessThanOrEqual(1)
+  expect(before.width).toBeGreaterThan(380)
+  const radius = await header.evaluate((node) => window.getComputedStyle(node).borderRadius)
+  expect(parseFloat(radius)).toBeLessThanOrEqual(2)
+
+  await page.evaluate(() => document.querySelector('#app-shell-scroll')?.scrollTo({ top: 400 }))
+  await page.waitForTimeout(50)
+  const after = await header.boundingBox()
+  expect(after.y).toBeLessThanOrEqual(1)
+  await expect(page.getByRole('button', { name: 'Open filters' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('tenant profile shows a Gafflo+ upgrade entry point with the canonical price', async ({ page }) => {
+  await seedState(page)
+  await page.goto('/profile')
+
+  await expect(page.getByText('Gafflo+')).toBeVisible()
+  await expect(page.getByText('€4.99')).toBeVisible()
+  await page.getByRole('button', { name: 'Explore benefits' }).click()
+  await expect(page.getByText('Advanced filters')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Pay now' })).toHaveCount(0)
+})
+
+test('landlord profile shows a Landlord Plus upgrade entry point with the canonical price', async ({ page }) => {
+  await seedState(page, { account: landlordAccount, profile: null })
+  await page.goto('/profile')
+
+  await expect(page.getByText('Landlord Plus')).toBeVisible()
+  await expect(page.getByText('€19.99')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Purchase' })).toHaveCount(0)
+})
+
+test('a boosted listing is labelled Promoted in Browse but never appears in Smart Match', async ({ page }) => {
+  await seedState(page)
+  await page.goto('/discover')
+
+  await page.getByRole('button', { name: 'Browse' }).click()
+  await expect(page.getByText('Promoted').first()).toBeVisible()
+
+  await page.getByRole('button', { name: 'Smart Match' }).click()
+  await expect(page.getByText('Promoted')).toHaveCount(0)
+})
+
 test('bottom nav remains visible and does not block a lower primary action', async ({ page }) => {
   await page.setViewportSize(viewport390)
   await seedState(page)
