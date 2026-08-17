@@ -5,7 +5,9 @@ import FormInput from '../components/FormInput'
 import GaffloPlusPreview from '../components/GaffloPlusPreview'
 import LandlordPlansPreview from '../components/LandlordPlansPreview'
 import PricingEntryCard from '../components/PricingEntryCard'
+import SegmentedControl from '../components/SegmentedControl'
 import SelectInput from '../components/SelectInput'
+import Toggle from '../components/Toggle'
 import { getActiveListingAllowance } from '../config/entitlements'
 import { getLandlordPlanConfig, getTenantPlanConfig, LANDLORD_PLAN, TENANT_PLAN } from '../config/pricingPlans'
 import {
@@ -27,6 +29,12 @@ import { getTenantProfileCompleteness } from '../config/rentalJourney'
 import { LISTING_CATEGORIES } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from '../utils/dateUtils'
+
+const lookingForChoices = [
+  { value: LISTING_CATEGORIES.ENTIRE_PROPERTY, label: 'Entire property' },
+  { value: 'room', label: 'A room' },
+  { value: 'any', label: 'Either' },
+]
 
 const employmentOptions = ['Full-time', 'Part-time', 'Student', 'Remote worker', 'Self-employed']
 const contactOptions = ['In-app message', 'Email', 'Phone']
@@ -116,6 +124,35 @@ function TenantProfile() {
     })
   }
   const toggle = (field) => update(field, !form[field])
+  // Applying as a couple implies at least 2 applicants — raise the count automatically rather
+  // than making the tenant fix a validation error by hand. Turning couple status back off must
+  // never reduce the count: two friends applying together (2 applicants, Couple: No) is just as
+  // valid a household as a couple, so applicant count and relationship status are only coupled
+  // in the couple-on -> minimum-2 direction, never the reverse.
+  const setCoupleStatus = (nextValue) => {
+    setForm((current) => {
+      const currentHousehold = current.householdSize === '' || current.householdSize === null || current.householdSize === undefined
+        ? NaN
+        : Number(current.householdSize)
+      const shouldRaiseHousehold = nextValue && (!Number.isFinite(currentHousehold) || currentHousehold < 2)
+      const next = {
+        ...current,
+        applyingAsCouple: nextValue,
+        ...(shouldRaiseHousehold ? { householdSize: 2 } : {}),
+      }
+      setErrors((currentErrors) => {
+        const nextErrors = { ...currentErrors }
+        const coupleError = validateField('applyingAsCouple', next.applyingAsCouple, next)
+        if (coupleError) nextErrors.applyingAsCouple = coupleError
+        else delete nextErrors.applyingAsCouple
+        const householdError = validateField('householdSize', next.householdSize, next)
+        if (householdError) nextErrors.householdSize = householdError
+        else delete nextErrors.householdSize
+        return nextErrors
+      })
+      return next
+    })
+  }
   const addPreferredArea = (area) => {
     const nextAreas = normalizePreferredAreas([...(form.preferredAreas || []), area], form.targetCity)
     update('preferredAreas', nextAreas)
@@ -184,26 +221,22 @@ function TenantProfile() {
 
           <Section title="Rental needs">
             <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
-              <FormInput id="tenant-budget-min" label="Budget min (€)" type="number" min="0" inputMode="numeric" value={form.budgetMin || ''} error={errors.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} />
-              <FormInput id="tenant-budget-max" label="Budget max (€)" type="number" min="0" inputMode="numeric" value={form.budgetMax || ''} error={errors.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} />
+              <FormInput id="tenant-budget-min" label="Budget min (€)" type="number" min="0" inputMode="numeric" value={form.budgetMin ?? ''} error={errors.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} />
+              <FormInput id="tenant-budget-max" label="Budget max (€)" type="number" min="0" inputMode="numeric" value={form.budgetMax ?? ''} error={errors.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} />
               <FormInput id="tenant-move-in" label="Move-in date" type="date" min={today} value={isPastIsoDate(form.moveInDate, today) ? '' : form.moveInDate || ''} error={errors.moveInDate} onChange={(event) => update('moveInDate', event.target.value)} />
               <SelectInput label="Lease length" value={form.leaseLength || '12'} onChange={(event) => update('leaseLength', event.target.value)} options={leasePreferenceOptions} />
-              <FormInput id="tenant-household-size" label={form.lookingFor === 'room' ? 'Room applicants' : 'Household size'} type="number" min="1" inputMode="numeric" value={form.householdSize || 1} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />
+              <FormInput id="tenant-household-size" label={form.lookingFor === 'room' ? 'Room applicants' : 'Household size'} type="number" min="1" inputMode="numeric" value={form.householdSize ?? ''} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />
               <SelectInput label="Furnished" value={form.furnishedPreference || ANY_VALUE} onChange={(event) => update('furnishedPreference', event.target.value)} options={withAny(furnishedOptions)} />
             </div>
-            <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2">
-              <SelectInput
+            <div className="mt-4 space-y-3">
+              <SegmentedControl
                 label="Looking for"
                 value={form.lookingFor || 'any'}
-                onChange={(event) => update('lookingFor', event.target.value)}
-                options={[
-                  { label: 'Any', value: 'any' },
-                  { label: 'Entire property', value: LISTING_CATEGORIES.ENTIRE_PROPERTY },
-                  { label: 'Room', value: 'room' },
-                ]}
+                onChange={(value) => update('lookingFor', value)}
+                options={lookingForChoices}
               />
               {form.lookingFor === 'room' ? (
-                <Check label="Owner-occupied acceptable" checked={form.ownerOccupiedAcceptable !== false} onChange={() => update('ownerOccupiedAcceptable', form.ownerOccupiedAcceptable === false)} />
+                <Toggle label="Owner-occupied acceptable" checked={form.ownerOccupiedAcceptable !== false} onChange={() => update('ownerOccupiedAcceptable', form.ownerOccupiedAcceptable === false)} />
               ) : null}
             </div>
             {form.lookingFor === 'room' ? (
@@ -212,9 +245,9 @@ function TenantProfile() {
                   Room preferences
                 </summary>
                 <div className="mt-3 grid gap-3 min-[430px]:grid-cols-2">
-                  <Check label="Private bathroom preferred" checked={Boolean(form.privateBathroomPreferred)} onChange={() => toggle('privateBathroomPreferred')} />
-                  <Check label="Bills included preferred" checked={Boolean(form.billsIncludedPreferred)} onChange={() => toggle('billsIncludedPreferred')} />
-                  <Check label="Applying as a couple" checked={Boolean(form.applyingAsCouple)} error={errors.applyingAsCouple} onChange={() => toggle('applyingAsCouple')} />
+                  <Toggle label="Private bathroom preferred" checked={Boolean(form.privateBathroomPreferred)} onChange={() => toggle('privateBathroomPreferred')} />
+                  <Toggle label="Bills included preferred" checked={Boolean(form.billsIncludedPreferred)} onChange={() => toggle('billsIncludedPreferred')} />
+                  <Toggle label="Applying as a couple" checked={Boolean(form.applyingAsCouple)} error={errors.applyingAsCouple} onChange={() => setCoupleStatus(!form.applyingAsCouple)} />
                 </div>
               </details>
             ) : null}
@@ -229,9 +262,9 @@ function TenantProfile() {
               <SelectInput label="Parking needed" value={form.parkingNeeded || 'no'} onChange={(event) => update('parkingNeeded', event.target.value)} options={parkingNeedOptions} />
             </div>
             <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
-              <Check label="References ready" checked={Boolean(form.referencesReady)} onChange={() => toggle('referencesReady')} />
-              <Check label="Proof of income ready" checked={Boolean(form.incomeReady)} onChange={() => toggle('incomeReady')} />
-              <Check label="ID ready" checked={Boolean(form.idReady)} onChange={() => toggle('idReady')} />
+              <Toggle label="References ready" checked={Boolean(form.referencesReady)} onChange={() => toggle('referencesReady')} />
+              <Toggle label="Proof of income ready" checked={Boolean(form.incomeReady)} onChange={() => toggle('incomeReady')} />
+              <Toggle label="ID ready" checked={Boolean(form.idReady)} onChange={() => toggle('idReady')} />
             </div>
           </Section>
 
@@ -438,21 +471,6 @@ function PreferredAreasInput({ areaDraft, areas, city, onAdd, onDraft, onRemove,
           ))}
         </div>
       ) : null}
-    </div>
-  )
-}
-
-function Check({ label, checked, error, onChange }) {
-  return (
-    <div>
-      <label className="surface-line flex min-h-12 items-center justify-between gap-3 rounded-[18px] bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-        <span>{label}</span>
-        <span className={`relative h-7 w-12 shrink-0 rounded-full transition ${checked ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-          <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-soft transition ${checked ? 'left-6' : 'left-1'}`} />
-        </span>
-        <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
-      </label>
-      {error ? <p className="mt-1 text-xs font-medium text-rose-500">{error}</p> : null}
     </div>
   )
 }

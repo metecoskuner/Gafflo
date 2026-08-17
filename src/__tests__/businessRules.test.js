@@ -546,6 +546,36 @@ describe('frontend integrity helpers', () => {
     expect(stored).not.toHaveProperty('coupleRequirement')
   })
 
+  it('raises household size to at least 2 for a couple instead of silently discarding couple status', () => {
+    // A stale/externally-written profile with couple: true but householdSize under 2 must have
+    // its household size corrected up on reload, never have the couple flag quietly dropped.
+    expect(normalizeTenantProfileForState({ householdSize: 1, applyingAsCouple: true })).toMatchObject({
+      householdSize: 2,
+      applyingAsCouple: true,
+    })
+    expect(normalizeTenantProfileForState({ householdSize: null, applyingAsCouple: true })).toMatchObject({
+      householdSize: 2,
+      applyingAsCouple: true,
+    })
+    // Already 2+ stays exactly as given (3 applicants + couple stays 3, never clamped down to 2).
+    expect(normalizeTenantProfileForState({ householdSize: 3, applyingAsCouple: true })).toMatchObject({
+      householdSize: 3,
+      applyingAsCouple: true,
+    })
+    // Not a couple: household size (including unknown/null) is left completely untouched.
+    expect(normalizeTenantProfileForState({ householdSize: null, applyingAsCouple: false })).toMatchObject({
+      householdSize: null,
+      applyingAsCouple: false,
+    })
+    expect(normalizeTenantProfileForState({ householdSize: 2, applyingAsCouple: false })).toMatchObject({
+      householdSize: 2,
+      applyingAsCouple: false,
+    })
+
+    const stored = normalizeTenantProfileForStorage({ householdSize: 1, applyingAsCouple: true }, { targetCity: 'Dublin' })
+    expect(stored).toMatchObject({ householdSize: 2, applyingAsCouple: true })
+  })
+
   it('persists valid completed listings with canonical numeric values', () => {
     const listing = normalizeListingForStorage({
       listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY,

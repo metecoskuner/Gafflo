@@ -4,6 +4,7 @@ import Button from '../components/Button'
 import FormInput from '../components/FormInput'
 import PropertyDetailsModal from '../components/PropertyDetailsModal'
 import SelectInput from '../components/SelectInput'
+import Toggle from '../components/Toggle'
 import {
   bathroomArrangementOptions,
   bedTypeOptions,
@@ -588,18 +589,6 @@ function TermsSection({ form, errors, roomListing, updateField }) {
         <FormInput textarea rows={4} label="Listing terms" value={form.listingTerms} maxLength={700} error={errors.listingTerms} onChange={(event) => updateField('listingTerms', event.target.value)} />
       </div>
     </FormSection>
-  )
-}
-
-function Toggle({ label, checked, onChange }) {
-  return (
-    <label className="surface-line flex min-h-12 items-center justify-between gap-3 rounded-[18px] bg-white px-4 py-3">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <span className={`relative h-7 w-12 shrink-0 rounded-full transition ${checked ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-soft transition ${checked ? 'left-6' : 'left-1'}`} />
-      </span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only" />
-    </label>
   )
 }
 

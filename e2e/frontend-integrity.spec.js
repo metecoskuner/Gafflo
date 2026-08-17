@@ -78,6 +78,14 @@ async function expectNoHorizontalOverflow(page) {
   expect(metrics.bodyScrollLeft).toBe(0)
 }
 
+// Drives the custom Gafflo listbox (GaffloSelect) the way a real user would: open the trigger,
+// click the option by its visible label. Replaces native-<select> .selectOption() calls now that
+// every select in the app renders through the shared component instead of a real <select>.
+async function selectGafflo(page, label, optionText) {
+  await page.getByLabel(label).click()
+  await page.getByRole('option', { name: optionText, exact: true }).click()
+}
+
 test('fresh tenant onboarding asks only city and looking-for, then routes to discover leaving the rest unknown', async ({ page }) => {
   await seedState(page, { account: null, profile: null })
   await page.goto('/')
@@ -90,7 +98,7 @@ test('fresh tenant onboarding asks only city and looking-for, then routes to dis
   await expect(page.getByLabel('Move-in date')).toHaveCount(0)
   await expect(page.getByLabel(/household size|room applicants/i)).toHaveCount(0)
 
-  await page.getByLabel('Target city').selectOption('Dublin')
+  await selectGafflo(page, 'Target city', 'Dublin')
   await page.getByRole('button', { name: 'A room' }).click()
   await page.getByRole('button', { name: 'See my matches' }).click()
 
@@ -263,7 +271,7 @@ test('filter drawer closes, applies, resets, and leaves the app scrollable', asy
   await expect(page.getByText('Narrow the property deck')).toBeHidden()
 
   await page.getByRole('button', { name: 'Open filters' }).click()
-  await page.getByLabel('Location').selectOption('Ranelagh')
+  await selectGafflo(page, 'Location', 'Ranelagh')
   await page.getByRole('button', { name: 'Show properties' }).click()
   await expect(page.getByRole('button', { name: 'Open filters' })).toContainText('1')
 
@@ -286,7 +294,7 @@ test('advanced filters stay locked and inert for Free tenants', async ({ page })
   await page.goto('/discover')
 
   await page.getByRole('button', { name: 'Open filters' }).click()
-  await page.getByLabel('Listing category').selectOption('entire_property')
+  await selectGafflo(page, 'Listing category', 'Entire property')
   await expect(page.getByText('Unlock these filters with Gafflo+')).toBeVisible()
   await expect(page.getByLabel('Property type')).toBeDisabled()
 })
@@ -297,7 +305,7 @@ test('Gafflo+ tenants can use advanced filters', async ({ page }) => {
   await page.goto('/discover')
 
   await page.getByRole('button', { name: 'Open filters' }).click()
-  await page.getByLabel('Listing category').selectOption('entire_property')
+  await selectGafflo(page, 'Listing category', 'Entire property')
   await expect(page.getByText('Unlock these filters with Gafflo+')).toHaveCount(0)
   await expect(page.getByLabel('Property type')).toBeEnabled()
 })
@@ -338,9 +346,9 @@ test('tenant profile city change resets incompatible preferred areas', async ({ 
   await seedState(page, { profile: { ...tenantProfile, preferredAreas: [] } })
   await page.goto('/profile')
 
-  await page.getByLabel('Suggested areas').selectOption('Rathmines')
+  await selectGafflo(page, 'Suggested areas', 'Rathmines')
   await expect(page.getByRole('button', { name: /Rathmines/ })).toBeVisible()
-  await page.getByLabel('Target city').selectOption('Cork')
+  await selectGafflo(page, 'Target city', 'Cork')
   await expect(page.getByRole('button', { name: /Rathmines/ })).toHaveCount(0)
 })
 
@@ -1198,4 +1206,118 @@ test('new landlord monetisation surfaces stay within mobile width with no horizo
   await page.getByRole('button', { name: 'Explore plans and add-ons' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expectNoHorizontalOverflow(page)
+})
+
+test('the Gafflo select opens on click, supports full keyboard interaction, and persists the chosen value', async ({ page }) => {
+  await seedState(page)
+  await page.goto('/profile')
+
+  const trigger = page.getByLabel('Target city')
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await trigger.click()
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  const listbox = page.getByRole('listbox')
+  await expect(listbox).toBeVisible()
+  await expect(listbox.getByRole('option', { name: 'Dublin' })).toHaveAttribute('aria-selected', 'true')
+
+  // Escape closes without changing the value.
+  await page.keyboard.press('Escape')
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await expect(trigger).toHaveText('Dublin')
+
+  // Keyboard: open, arrow to the next option, commit with Enter.
+  await trigger.click()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await expect(trigger).toHaveText('Cork')
+
+  // The selection is real form state, not just visual — it's what actually gets saved.
+  await page.getByRole('button', { name: 'Save tenant profile' }).click()
+  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
+  expect(storedProfile.targetCity).toBe('Cork')
+})
+
+test('the Gafflo select closes on outside click, never overflows a narrow mobile viewport, and opening one closes another', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 })
+  await seedState(page)
+  await page.goto('/profile')
+
+  await page.getByLabel('Target city').click()
+  await expect(page.getByRole('listbox')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  // Outside click closes it.
+  await page.getByRole('heading', { name: 'Your rental profile' }).click()
+  await expect(page.getByRole('listbox')).toHaveCount(0)
+
+  // Opening a second select closes the first automatically — never two open at once.
+  await page.getByLabel('Target city').click()
+  await expect(page.getByRole('listbox')).toHaveCount(1)
+  await page.getByLabel('Lease length').click()
+  await expect(page.getByRole('listbox')).toHaveCount(1)
+  await expect(page.getByRole('listbox').getByRole('option', { name: '12 months' })).toBeVisible()
+})
+
+test('toggling "Applying as a couple" on raises applicant count to at least 2, and toggling it off never reduces the count', async ({ page }) => {
+  await seedState(page, { profile: { ...tenantProfile, householdSize: 1, lookingFor: 'room', applyingAsCouple: false } })
+  await page.goto('/profile')
+
+  const householdField = page.getByLabel('Room applicants')
+  const coupleToggleLabel = page.getByText('Applying as a couple', { exact: true })
+  const coupleToggleInput = page.getByLabel('Applying as a couple')
+  await expect(householdField).toHaveValue('1')
+
+  // 1 applicant + Couple Yes -> automatically becomes 2, with no validation error to fix by hand.
+  await coupleToggleLabel.click()
+  await expect(coupleToggleInput).toBeChecked()
+  await expect(householdField).toHaveValue('2')
+  await expect(page.getByText('Set room applicants to 2 people')).toHaveCount(0)
+
+  // Couple Yes -> No must not reduce the count: two friends applying together is still valid.
+  await coupleToggleLabel.click()
+  await expect(coupleToggleInput).not.toBeChecked()
+  await expect(householdField).toHaveValue('2')
+
+  await page.getByRole('button', { name: 'Save tenant profile' }).click()
+  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
+  expect(storedProfile).toMatchObject({ householdSize: 2, applyingAsCouple: false })
+})
+
+test('3 applicants + Couple Yes stays 3, never clamped down to 2', async ({ page }) => {
+  await seedState(page, { profile: { ...tenantProfile, householdSize: 3, lookingFor: 'room', applyingAsCouple: false } })
+  await page.goto('/profile')
+
+  await page.getByText('Applying as a couple', { exact: true }).click()
+  await expect(page.getByLabel('Applying as a couple')).toBeChecked()
+  await expect(page.getByLabel('Room applicants')).toHaveValue('3')
+})
+
+test('numeric fields can be cleared and retyped without snapping back to a fabricated default', async ({ page }) => {
+  await seedState(page, { profile: { ...tenantProfile, householdSize: 4, lookingFor: 'any' } })
+  await page.goto('/profile')
+
+  const householdField = page.getByLabel('Household size')
+  await householdField.fill('')
+  // Must stay genuinely blank while editing — not silently snap back to "1".
+  await expect(householdField).toHaveValue('')
+  await householdField.fill('5')
+  await expect(householdField).toHaveValue('5')
+
+  const budgetMin = page.getByLabel('Budget min (€)')
+  await budgetMin.fill('0')
+  await expect(budgetMin).toHaveValue('0')
+  await page.getByRole('button', { name: 'Save tenant profile' }).click()
+
+  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
+  expect(storedProfile.householdSize).toBe(5)
+  expect(storedProfile.budgetMin).toBe(0)
+})
+
+test('a literal saved €0 minimum budget displays as "0" on load, not a blank field', async ({ page }) => {
+  await seedState(page, { profile: { ...tenantProfile, budgetMin: 0 } })
+  await page.goto('/profile')
+  // A real, saved value of 0 must render as "0" — the old `value={form.budgetMin || ''}` display
+  // logic treated a real €0 the same as "not set" and silently hid it after reload.
+  await expect(page.getByLabel('Budget min (€)')).toHaveValue('0')
 })

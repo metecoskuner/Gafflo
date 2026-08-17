@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 're
 import BottomNav from './components/BottomNav'
 import { BrandLockup } from './components/BrandLogo'
 import Footer from './components/Footer'
+import GaffloSelect from './components/GaffloSelect'
 import Navbar from './components/Navbar'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
 import Button from './components/Button'
@@ -598,24 +599,16 @@ function FilterInput({ label, ...props }) {
   )
 }
 
-function FilterSelect({ label, options, ...props }) {
+function FilterSelect({ label, options, value, onChange, disabled }) {
+  const listOptions = options.map((option) => {
+    const [optionValue, optionLabel = optionValue] = String(option).split('|')
+    return { value: optionValue, label: optionLabel }
+  })
   return (
-    <label className="block">
+    <div>
       <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</span>
-      <select
-        className="min-h-12 w-full rounded-[18px] border border-indigo-100 bg-white px-4 py-3 text-base text-slate-700 outline-none transition focus:border-emerald-400 focus:bg-emerald-50/20 focus:ring-4 focus:ring-emerald-100"
-        {...props}
-      >
-        {options.map((option) => {
-          const [value, optionLabel = value] = String(option).split('|')
-          return (
-            <option key={value} value={value}>
-              {optionLabel}
-            </option>
-          )
-        })}
-      </select>
-    </label>
+      <GaffloSelect ariaLabel={label} options={listOptions} value={value} onChange={onChange} disabled={disabled} />
+    </div>
   )
 }
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
+import SegmentedControl from '../components/SegmentedControl'
 import SelectInput from '../components/SelectInput'
 import { LISTING_CATEGORIES } from '../config/listingCategories'
 import { cityOptions } from '../config/locationOptions'
@@ -79,27 +80,13 @@ export default function TenantOnboarding() {
             options={[{ label: 'Choose a city', value: '' }, ...cityOptions.map((city) => ({ label: city, value: city }))]}
           />
 
-          <div>
-            <span className="mb-2 block text-sm font-medium text-slate-700">Looking for</span>
-            <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-100 p-1.5" role="group" aria-label="Looking for">
-              {lookingForChoices.map((choice) => (
-                <button
-                  key={choice.value}
-                  type="button"
-                  onClick={() => update('lookingFor', choice.value)}
-                  aria-pressed={form.lookingFor === choice.value}
-                  className={`min-h-12 rounded-xl px-2 text-xs font-semibold leading-4 transition ${
-                    form.lookingFor === choice.value
-                      ? 'card-shadow bg-white text-slate-950'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  {choice.label}
-                </button>
-              ))}
-            </div>
-            {errors.lookingFor ? <p className="mt-2 text-xs font-medium text-rose-500">{errors.lookingFor}</p> : null}
-          </div>
+          <SegmentedControl
+            label="Looking for"
+            value={form.lookingFor}
+            onChange={(value) => update('lookingFor', value)}
+            options={lookingForChoices}
+            error={errors.lookingFor}
+          />
 
           <Button type="submit" className="w-full">See my matches</Button>
         </form>
