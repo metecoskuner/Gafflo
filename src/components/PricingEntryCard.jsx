@@ -5,7 +5,7 @@ import Button from './Button'
 // exploratory ("Explore benefits") and never implies a payment can be completed.
 // When `onExplore` is passed (e.g. the tenant Gafflo+ entry point), the CTA opens that
 // dedicated presentation instead of expanding the inline feature list.
-export default function PricingEntryCard({ eyebrow, name, priceMonthly, tagline, features, note, ctaLabel, onExplore }) {
+export default function PricingEntryCard({ eyebrow, name, priceMonthly, priceUnit = 'per month', tagline, features, note, ctaLabel, onExplore }) {
   const [expanded, setExpanded] = useState(false)
   const opensExternalPresentation = typeof onExplore === 'function'
   const label = ctaLabel || (expanded ? 'Hide benefits' : 'Explore benefits')
@@ -28,7 +28,7 @@ export default function PricingEntryCard({ eyebrow, name, priceMonthly, tagline,
         </div>
         <div className="shrink-0 rounded-2xl bg-slate-50 px-3 py-2 text-right">
           <div className="text-lg font-semibold tracking-tight text-slate-950">€{priceMonthly.toFixed(2)}</div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">per month</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">{priceUnit}</div>
         </div>
       </div>
 

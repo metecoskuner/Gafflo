@@ -14,7 +14,10 @@ import EmptyState from './EmptyState'
 import MatchBadge from './MatchBadge'
 import TrustSummary from './TrustSummary'
 
-export default function PropertyDetailsModal({ standalone = false }) {
+// previewProperty + onClose let a landlord preview an in-progress, unsaved listing draft exactly
+// as CreateListing will pass it: real tenant-facing layout, no route, no persistence. Everything
+// else (route-based lookup, access rules, enquiry actions) is untouched for the normal case.
+export default function PropertyDetailsModal({ standalone = false, previewProperty = null, onClose }) {
   const { propertyId } = useParams()
   const {
     blockPropertyOwner,
@@ -30,15 +33,20 @@ export default function PropertyDetailsModal({ standalone = false }) {
     tenantEnquiries,
   } = useAppState()
   const navigate = useNavigate()
-  const property = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
+  const routeProperty = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
+  const property = previewProperty || routeProperty
   const fallbackRoute = role === 'landlord' ? '/properties' : '/discover'
   const close = useCallback(() => {
+    if (previewProperty) {
+      onClose?.()
+      return
+    }
     if (window.history.state?.idx > 0) {
       navigate(-1)
     } else {
       navigate(fallbackRoute, { replace: true })
     }
-  }, [fallbackRoute, navigate])
+  }, [fallbackRoute, navigate, onClose, previewProperty])
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -51,10 +59,11 @@ export default function PropertyDetailsModal({ standalone = false }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [close])
 
-  const enquiry = property ? tenantEnquiries.find((item) => item.propertyId === property.id) : null
+  const enquiry = property && !previewProperty ? tenantEnquiries.find((item) => item.propertyId === property.id) : null
   const hasHistoricalRelationship = role === 'tenant' && (Boolean(enquiry) || savedPropertyIds.includes(propertyId))
   const viewerId = role === 'landlord' ? currentOwnerId : currentTenantId
-  const access = canViewListing({ role, viewerId, property, hasHistoricalRelationship })
+  // A preview is always the landlord's own in-progress draft — no route-based access check applies.
+  const access = previewProperty ? { allowed: true, mode: 'own' } : canViewListing({ role, viewerId, property, hasHistoricalRelationship })
 
   if (!property || !access.allowed) {
     return (
@@ -111,7 +120,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
           className={`card-surface card-shadow relative flex h-[100dvh] w-full max-w-full min-w-0 flex-col overflow-hidden bg-white ${standalone ? 'max-w-4xl' : 'md:h-auto md:max-h-[90vh] md:max-w-2xl md:rounded-[32px]'}`}
         >
           <div data-property-details-scroll className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [touch-action:pan-y]">
-            <PropertyImageGallery property={property} isSaved={isSaved} onClose={close} />
+            <PropertyImageGallery property={property} isSaved={isSaved} isPreview={Boolean(previewProperty)} onClose={close} />
 
             <div className="max-w-full space-y-3 px-4 pb-[calc(env(safe-area-inset-bottom)+6.75rem)] pt-4 md:space-y-4 md:px-6">
               <section className="card-surface card-shadow rounded-[24px] p-4">
@@ -303,7 +312,9 @@ export default function PropertyDetailsModal({ standalone = false }) {
           </div>
 
           <div className="border-t border-slate-100 bg-white/94 px-4 pb-[calc(env(safe-area-inset-bottom)+0.85rem)] pt-3 backdrop-blur-xl md:px-6">
-            {role === 'landlord' ? (
+            {previewProperty ? (
+              <Button className="w-full" onClick={close}>Close preview</Button>
+            ) : role === 'landlord' ? (
               <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
                 <Button variant="secondary" onClick={() => navigate('/properties')}>Back to properties</Button>
                 <Button variant="dark" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>View applicants</Button>
@@ -334,7 +345,7 @@ export default function PropertyDetailsModal({ standalone = false }) {
   )
 }
 
-function PropertyImageGallery({ property, isSaved, onClose }) {
+function PropertyImageGallery({ property, isSaved, isPreview, onClose }) {
   const images = property.images?.length ? property.images : ['']
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [failedImageIndexes, setFailedImageIndexes] = useState([])
@@ -374,7 +385,7 @@ function PropertyImageGallery({ property, isSaved, onClose }) {
 
         <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.85rem)] md:px-5 md:pt-5">
           <div className="rounded-full bg-white/16 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/20 backdrop-blur-md">
-            {isSaved ? 'Saved property' : 'Property details'}
+            {isPreview ? 'Preview — how tenants will see this' : isSaved ? 'Saved property' : 'Property details'}
           </div>
           <button
             type="button"

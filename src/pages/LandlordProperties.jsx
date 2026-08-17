@@ -6,17 +6,36 @@ import PricingEntryCard from '../components/PricingEntryCard'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, listingCategoryLabel, LISTING_CATEGORIES } from '../config/listingCategories'
 import { getListingActions, listingStatusLabels } from '../config/listingLifecycle'
-import { getLandlordPlanConfig, LANDLORD_PLAN } from '../config/pricingPlans'
+import { getLandlordPlanConfig, getListingProductConfig, LANDLORD_PLAN, LISTING_PRODUCT } from '../config/pricingPlans'
+import { canBoostListing } from '../config/promotion'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
 const statusTabs = ['published', 'pending_verification', 'draft', 'paused', 'rejected', 'rented']
 
+// One clear primary action per lifecycle stage — everything else is secondary context, not a
+// wall of equally-weighted buttons. Lifecycle transition rules themselves are unchanged; this
+// only decides which already-valid action is presented as the primary one.
+const listingActionPlan = {
+  draft: { primaryKey: 'edit', primaryLabel: 'Continue editing', secondaryKeys: ['pending_verification'] },
+  pending_verification: { primaryKey: 'preview', primaryLabel: 'Preview', secondaryKeys: [] },
+  published: { primaryKey: 'applicants', primaryLabel: 'Applicants', secondaryKeys: ['preview', 'edit', 'paused', 'rented'] },
+  active: { primaryKey: 'applicants', primaryLabel: 'Applicants', secondaryKeys: ['preview', 'edit', 'paused', 'rented'] },
+  paused: { primaryKey: 'published', primaryLabel: 'Resume', secondaryKeys: ['preview', 'edit', 'rented'] },
+  rented: { primaryKey: 'preview', primaryLabel: 'View history', secondaryKeys: [] },
+  rejected: { primaryKey: 'edit', primaryLabel: 'Continue editing', secondaryKeys: ['pending_verification'] },
+}
+
+function getListingActionPlan(status) {
+  return listingActionPlan[status] || { primaryKey: 'preview', primaryLabel: 'Preview', secondaryKeys: [] }
+}
+
 export default function LandlordProperties() {
   const navigate = useNavigate()
   const { landlordProperties, landlordEnquiries, updatePropertyStatus } = useAppState()
   const [allowanceBlock, setAllowanceBlock] = useState(null)
+  const [boostPreview, setBoostPreview] = useState(null)
   const counts = useMemo(
     () =>
       statusTabs.reduce((acc, status) => {
@@ -65,8 +84,52 @@ export default function LandlordProperties() {
       <section className="grid gap-4">
         {landlordProperties.map((property) => {
           const applicantCount = landlordEnquiries.filter((enquiry) => enquiry.propertyId === property.id).length
-          const actions = getPrimaryListingActions(property.listingStatus)
           const roomListing = isRoomListing(property.listingCategory)
+          const plan = getListingActionPlan(property.listingStatus)
+          const transitions = getListingActions(property.listingStatus)
+          const runTransition = (status) => {
+            const result = updatePropertyStatus(property.id, status)
+            if (result && result.reason === 'allowance') setAllowanceBlock(result)
+          }
+          const renderAction = (key, isPrimary) => {
+            if (key === 'preview') {
+              return (
+                <Button key={key} variant={isPrimary ? 'dark' : 'secondary'} onClick={() => navigate(`/properties/${property.id}`)}>
+                  {isPrimary ? plan.primaryLabel : 'Preview'}
+                </Button>
+              )
+            }
+            if (key === 'edit') {
+              return (
+                <Button key={key} variant={isPrimary ? 'dark' : 'secondary'} onClick={() => navigate(`/listings/${property.id}/edit`)}>
+                  {isPrimary ? plan.primaryLabel : 'Edit'}
+                </Button>
+              )
+            }
+            if (key === 'applicants') {
+              return (
+                <Button key={key} variant={isPrimary ? 'dark' : 'secondary'} onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>
+                  {isPrimary ? plan.primaryLabel : 'Applicants'}
+                </Button>
+              )
+            }
+            const transition = transitions.find((action) => action.status === key)
+            if (!transition) return null
+            // Only the single primary action gets the dark/prominent treatment. A destructive
+            // secondary action (e.g. Mark rented) is flagged with cautionary colour, not with
+            // the same visual weight as the primary action — one clear "main" button per card.
+            const destructiveSecondaryClass = !isPrimary && transition.destructive ? 'border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50' : ''
+            return (
+              <Button
+                key={key}
+                variant={isPrimary ? 'dark' : 'secondary'}
+                className={destructiveSecondaryClass}
+                onClick={() => runTransition(transition.status)}
+              >
+                {isPrimary ? plan.primaryLabel : transition.label}
+              </Button>
+            )
+          }
           return (
             <article key={property.id} className="card-surface card-shadow overflow-hidden rounded-[30px]">
               <div className="grid md:grid-cols-[12rem_1fr]">
@@ -81,7 +144,7 @@ export default function LandlordProperties() {
                           {listingStatusLabels[property.listingStatus] || property.listingStatus}
                         </span>
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                          {applicantCount} applicants
+                          {applicantCount} applicant{applicantCount === 1 ? '' : 's'}
                         </span>
                       </div>
                       <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">{property.title}</h2>
@@ -100,21 +163,11 @@ export default function LandlordProperties() {
                     )}
                   </div>
                   <div className="grid gap-2 min-[380px]:grid-cols-2 md:grid-cols-3">
-                    {actions.includes('preview') ? <Button variant="secondary" onClick={() => navigate(`/properties/${property.id}`)}>Preview</Button> : null}
-                    {actions.includes('edit') ? <Button variant="secondary" onClick={() => navigate(`/listings/${property.id}/edit`)}>Edit</Button> : null}
-                    {getListingActions(property.listingStatus).filter((action) => actions.includes(action.status)).map((action) => (
-                      <Button
-                        key={action.status}
-                        variant={action.destructive ? 'dark' : 'secondary'}
-                        onClick={() => {
-                          const result = updatePropertyStatus(property.id, action.status)
-                          if (result && result.reason === 'allowance') setAllowanceBlock(result)
-                        }}
-                      >
-                        {action.label}
-                      </Button>
-                    ))}
-                    {actions.includes('applicants') ? <Button variant="dark" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>Applicants</Button> : null}
+                    {renderAction(plan.primaryKey, true)}
+                    {plan.secondaryKeys.map((key) => renderAction(key, false))}
+                    {canBoostListing(property) ? (
+                      <Button variant="secondary" onClick={() => setBoostPreview(property)}>Boost listing</Button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -130,12 +183,15 @@ export default function LandlordProperties() {
           onClose={() => setAllowanceBlock(null)}
         />
       ) : null}
+
+      {boostPreview ? <BoostPreviewSheet property={boostPreview} onClose={() => setBoostPreview(null)} /> : null}
     </div>
   )
 }
 
 function ListingAllowanceSheet({ activeCount, allowance, onClose }) {
   const landlordPlus = getLandlordPlanConfig(LANDLORD_PLAN.LANDLORD_PLUS)
+  const singleListingPlus = getListingProductConfig(LISTING_PRODUCT.SINGLE_LISTING_PLUS)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
@@ -152,34 +208,80 @@ function ListingAllowanceSheet({ activeCount, allowance, onClose }) {
         </h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">
           Your plan allows {allowance} active listing{allowance === 1 ? '' : 's'}, and you currently have {activeCount}. Pause another
-          listing to free up a slot, or upgrade for more active listings.
+          listing to free up a slot, or choose one of the options below.
         </p>
-        <div className="mt-4">
+        <div className="mt-4 space-y-3">
           <PricingEntryCard
-            eyebrow="Upgrade"
+            eyebrow="One listing"
+            name={singleListingPlus.name}
+            priceMonthly={singleListingPlus.price}
+            priceUnit={`per ${singleListingPlus.unit}, one-off`}
+            tagline="For a private landlord with just one vacancy to fill right now."
+            features={singleListingPlus.features}
+          />
+          <PricingEntryCard
+            eyebrow="Multiple listings"
             name={landlordPlus.name}
             priceMonthly={landlordPlus.priceMonthly}
-            tagline="More active listings for your properties."
+            tagline="More active listings for your properties, ongoing."
             features={landlordPlus.features}
           />
         </div>
+        <p className="mt-3 text-xs text-slate-500">Payments aren&rsquo;t available yet — these are shown for planning, not purchase.</p>
         <Button variant="secondary" className="mt-4 w-full" onClick={onClose}>Close</Button>
       </div>
     </div>
   )
 }
 
-function getPrimaryListingActions(status) {
-  const normalized = status === 'active' ? 'published' : status
-  const actionsByStatus = {
-    draft: ['edit', 'pending_verification'],
-    pending_verification: ['preview'],
-    published: ['preview', 'edit', 'paused', 'applicants', 'rented'],
-    paused: ['preview', 'edit', 'published', 'rented'],
-    rented: ['preview'],
-    rejected: ['edit', 'pending_verification'],
-  }
-  return actionsByStatus[normalized] || ['preview']
+// Boost is informational only — there is no payment provider connected yet, so this can never
+// activate a promotion, mutate property.promotion, or imply a purchase succeeded.
+function BoostPreviewSheet({ property, onClose }) {
+  const boost = getListingProductConfig(LISTING_PRODUCT.BOOST)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
+      <button type="button" aria-label="Close" className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="boost-preview-title"
+        className="card-shadow relative flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-y-auto rounded-t-[28px] bg-white p-5 md:max-h-[85vh] md:max-w-md md:rounded-[28px]"
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Boost this listing</p>
+        <h2 id="boost-preview-title" className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{property.title}</h2>
+        <div className="mt-3 inline-flex items-baseline gap-1.5 rounded-full bg-[var(--gafflo-brand-ink)] px-4 py-2 text-white">
+          <span className="text-base font-semibold tracking-tight">€{boost.price.toFixed(2)}</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-indigo-200">/ {boost.unit}</span>
+        </div>
+        <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-700">
+          <li className="flex items-start gap-2">
+            <span aria-hidden="true" className="mt-0.5 text-emerald-600">✓</span>
+            <span>More visibility in relevant Browse results for 7 days.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span aria-hidden="true" className="mt-0.5 text-emerald-600">✓</span>
+            <span>Clearly labelled &ldquo;Promoted&rdquo; to tenants — never disguised as a better match.</span>
+          </li>
+        </ul>
+        <p className="mt-4 rounded-[18px] border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-xs leading-5 text-indigo-900">
+          You can pay for exposure. You cannot pay for compatibility. Boost never changes Rental Fit or Smart Match
+          scores, and never bypasses a tenant&rsquo;s filters.
+        </p>
+        <button
+          type="button"
+          disabled
+          aria-label={`Boost coming soon — €${boost.price.toFixed(2)} per ${boost.unit}`}
+          className="mt-4 flex min-h-12 w-full cursor-not-allowed items-center justify-between rounded-2xl bg-[var(--gafflo-brand-ink)] px-5 py-3 text-white opacity-60"
+        >
+          <span className="text-sm font-semibold">€{boost.price.toFixed(2)} / {boost.unit}</span>
+          <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold uppercase tracking-[0.06em]">Coming soon</span>
+        </button>
+        <p className="mt-2 text-center text-xs text-slate-500">Payments aren&rsquo;t available yet.</p>
+        <Button variant="secondary" className="mt-3 w-full" onClick={onClose}>Close</Button>
+      </div>
+    </div>
+  )
 }
 
 function Info({ label, value }) {

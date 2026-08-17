@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
 import GaffloPlusPreview from '../components/GaffloPlusPreview'
+import LandlordPlansPreview from '../components/LandlordPlansPreview'
 import PricingEntryCard from '../components/PricingEntryCard'
 import SelectInput from '../components/SelectInput'
 import { getActiveListingAllowance } from '../config/entitlements'
@@ -261,6 +262,7 @@ function LandlordProfile() {
   const { landlordPlan, landlordProfile, saveLandlordProfile, switchRole } = useAppState()
   const [form, setForm] = useState(landlordProfile)
   const [errors, setErrors] = useState({})
+  const [showPlans, setShowPlans] = useState(false)
   const landlordPlus = getLandlordPlanConfig(LANDLORD_PLAN.LANDLORD_PLUS)
   const freeListingAllowance = getActiveListingAllowance(LANDLORD_PLAN.FREE)
 
@@ -337,6 +339,8 @@ function LandlordProfile() {
             tagline="More active listings for your properties."
             note={`Free includes ${freeListingAllowance} active listing.`}
             features={landlordPlus.features}
+            ctaLabel="Explore plans and add-ons"
+            onExplore={() => setShowPlans(true)}
           />
         ) : null}
         <RoleSwitch
@@ -351,6 +355,7 @@ function LandlordProfile() {
         />
         <Button type="submit" className="w-full">Save landlord profile</Button>
       </form>
+      {showPlans ? <LandlordPlansPreview onClose={() => setShowPlans(false)} /> : null}
     </ProfileShell>
   )
 }

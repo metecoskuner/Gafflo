@@ -106,29 +106,57 @@ function LandlordDashboard() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
-        <Metric label="New interested tenants" value={String(newInterest)} />
-        <Metric label="Unread messages" value={String(unreadMessages)} />
-        <Metric label="Upcoming viewings" value={String(viewings)} />
-      </section>
+      <AttentionSummary
+        newInterest={newInterest}
+        viewings={viewings}
+        unreadMessages={unreadMessages}
+        onReviewApplicants={() => navigate('/applicants')}
+        onOpenMessages={() => navigate('/messages')}
+      />
 
       <UpcomingViewings rows={viewingRows} role="landlord" onOpenMessages={() => navigate('/messages')} />
-
-      <section className="card-surface card-shadow rounded-[26px] p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight text-slate-950">{newInterest} new interested tenants</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              Start with the highest fit applicants and decide who to message or invite to a viewing.
-            </p>
-          </div>
-          <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-            Ranked
-          </span>
-        </div>
-        <Button className="mt-4 w-full" onClick={() => navigate('/applicants')}>Review applicants</Button>
-      </section>
     </div>
+  )
+}
+
+// Priority order matches what a private landlord actually needs to act on: new applicants
+// first, then confirmed/proposed viewings, then unread messages. Each item is real and only
+// shown when there's actually something to do — no manufactured urgency, and a calm empty
+// state when the landlord is genuinely caught up.
+function AttentionSummary({ newInterest, viewings, unreadMessages, onReviewApplicants, onOpenMessages }) {
+  const items = [
+    newInterest > 0
+      ? { key: 'applicants', label: `${newInterest} new applicant${newInterest === 1 ? '' : 's'}`, onClick: onReviewApplicants }
+      : null,
+    viewings > 0
+      ? { key: 'viewings', label: `${viewings} upcoming viewing${viewings === 1 ? '' : 's'}`, onClick: onOpenMessages }
+      : null,
+    unreadMessages > 0
+      ? { key: 'messages', label: `${unreadMessages} unread conversation${unreadMessages === 1 ? '' : 's'}`, onClick: onOpenMessages }
+      : null,
+  ].filter(Boolean)
+
+  return (
+    <section className="card-surface card-shadow rounded-[26px] p-5">
+      <h2 className="text-lg font-semibold tracking-tight text-slate-950">What needs your attention</h2>
+      {items.length ? (
+        <div className="mt-3 grid gap-2">
+          {items.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={item.onClick}
+              className="flex min-h-12 items-center justify-between gap-3 rounded-[18px] bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+            >
+              <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+              <span aria-hidden="true" className="text-slate-400">→</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-sm leading-6 text-slate-600">You&rsquo;re all caught up — nothing needs your attention right now.</p>
+      )}
+    </section>
   )
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
+import PropertyDetailsModal from '../components/PropertyDetailsModal'
 import SelectInput from '../components/SelectInput'
 import {
   bathroomArrangementOptions,
@@ -90,13 +91,14 @@ function createInitialForm() {
 export default function CreateListing() {
   const navigate = useNavigate()
   const { propertyId } = useParams()
-  const { addProperty, landlordProperties, updateProperty } = useAppState()
+  const { addProperty, currentOwnerId, landlordProfile, landlordProperties, updateProperty } = useAppState()
   const editingProperty = useMemo(() => landlordProperties.find((property) => property.id === propertyId), [landlordProperties, propertyId])
   const [form, setForm] = useState(() => (editingProperty ? propertyToForm(editingProperty) : createInitialForm()))
   const [photoItems, setPhotoItems] = useState(() => normalizePhotoMetadata(editingProperty?.photoMetadata || editingProperty?.images || [], editingProperty?.listingCategory))
   const photoItemsRef = useRef(photoItems)
   const [errors, setErrors] = useState({})
   const [isSaving, setIsSaving] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const listingPhotos = useMemo(() => normalizePhotoMetadata(photoItems, form.listingCategory), [form.listingCategory, photoItems])
   const previewImages = useMemo(() => (listingPhotos.length ? listingPhotos.map((photo) => photo.src) : [defaultImage]), [listingPhotos])
   const durablePhotoCount = useMemo(() => getDurablePhotoMetadata(listingPhotos, form.listingCategory).length, [listingPhotos, form.listingCategory])
@@ -104,6 +106,43 @@ export default function CreateListing() {
   const today = getTodayIsoDate()
   const roomListing = isRoomListing(form.listingCategory)
   const lockedCategory = editingProperty && !canChangeListingCategory(editingProperty, form.listingCategory).allowed
+
+  // Tenant-facing preview of the in-progress draft — real presentation component, nothing
+  // persisted, no score (landlord role never sees Rental Fit), no publish side effect.
+  const previewProperty = useMemo(
+    () => ({
+      ...form,
+      id: editingProperty?.id || 'preview-draft',
+      ownerId: currentOwnerId,
+      ownerName: landlordProfile.displayName,
+      ownerType: 'Private landlord',
+      listingStatus: editingProperty?.listingStatus || 'draft',
+      rent: Number(form.rent) || 0,
+      deposit: Number(form.deposit) || 0,
+      bedrooms: Number(form.bedrooms) || 0,
+      totalBedrooms: Number(form.totalBedrooms) || 0,
+      bathrooms: Number(form.bathrooms) || 0,
+      maxOccupants: Number(form.maxOccupants) || 1,
+      currentHouseholdSize: Number(form.currentHouseholdSize) || 0,
+      maxHouseholdSize: Number(form.maxHouseholdSize) || 0,
+      minStayMonths: Number(form.minStayMonths) || 0,
+      billsIncluded: Boolean(form.billsIncluded),
+      images: previewImages,
+      amenities: buildAmenities(form),
+      features: buildFeatures(form),
+      listingRules: buildListingRules(form),
+      approximateAddress: `${form.area.trim() || 'Area'} area`,
+      trust: {
+        emailVerified: false,
+        phoneVerified: false,
+        identityStatus: 'not_verified',
+        landlordVerification: 'pending',
+        propertyVerification: 'pending',
+        internalDemoState: true,
+      },
+    }),
+    [form, previewImages, editingProperty, currentOwnerId, landlordProfile],
+  )
 
   useEffect(() => {
     photoItemsRef.current = photoItems
@@ -333,6 +372,10 @@ export default function CreateListing() {
           </div>
         ) : null}
 
+        <Button type="button" variant="secondary" className="w-full" onClick={() => setShowPreview(true)}>
+          Preview listing
+        </Button>
+
         <div className="grid grid-cols-[0.9fr_1.1fr] gap-2 rounded-[24px] border border-slate-200 bg-white/96 p-2 shadow-soft">
           <Button variant="secondary" onClick={(event) => handleSubmit(event, 'draft')}>
             Save draft
@@ -342,6 +385,8 @@ export default function CreateListing() {
           </Button>
         </div>
       </form>
+
+      {showPreview ? <PropertyDetailsModal previewProperty={previewProperty} onClose={() => setShowPreview(false)} /> : null}
     </div>
   )
 }

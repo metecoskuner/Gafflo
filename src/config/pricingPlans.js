@@ -62,7 +62,7 @@ export const pricingPlans = {
       features: [
         '1 active listing',
         'Applicants and shortlisting',
-        'Messaging',
+        'Messaging with reusable quick replies',
         'Viewing scheduling',
         'Basic Rental Fit ranking',
       ],
@@ -78,12 +78,16 @@ export const pricingPlans = {
     },
   },
   listingProducts: {
+    // A one-off alternative to a monthly Landlord Plus subscription for a landlord with a
+    // single vacancy. Its only real, honest benefit today is the same one Extra Listing Slot
+    // already provides — advanced applicant tools/analytics are not built, so they are not
+    // advertised here (see config/entitlements.js canUseAdvancedApplicantTools, still unused).
     [LISTING_PRODUCT.SINGLE_LISTING_PLUS]: {
       id: LISTING_PRODUCT.SINGLE_LISTING_PLUS,
       name: 'Single Listing Plus',
       price: 9.99,
       unit: 'listing',
-      features: ['Advanced applicant tools for this listing', 'Listing analytics', 'Message templates'],
+      features: ['One additional active listing, one-off — no monthly subscription', 'Same tools as Free: applicants, messaging, viewings, Rental Fit'],
     },
     [LISTING_PRODUCT.BOOST]: {
       id: LISTING_PRODUCT.BOOST,

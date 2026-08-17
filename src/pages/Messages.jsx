@@ -10,6 +10,15 @@ import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { getFutureViewingSlots } from '../utils/dateUtils'
 
+// Local, frontend-only starter set — free for every landlord (see pricingPlans.js). Tapping one
+// replaces the composer draft so it's always reviewed and edited before sending; nothing here
+// ever sends on its own.
+const landlordQuickReplies = [
+  { id: 'move-in', label: 'Confirm move-in', body: 'Thanks for your interest. Could you confirm your preferred move-in date?' },
+  { id: 'viewing', label: 'Ask about viewing', body: 'Thanks for applying. Would you be available for a viewing?' },
+  { id: 'reviewing', label: 'Still reviewing', body: "Thanks for your interest. I'm reviewing applications and will get back to you shortly." },
+]
+
 export default function Messages() {
   const navigate = useNavigate()
   const { conversationId } = useParams()
@@ -272,6 +281,14 @@ function ChatThread({ conversation }) {
     event.currentTarget.form?.requestSubmit()
   }
 
+  const insertQuickReply = (body) => {
+    setDraftMessage(body)
+    window.requestAnimationFrame(() => {
+      resizeComposer(textareaRef.current)
+      textareaRef.current?.focus()
+    })
+  }
+
   return (
     <div className="flex h-[calc(100dvh-var(--gafflo-app-header-offset)-var(--gafflo-bottom-nav-offset)-0.75rem)] min-h-[34rem] flex-col overflow-hidden">
       <CompactPropertyHeader
@@ -328,35 +345,51 @@ function ChatThread({ conversation }) {
           description="This application is closed. The message history remains available."
         />
       ) : (
-        <form
-          id="message-composer"
-          onSubmit={handleSubmit}
-          className="-mx-4 shrink-0 border-t border-slate-200 bg-white/97 px-4 pb-3 pt-2 shadow-[0_-18px_34px_-28px_rgba(15,23,42,0.35)] backdrop-blur-md md:mx-0 md:rounded-[24px] md:border md:p-2"
-        >
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={draftMessage}
-              onChange={(event) => {
-                setDraftMessage(event.target.value)
-                resizeComposer(event.target)
-              }}
-              onKeyDown={handleComposerKeyDown}
-              maxLength={1200}
-              placeholder="Write a message"
-              className="max-h-36 min-h-12 flex-1 resize-none overflow-y-auto rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3 text-base leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-            />
-            <button
-              type="submit"
-              disabled={!draftMessage.trim() || composerDisabled}
-              aria-label="Send message"
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-950 text-lg font-semibold text-white shadow-soft transition duration-200 hover:bg-indigo-900 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              ↑
-            </button>
-          </div>
-        </form>
+        <div className="-mx-4 shrink-0 md:mx-0">
+          {role === 'landlord' ? (
+            <div className="flex gap-2 overflow-x-auto px-4 pb-2 md:px-0" aria-label="Quick replies">
+              {landlordQuickReplies.map((reply) => (
+                <button
+                  key={reply.id}
+                  type="button"
+                  onClick={() => insertQuickReply(reply.body)}
+                  className="min-h-9 shrink-0 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-soft transition hover:border-indigo-200 hover:text-indigo-900 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+                >
+                  {reply.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <form
+            id="message-composer"
+            onSubmit={handleSubmit}
+            className="border-t border-slate-200 bg-white/97 px-4 pb-3 pt-2 shadow-[0_-18px_34px_-28px_rgba(15,23,42,0.35)] backdrop-blur-md md:rounded-[24px] md:border md:p-2"
+          >
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={draftMessage}
+                onChange={(event) => {
+                  setDraftMessage(event.target.value)
+                  resizeComposer(event.target)
+                }}
+                onKeyDown={handleComposerKeyDown}
+                maxLength={1200}
+                placeholder="Write a message"
+                className="max-h-36 min-h-12 flex-1 resize-none overflow-y-auto rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3 text-base leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+              />
+              <button
+                type="submit"
+                disabled={!draftMessage.trim() || composerDisabled}
+                aria-label="Send message"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-950 text-lg font-semibold text-white shadow-soft transition duration-200 hover:bg-indigo-900 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                ↑
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   )

@@ -30,6 +30,7 @@ import {
   getSmartMatchAllowance,
 } from '../config/entitlements'
 import { LANDLORD_PLAN, pricingPlans, TENANT_PLAN } from '../config/pricingPlans'
+import { isLaunchAccessEnabled, smartMatchAccess } from '../config/smartMatch'
 import { sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
 import { getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
@@ -669,6 +670,22 @@ describe('pricing and entitlements', () => {
     expect(getEffectiveSmartMatchAllowance(TENANT_PLAN.FREE, { launchAccessEnabled: true })).toBe(Infinity)
     expect(getEffectiveSmartMatchAllowance(TENANT_PLAN.FREE, { launchAccessEnabled: false })).toBe(getSmartMatchAllowance(TENANT_PLAN.FREE))
     expect(getEffectiveInterestAllowance(TENANT_PLAN.GAFFLO_PLUS, { launchAccessEnabled: false })).toBe(getInterestAllowance(TENANT_PLAN.GAFFLO_PLUS))
+  })
+
+  it('keeps the committed launch-access default outside a browser (no window to read a test override from)', () => {
+    // The override key is a test-only escape hatch read from window.localStorage. Outside a
+    // browser (this Node test environment), isLaunchAccessEnabled() must fall back to exactly
+    // the committed smartMatchAccess.launchAccessEnabled value — the override branch itself is
+    // exercised in e2e/frontend-integrity.spec.js, which runs in a real browser.
+    expect(isLaunchAccessEnabled()).toBe(smartMatchAccess.launchAccessEnabled)
+    expect(smartMatchAccess.launchAccessEnabled).toBe(true)
+  })
+
+  it('prices Single Listing Plus as an honest one-off, never disguised as a subscription', () => {
+    const singleListingPlus = pricingPlans.listingProducts.single_listing_plus
+    expect(singleListingPlus.unit).toBe('listing')
+    expect(singleListingPlus.features.join(' ')).toMatch(/one-off/i)
+    expect(singleListingPlus.features.join(' ')).not.toMatch(/per month/i)
   })
 
   it('never lets plan affect the Rental Fit score', () => {

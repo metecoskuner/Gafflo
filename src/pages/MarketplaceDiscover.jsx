@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
+import GaffloPlusPreview from '../components/GaffloPlusPreview'
 import MatchBadge from '../components/MatchBadge'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, LISTING_CATEGORIES } from '../config/listingCategories'
@@ -35,6 +36,7 @@ export default function MarketplaceDiscover() {
   const [viewMode, setViewMode] = useState('smart')
   const [leaving, setLeaving] = useState(null)
   const [savedPulseId, setSavedPulseId] = useState(null)
+  const [showGaffloPlus, setShowGaffloPlus] = useState(false)
   // Smart Match ranking is compatibility-only — never sort this deck by exposure/boost.
   const rankedSmartMatches = useMemo(() => sortBySmartMatchScore(availableProperties), [availableProperties])
   // Browse may weight a paid boost's exposure; Rental Fit still decides order within each group.
@@ -126,6 +128,7 @@ export default function MarketplaceDiscover() {
           interestLimitReached={!smartMatchUsage.isLaunchFree && smartMatchUsage.interestsRemaining <= 0}
           noActiveListings={allActiveProperties.length === 0}
           freePlanMessage={smartMatchUsage.access.freePlanMessage}
+          onExploreGafflo={() => setShowGaffloPlus(true)}
         />
       ) : (
         <section className="grid gap-4 md:grid-cols-2">
@@ -145,6 +148,8 @@ export default function MarketplaceDiscover() {
           })}
         </section>
       )}
+
+      {showGaffloPlus ? <GaffloPlusPreview onClose={() => setShowGaffloPlus(false)} /> : null}
     </div>
   )
 }
@@ -168,8 +173,8 @@ function SmartMatchDeck({
   interestLimitReached,
   noActiveListings,
   freePlanMessage,
+  onExploreGafflo,
 }) {
-  const navigate = useNavigate()
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
   const [dragIntent, setDragIntent] = useState(null)
   const pointerStart = useRef(null)
@@ -294,13 +299,15 @@ function SmartMatchDeck({
           </Button>
         </div>
         {smartLimitReached ? (
-          <button
-            type="button"
-            onClick={() => navigate('/profile')}
-            className="mt-4 text-xs font-semibold text-indigo-700 underline decoration-indigo-200 underline-offset-2 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
-          >
-            Explore Gafflo+
-          </button>
+          <div className="mt-5 rounded-[20px] border border-indigo-100 bg-indigo-50/50 p-4 text-left">
+            <p className="text-sm font-semibold text-slate-950">Want more today?</p>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Gafflo+ gives you more Smart Match cards and Interested actions each day.
+            </p>
+            <Button variant="secondary" className="mt-3 w-full border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-50" onClick={onExploreGafflo}>
+              Continue with Gafflo+
+            </Button>
+          </div>
         ) : null}
       </section>
     )
@@ -319,10 +326,10 @@ function SmartMatchDeck({
     <section className="mx-auto max-w-[520px]">
       <div className="relative [perspective:1200px]">
         {nextProperty ? (
-          <PropertyDeckFace
-            property={nextProperty}
-            className="pointer-events-none absolute inset-x-3 top-4 -z-10 opacity-45"
-            interactive={false}
+          <div
+            aria-hidden="true"
+            data-testid="smart-match-backplate"
+            className="card-shadow pointer-events-none absolute inset-x-3 top-4 -z-10 h-[23rem] rounded-[32px] border border-slate-200/70 bg-white min-[390px]:h-[24rem]"
             style={{
               transform: `translateY(${18 - dragRatio * 11}px) scale(${0.958 + dragRatio * 0.03})`,
             }}
@@ -383,19 +390,22 @@ function SmartMatchDeck({
         </Button>
       </div>
       {smartLimitReached || interestLimitReached ? (
-        <button
-          type="button"
-          onClick={() => navigate('/profile')}
-          className="mt-3 block w-full text-center text-xs font-semibold text-indigo-700 underline decoration-indigo-200 underline-offset-2 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
-        >
-          Explore Gafflo+
-        </button>
+        <div className="mt-3 rounded-[20px] border border-indigo-100 bg-indigo-50/50 p-3">
+          <p className="text-xs leading-5 text-slate-600">
+            {smartLimitReached
+              ? "You've reached today's Smart Match card limit."
+              : "You've reached today's Interested limit."}
+          </p>
+          <Button variant="secondary" className="mt-2 w-full border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-50" onClick={onExploreGafflo}>
+            Continue with Gafflo+
+          </Button>
+        </div>
       ) : null}
     </section>
   )
 }
 
-function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null, className = '', interactive = true, style }) {
+function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null }) {
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
   const roomListing = isRoomListing(property.listingCategory)
@@ -411,11 +421,9 @@ function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null, 
           : highlight === 'pass'
             ? 'border-slate-300 ring-4 ring-slate-100'
             : ''
-      } ${className}`}
-      aria-hidden={!interactive}
-      style={style}
+      }`}
     >
-      <div data-smart-swipe-zone={interactive ? 'true' : undefined} className="relative h-[23rem] min-[390px]:h-[24rem]">
+      <div data-smart-swipe-zone="true" className="relative h-[23rem] min-[390px]:h-[24rem]">
         <ImageWithSkeleton src={property.images[0]} alt={property.title} draggable={false} />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/86 via-slate-950/20 to-transparent" />
         <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">

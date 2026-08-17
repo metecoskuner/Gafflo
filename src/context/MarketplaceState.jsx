@@ -14,7 +14,7 @@ import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from
 import { getDurableListingImages, getDurablePhotoMetadata } from '../config/photoMetadata'
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
-import { smartMatchAccess } from '../config/smartMatch'
+import { isLaunchAccessEnabled, smartMatchAccess } from '../config/smartMatch'
 import { getActiveListingAllowance, getEffectiveInterestAllowance, getEffectiveSmartMatchAllowance, getInterestAllowance, getSmartMatchAllowance } from '../config/entitlements'
 import { normalizeViewingSlots, validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { mockConversations, mockEnquiries, mockProperties, mockTenants } from '../data/marketplace'
@@ -324,8 +324,9 @@ export function AppStateProvider({ children }) {
   const todaysSmartMatchActivity = smartMatchActivity[todayKey] || { cards: 0, interests: 0 }
   const smartMatchCardAllowance = getSmartMatchAllowance(tenantPlan)
   const smartMatchInterestAllowance = getInterestAllowance(tenantPlan)
-  const effectiveSmartMatchCardAllowance = getEffectiveSmartMatchAllowance(tenantPlan, { launchAccessEnabled: smartMatchAccess.launchAccessEnabled })
-  const effectiveSmartMatchInterestAllowance = getEffectiveInterestAllowance(tenantPlan, { launchAccessEnabled: smartMatchAccess.launchAccessEnabled })
+  const launchAccessEnabled = isLaunchAccessEnabled()
+  const effectiveSmartMatchCardAllowance = getEffectiveSmartMatchAllowance(tenantPlan, { launchAccessEnabled })
+  const effectiveSmartMatchInterestAllowance = getEffectiveInterestAllowance(tenantPlan, { launchAccessEnabled })
   const smartMatchUsage = {
     date: todayKey,
     cardsUsed: todaysSmartMatchActivity.cards || 0,
@@ -336,7 +337,7 @@ export function AppStateProvider({ children }) {
     interestAllowance: smartMatchInterestAllowance,
     plan: tenantPlan,
     access: smartMatchAccess,
-    isLaunchFree: smartMatchAccess.launchAccessEnabled,
+    isLaunchFree: launchAccessEnabled,
   }
 
   const persistAccount = useCallback((nextAccount) => {

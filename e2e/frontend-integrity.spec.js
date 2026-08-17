@@ -23,7 +23,7 @@ const tenantProfile = {
   parkingNeeded: 'no',
 }
 
-async function seedState(page, { account = tenantAccount, profile = tenantProfile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan } = {}) {
+async function seedState(page, { account = tenantAccount, profile = tenantProfile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride } = {}) {
   await page.addInitScript((state) => {
     window.localStorage.clear()
     if (state.account) window.localStorage.setItem('gafflo.account', JSON.stringify(state.account))
@@ -35,7 +35,20 @@ async function seedState(page, { account = tenantAccount, profile = tenantProfil
     if (state.dismissed) window.localStorage.setItem('gafflo.dismissed-properties', JSON.stringify(state.dismissed))
     if (state.tenantPlan) window.localStorage.setItem('gafflo.tenant-plan', JSON.stringify(state.tenantPlan))
     if (state.landlordPlan) window.localStorage.setItem('gafflo.landlord-plan', JSON.stringify(state.landlordPlan))
-  }, { account, profile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan })
+    if (state.smartMatchActivity) window.localStorage.setItem('gafflo.smart-match-activity', JSON.stringify(state.smartMatchActivity))
+    // Test-only escape hatch: nothing in the shipped app ever writes this key. It lets E2E
+    // deterministically exercise the post-launch (non-launch) limit UX without touching the
+    // committed smartMatchAccess.launchAccessEnabled=true value real users get.
+    if (state.launchOverride !== undefined) window.localStorage.setItem('gafflo.test-launch-access-override', String(state.launchOverride))
+  }, { account, profile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride })
+}
+
+function todayDateKey() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 async function visibleSmartCardLabel(page) {
@@ -837,14 +850,26 @@ test('landlord profile shows a Landlord Plus upgrade entry point with only real,
   await expect(page.getByText('Landlord Plus')).toBeVisible()
   await expect(page.getByText('€19.99')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Purchase' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Explore benefits' }).click()
-  await expect(page.getByText('Up to 3 active listings')).toBeVisible()
-  // Applicant tools, templates, analytics and the boost credit have no UI behind them yet.
-  await expect(page.getByText('Advanced applicant filters')).toHaveCount(0)
-  await expect(page.getByText('Private applicant notes')).toHaveCount(0)
-  await expect(page.getByText('Reusable message templates')).toHaveCount(0)
-  await expect(page.getByText('Listing performance analytics')).toHaveCount(0)
-  await expect(page.getByText('Listing Boost credit')).toHaveCount(0)
+})
+
+test('landlord plans preview shows Free, Single Listing Plus, Landlord Plus and Boost with the trust line, and is non-transactional', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page, { account: landlordAccount, profile: null })
+  await page.goto('/profile')
+
+  await page.getByRole('button', { name: 'Explore plans and add-ons' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Plans and add-ons' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('Landlord Free')).toBeVisible()
+  await expect(dialog.getByText('Single Listing Plus')).toBeVisible()
+  await expect(dialog.getByText('Landlord Plus')).toBeVisible()
+  await expect(dialog.getByText('Listing Boost')).toBeVisible()
+  await expect(dialog.getByText('You can pay for exposure. You cannot pay for compatibility.', { exact: false })).toBeVisible()
+  // Applicant tools, templates-as-a-paid-feature, and analytics have no UI behind them yet.
+  await expect(dialog.getByText('Advanced applicant filters')).toHaveCount(0)
+  await expect(dialog.getByText('Listing analytics')).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: 'Coming soon' })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: /^(Subscribe|Buy|Purchase|Pay now)$/ })).toHaveCount(0)
 })
 
 test('free landlord cannot resume a listing beyond the active listing allowance', async ({ page }) => {
@@ -881,16 +906,49 @@ test('bottom nav remains visible and does not block a lower primary action', asy
   await expect(page.getByText('Property details').first()).toBeVisible()
 })
 
-test('landlord dashboard keeps only decision-oriented metrics, not ones owned by Properties or Applicants', async ({ page }) => {
+test('landlord dashboard surfaces a "what needs your attention" summary instead of duplicated metrics', async ({ page }) => {
   await seedState(page, { account: landlordAccount })
   await page.goto('/dashboard')
 
-  await expect(page.getByText('New interested tenants', { exact: true })).toBeVisible()
-  await expect(page.getByText('Unread messages')).toBeVisible()
-  await expect(page.getByText('Upcoming viewings').first()).toBeVisible()
-  // These now live only on Properties (status tabs) and Applicants (pipeline tabs).
+  await expect(page.getByRole('heading', { name: 'What needs your attention' })).toBeVisible()
+  await expect(page.getByText(/new applicant/)).toBeVisible()
+  // These now live only on Properties (status tabs) and Applicants (pipeline tabs), and the old
+  // flat metric-tile grid + separate "new interested tenants" card are gone.
   await expect(page.getByText('Active properties')).toHaveCount(0)
-  await expect(page.getByText('Shortlisted tenants')).toHaveCount(0)
+  await expect(page.getByText('Shortlisted tenants', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('New interested tenants', { exact: true })).toHaveCount(0)
+})
+
+test('landlord dashboard shows a calm empty state when nothing needs attention — no fake urgency', async ({ page }) => {
+  const now = new Date().toISOString()
+  const unrelatedEnquiry = {
+    id: 'enquiry-unrelated',
+    propertyId: 'property-smithfield-studio',
+    tenantId: 'tenant-someone-else',
+    ownerId: 'owner-agent-1',
+    status: 'sent',
+    createdAt: now,
+    updatedAt: now,
+    message: 'Hi',
+    viewing: { status: 'none', proposedSlots: [], selectedSlot: '' },
+  }
+  const unrelatedConversation = {
+    id: 'conversation-unrelated',
+    propertyId: 'property-smithfield-studio',
+    enquiryId: 'enquiry-unrelated',
+    tenantId: 'tenant-someone-else',
+    ownerId: 'owner-agent-1',
+    archived: false,
+    unreadFor: null,
+    createdAt: now,
+    updatedAt: now,
+    messages: [{ id: 'm-unrelated', sender: 'tenant', body: 'Hi', createdAt: now }],
+  }
+  await seedState(page, { account: landlordAccount, enquiries: [unrelatedEnquiry], conversations: [unrelatedConversation] })
+  await page.goto('/dashboard')
+
+  await expect(page.getByRole('heading', { name: 'What needs your attention' })).toBeVisible()
+  await expect(page.getByText(/all caught up/i)).toBeVisible()
 })
 
 test('smart match card caps secondary status pills at two high-value signals', async ({ page }) => {
@@ -932,4 +990,212 @@ test('smart match card caps secondary status pills at two high-value signals', a
   await expect(card.getByText('Landlord interested')).toBeVisible()
   await expect(card.getByText('New', { exact: true })).toBeVisible()
   await expect(card.getByText('Saved', { exact: true })).toHaveCount(0)
+})
+
+test('Smart Match never renders the next listing’s photo or text underneath the active card', async ({ page }) => {
+  await seedState(page)
+  await page.goto('/discover')
+
+  const backplate = page.getByTestId('smart-match-backplate')
+  await expect(backplate).toBeVisible()
+  await expect(backplate.locator('img')).toHaveCount(0)
+  const backplateText = (await backplate.textContent()) ?? ''
+  expect(backplateText.trim()).toBe('')
+
+  // Scoped to the active-card + backplate stack only: exactly one image belongs there — the
+  // active card's own photo. The backplate contributes none of its own.
+  const deckStack = backplate.locator('xpath=..')
+  await expect(deckStack.locator('img')).toHaveCount(1)
+})
+
+const allPublishedMockPropertyIds = [
+  'property-rathmines-2bed',
+  'property-smithfield-studio',
+  'room-ranelagh-private',
+  'room-portobello-owner',
+  'property-ballsbridge-1bed',
+  'property-portobello-1bed',
+  'property-grand-canal-2bed',
+]
+
+test('reviewing all eligible listings is not treated as a paywall event', async ({ page }) => {
+  await seedState(page, { dismissed: allPublishedMockPropertyIds })
+  await page.goto('/discover')
+
+  await expect(page.getByRole('heading', { name: "You've reviewed all eligible listings." })).toBeVisible()
+  await expect(page.getByText('Continue with Gafflo+')).toHaveCount(0)
+  await expect(page.getByText('Want more today?')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Continue browsing' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start over' })).toBeEnabled()
+})
+
+test('reviewing all eligible listings still avoids the paywall on the non-launch limit path when the limit itself has not been hit', async ({ page }) => {
+  await seedState(page, {
+    dismissed: allPublishedMockPropertyIds,
+    launchOverride: false,
+    smartMatchActivity: { [todayDateKey()]: { cards: 2, interests: 1 } },
+  })
+  await page.goto('/discover')
+
+  await expect(page.getByRole('heading', { name: "You've reviewed all eligible listings." })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Daily Smart Match limit reached.' })).toHaveCount(0)
+  await expect(page.getByText('Continue with Gafflo+')).toHaveCount(0)
+})
+
+test('hitting the daily Smart Match card limit on the non-launch path shows a restrained Gafflo+ upgrade that opens the plan directly', async ({ page }) => {
+  await seedState(page, {
+    launchOverride: false,
+    smartMatchActivity: { [todayDateKey()]: { cards: 30, interests: 0 } },
+  })
+  await page.goto('/discover')
+
+  await expect(page.getByText("You've reached today's Smart Match card limit.")).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Pass' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /Interested|Limit reached/ })).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Continue with Gafflo+' }).click()
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Gafflo+' })).toBeVisible()
+  // Opens in place — never a route change to Profile.
+  await expect(page).toHaveURL(/\/discover/)
+})
+
+test('hitting the daily Interested limit on the non-launch path explains the allowance without promising unlimited use', async ({ page }) => {
+  await seedState(page, {
+    launchOverride: false,
+    smartMatchActivity: { [todayDateKey()]: { cards: 5, interests: 10 } },
+  })
+  await page.goto('/discover')
+
+  await expect(page.getByText("You've reached today's Interested limit.")).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Limit reached' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Pass' })).toBeEnabled()
+  await expect(page.getByText('unlimited', { exact: false })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Continue with Gafflo+' }).click()
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Gafflo+' })).toBeVisible()
+})
+
+test('while launch access is enabled, heavy Smart Match usage never forces a paywall and the actual plan stays Free', async ({ page }) => {
+  await seedState(page, { smartMatchActivity: { [todayDateKey()]: { cards: 500, interests: 500 } } })
+  await page.goto('/discover')
+
+  await expect(page.getByRole('button', { name: 'Pass' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Interested' })).toBeEnabled()
+  await expect(page.getByText('Continue with Gafflo+')).toHaveCount(0)
+  await expect(page.getByText('Cards today')).toBeVisible()
+})
+
+test('landlord quick replies insert text into the composer but never send automatically', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  const now = new Date().toISOString()
+  const conversation = {
+    id: 'conversation-quick-reply',
+    propertyId: 'property-rathmines-2bed',
+    enquiryId: 'enquiry-quick-reply',
+    tenantId: 'tenant-quick-reply',
+    ownerId: 'owner-private-1',
+    archived: false,
+    unreadFor: null,
+    createdAt: now,
+    updatedAt: now,
+    messages: [{ id: 'm-qr-1', sender: 'tenant', body: 'Hi, is this still available?', createdAt: now }],
+  }
+  await seedState(page, { account: landlordAccount, conversations: [conversation] })
+  await page.goto('/messages')
+  await page.getByRole('button', { name: /Bright two-bedroom apartment in Rathmines/ }).click()
+  await expectNoHorizontalOverflow(page)
+
+  const replyBody = 'Thanks for your interest. Could you confirm your preferred move-in date?'
+  // Scoped to rendered <p> bubble content so this never matches the composer textarea's value
+  // (a <p> has no accessible "name" from its content, so getByRole('paragraph', {name}) would
+  // silently never match anything — plain text-content filtering on the tag is what we want here).
+  const sentBubble = page.locator('p').filter({ hasText: replyBody })
+  const composer = page.getByPlaceholder('Write a message')
+  await expect(composer).toHaveValue('')
+  await expect(sentBubble).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Confirm move-in' }).click()
+  await expect(composer).toHaveValue(replyBody)
+  // Still just a draft — inserting a template must never send on its own.
+  await expect(sentBubble).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Send message' }).click()
+  await expect(sentBubble).toHaveCount(1)
+  await expect(composer).toHaveValue('')
+})
+
+test('Boost preview is informational only, non-transactional, and states the exposure-not-compatibility trust line', async ({ page }) => {
+  await seedState(page, { account: landlordAccount })
+  await page.goto('/properties')
+
+  await page.locator('article').filter({ hasText: 'Rathmines' }).getByRole('button', { name: 'Boost listing' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('Boost this listing')).toBeVisible()
+  await expect(dialog.getByText('€8.99').first()).toBeVisible()
+  await expect(
+    dialog.getByText('You can pay for exposure. You cannot pay for compatibility.', { exact: false }),
+  ).toBeVisible()
+  await expect(dialog.getByRole('button', { name: /Boost coming soon/ })).toBeDisabled()
+  await expect(dialog.getByText("Payments aren’t available yet.")).toBeVisible()
+
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  // Closing the preview must never activate the boost or mutate the listing.
+  const rathminesCard = page.locator('article').filter({ hasText: 'Rathmines' })
+  await expect(rathminesCard.getByText('Promoted')).toHaveCount(0)
+  await expect(rathminesCard.getByText('Boost active')).toHaveCount(0)
+})
+
+function buildLifecycleProperties() {
+  const base = buildTestProperty({ area: 'Drumcondra', availableFrom: '2030-01-01' })
+  return [
+    { ...base, id: 'property-lifecycle-draft', title: 'Lifecycle stage draft listing', listingStatus: 'draft', rent: null },
+    { ...base, id: 'property-lifecycle-pending', title: 'Lifecycle stage pending listing', listingStatus: 'pending_verification' },
+    { ...base, id: 'property-lifecycle-published', title: 'Lifecycle stage published listing', listingStatus: 'published' },
+    { ...base, id: 'property-lifecycle-paused', title: 'Lifecycle stage paused listing', listingStatus: 'paused' },
+    { ...base, id: 'property-lifecycle-rented', title: 'Lifecycle stage rented listing', listingStatus: 'rented' },
+  ]
+}
+
+test('each listing lifecycle stage shows exactly one clear primary action, and an unset rent stays honest', async ({ page }) => {
+  await seedState(page, { account: landlordAccount, properties: buildLifecycleProperties() })
+  await page.goto('/properties')
+
+  const draftCard = page.locator('article').filter({ hasText: 'Lifecycle stage draft listing' })
+  await expect(draftCard.getByText('Rent not set')).toBeVisible()
+  await expect(draftCard.getByRole('button', { name: 'Continue editing' })).toHaveClass(/bg-indigo-950/)
+
+  const pendingCard = page.locator('article').filter({ hasText: 'Lifecycle stage pending listing' })
+  await expect(pendingCard.getByRole('button', { name: 'Preview' })).toHaveClass(/bg-indigo-950/)
+
+  const publishedCard = page.locator('article').filter({ hasText: 'Lifecycle stage published listing' })
+  await expect(publishedCard.getByRole('button', { name: 'Applicants' })).toHaveClass(/bg-indigo-950/)
+
+  const pausedCard = page.locator('article').filter({ hasText: 'Lifecycle stage paused listing' })
+  await expect(pausedCard.getByRole('button', { name: 'Resume' })).toHaveClass(/bg-indigo-950/)
+
+  const rentedCard = page.locator('article').filter({ hasText: 'Lifecycle stage rented listing' })
+  await expect(rentedCard.getByRole('button', { name: 'View history' })).toHaveClass(/bg-indigo-950/)
+})
+
+test('new landlord monetisation surfaces stay within mobile width with no horizontal overflow', async ({ page }) => {
+  await page.setViewportSize(viewport390)
+  await seedState(page, { account: landlordAccount })
+
+  await page.goto('/properties')
+  await expectNoHorizontalOverflow(page)
+
+  await page.locator('article').filter({ hasText: 'Rathmines' }).getByRole('button', { name: 'Boost listing' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+
+  await page.locator('article').filter({ hasText: 'Drumcondra' }).getByRole('button', { name: 'Resume' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+
+  await page.goto('/profile')
+  await page.getByRole('button', { name: 'Explore plans and add-ons' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
 })
