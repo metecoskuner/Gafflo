@@ -643,24 +643,36 @@ select is_empty(
   'anon cannot read a storage.objects row for a still-draft listing''s photo path'
 );
 
--- 42. the owner can delete their own storage object; a non-owner's DELETE runs without error
--- but (like UPDATE) matches zero rows under RLS, so it is verified by checking the row still
--- exists afterward, not by expecting an exception.
+-- 42. Real Supabase's storage.objects carries a platform-owned protect_objects_delete trigger
+-- (schema `storage`, not ours) that unconditionally rejects any *direct* SQL DELETE against it —
+-- "Direct deletion from storage tables is not allowed. Use the Storage API instead." — for every
+-- role, including the object's own owner, regardless of what RLS would otherwise allow. This was
+-- found during Phase 1C validation against a real project; the local Postgres-without-Docker
+-- stand-in used to write this test had no such trigger on its hand-built storage.objects stub,
+-- so a raw SQL DELETE there behaved like UPDATE (RLS just filters non-owned rows to zero
+-- matches) — which is not what actually happens on the real platform, where it is blocked
+-- outright. delete_listing_image() was fixed in the same Phase 1C pass to use the trigger's own
+-- documented `storage.allow_delete_query` escape hatch (set local, scoped to that function's own
+-- transaction) so real owner-initiated deletes still work atomically through the guarded RPC;
+-- these two assertions now cover the *raw* SQL path only, for both a non-owner and the owner,
+-- since neither can bypass the platform trigger directly.
 select pg_temp.authenticate_as('b0000000-0000-0000-0000-00000000000b');
-select lives_ok(
+select throws_like(
   format($$ delete from storage.objects where bucket_id = 'listing-photos' and name = %L || '/real-upload.jpg' $$, :'draft_listing_id'),
-  'landlord B''s DELETE attempt on landlord A''s storage object runs without error — RLS just makes it match zero rows'
+  '%Direct deletion from storage tables is not allowed%',
+  'a direct SQL DELETE against storage.objects is rejected by the platform''s protect_objects_delete trigger, regardless of ownership'
 );
 select pg_temp.authenticate_as_test_runner();
 select isnt_empty(
   format($$ select 1 from storage.objects where bucket_id = 'listing-photos' and name = %L || '/real-upload.jpg' $$, :'draft_listing_id'),
-  'the object is still there — landlord B''s DELETE did not actually remove it'
+  'the object is still there — the blocked DELETE did not remove it'
 );
 
 select pg_temp.authenticate_as('a0000000-0000-0000-0000-00000000000a');
-select lives_ok(
+select throws_like(
   format($$ delete from storage.objects where bucket_id = 'listing-photos' and name = %L || '/real-upload.jpg' $$, :'draft_listing_id'),
-  'landlord A can delete their own storage object'
+  '%Direct deletion from storage tables is not allowed%',
+  'even the object''s own owner cannot delete it via a raw SQL DELETE — only delete_listing_image() (via its allow_delete_query escape hatch) can, atomically'
 );
 
 select * from finish();
