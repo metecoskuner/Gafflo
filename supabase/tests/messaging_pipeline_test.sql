@@ -8,7 +8,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(69);
+select plan(79);
 
 -- =========================================================================================
 -- Helpers — same pattern as every earlier suite.
@@ -579,6 +579,65 @@ select throws_ok(
   format($$ select public.send_message(%L, 'reply attempt') $$, :'conv_banned_tenant_id'),
   '42501', null,
   '69. an active landlord cannot send to a banned tenant counterpart either'
+);
+
+-- =========================================================================================
+-- PART 7 — Immutability: no client bypass of the guarded functions via direct DML.
+-- =========================================================================================
+
+select pg_temp.authenticate_as('30000000-0000-0000-0000-000000000001');
+
+select throws_ok(
+  format($$ insert into public.messages (conversation_id, sender_id, body) values (%L, '30000000-0000-0000-0000-000000000001', 'bypass attempt') $$, :'conv_a3_id'),
+  '42501', null,
+  '70. a client cannot directly INSERT into messages, bypassing send_message()'
+);
+select throws_ok(
+  format($$ update public.messages set body = 'forged content' where conversation_id = %L $$, :'conv_a3_id'),
+  '42501', null,
+  '71. a client cannot directly UPDATE a message body after sending'
+);
+select throws_ok(
+  format($$ update public.messages set created_at = '2000-01-01' where conversation_id = %L $$, :'conv_a3_id'),
+  '42501', null,
+  '72. a client cannot forge a message''s created_at timestamp'
+);
+select throws_ok(
+  format($$ delete from public.messages where conversation_id = %L $$, :'conv_a3_id'),
+  '42501', null,
+  '73. a client cannot directly DELETE a message'
+);
+
+select throws_ok(
+  $$ insert into public.conversations (listing_id, tenant_id, landlord_id) values ('00000000-0000-0000-0000-000000000000', '30000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002') $$,
+  '42501', null,
+  '74. a client cannot directly INSERT into conversations, bypassing start_conversation()'
+);
+select throws_ok(
+  format($$ update public.conversations set tenant_id = '30000000-0000-0000-0000-000000000004' where id = %L $$, :'conv_a3_id'),
+  '42501', null,
+  '75. a client cannot reassign a conversation''s tenant_id'
+);
+select throws_ok(
+  format($$ update public.conversations set landlord_id = '30000000-0000-0000-0000-000000000002' where id = %L $$, :'conv_a3_id'),
+  '42501', null,
+  '76. a client cannot reassign a conversation''s landlord_id'
+);
+select throws_ok(
+  format($$ update public.conversations set listing_id = %L where id = %L $$, :'listing_b_id', :'conv_a3_id'),
+  '42501', null,
+  '77. a client cannot reattach a conversation to a different listing'
+);
+select throws_ok(
+  format($$ delete from public.conversations where id = %L $$, :'conv_a3_id'),
+  '42501', null,
+  '78. a client cannot directly DELETE a conversation'
+);
+
+select throws_ok(
+  format($$ insert into public.conversation_participant_state (conversation_id, user_id) values (%L, '30000000-0000-0000-0000-000000000004') $$, :'conv_a3_id'),
+  '42501', null,
+  '79. a client cannot directly INSERT a participant-state row for themselves or anyone else'
 );
 
 select * from finish();
