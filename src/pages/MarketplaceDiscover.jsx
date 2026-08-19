@@ -10,6 +10,7 @@ import { formatFreshness, getBrowseFacts, getSmartMatchFacts } from '../config/l
 import { isListingPromoted, sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
 import { getPrimaryTrustSignal, isNewProperty } from '../config/rentalJourney'
 import useAppState from '../context/useAppState'
+import useApplications from '../context/useApplications'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
@@ -21,18 +22,17 @@ export default function MarketplaceDiscover() {
   const {
     activeFilterCount,
     activeProperties: allActiveProperties,
-    createEnquiry,
     discoveryProperties,
     availableProperties,
-    expressSmartMatchInterest,
+    recordSmartMatchInterest,
     passSmartMatchProperty,
     resetPropertyFilters,
     saveProperty,
     savedPropertyIds,
     smartMatchUsage,
     startOver,
-    tenantEnquiries,
   } = useAppState()
+  const { getTenantApplicationForListing, applyToListing } = useApplications()
   const [viewMode, setViewMode] = useState('smart')
   const [leaving, setLeaving] = useState(null)
   const [savedPulseId, setSavedPulseId] = useState(null)
@@ -42,13 +42,26 @@ export default function MarketplaceDiscover() {
   // Browse may weight a paid boost's exposure; Rental Fit still decides order within each group.
   const browseProperties = useMemo(() => sortForBrowseExposure(discoveryProperties), [discoveryProperties])
 
-  const handleInterest = (propertyId) => {
-    expressSmartMatchInterest(propertyId)
+  // "Interested" here means Apply (Stage D) — see the Stage D report's CTA audit. If the listing
+  // was already applied to (e.g. resurfaced by "Start over", which resets dismissedPropertyIds),
+  // this only records the local daily-usage/dismiss bookkeeping and never re-submits a duplicate
+  // application; the real backend's unique(listing_id, tenant_id) constraint is never relied on
+  // as the only guard against that from this surface.
+  const handleInterest = async (propertyId) => {
+    if (getTenantApplicationForListing(propertyId)) {
+      recordSmartMatchInterest(propertyId)
+      return
+    }
+    const { error } = await applyToListing(propertyId)
+    if (!error) recordSmartMatchInterest(propertyId)
   }
 
-  const openEnquiry = (propertyId) => {
-    const conversationId = createEnquiry(propertyId)
-    if (conversationId) navigate(`/messages/${conversationId}`)
+  const handleBrowseCardAction = async (propertyId, hasApplication) => {
+    if (hasApplication) {
+      navigate(`/properties/${propertyId}`)
+      return
+    }
+    await applyToListing(propertyId)
   }
 
   const activeProperties = viewMode === 'smart' ? rankedSmartMatches : browseProperties
@@ -108,7 +121,7 @@ export default function MarketplaceDiscover() {
           key={`${location.key}-${rankedSmartMatches[0]?.id || 'empty'}`}
           properties={rankedSmartMatches}
           savedPropertyIds={savedPropertyIds}
-          tenantEnquiries={tenantEnquiries}
+          getTenantApplicationForListing={getTenantApplicationForListing}
           leaving={leaving}
           onDetails={(propertyId) => navigate(`/properties/${propertyId}`)}
           onInterest={handleInterest}
@@ -133,15 +146,15 @@ export default function MarketplaceDiscover() {
       ) : (
         <section className="grid gap-4 md:grid-cols-2">
           {browseProperties.map((property) => {
-            const enquiry = tenantEnquiries.find((item) => item.propertyId === property.id)
+            const application = getTenantApplicationForListing(property.id)
             return (
               <PropertyBrowseCard
                 key={property.id}
                 property={property}
                 isSaved={savedPropertyIds.includes(property.id)}
-                enquiryStatus={enquiry?.statusLabel}
+                applicationStatus={application?.statusLabel}
                 onDetails={() => navigate(`/properties/${property.id}`)}
-                onInterest={() => openEnquiry(property.id)}
+                onInterest={() => handleBrowseCardAction(property.id, Boolean(application))}
                 onSave={() => saveProperty(property.id)}
               />
             )
@@ -157,7 +170,7 @@ export default function MarketplaceDiscover() {
 function SmartMatchDeck({
   properties,
   savedPropertyIds,
-  tenantEnquiries,
+  getTenantApplicationForListing,
   leaving,
   onBrowse,
   onDetails,
@@ -313,7 +326,7 @@ function SmartMatchDeck({
     )
   }
 
-  const enquiry = tenantEnquiries.find((item) => item.propertyId === activeProperty.id)
+  const application = getTenantApplicationForListing(activeProperty.id)
   const isSaved = savedPropertyIds.includes(activeProperty.id)
   const rotate = drag.x / 26
   const activeScale = 1 - dragRatio * 0.012
@@ -369,7 +382,7 @@ function SmartMatchDeck({
           onPointerUp={handlePointerUp}
           onPointerCancel={resetDrag}
         >
-          <PropertyDeckFace property={activeProperty} enquiryStatus={enquiry?.statusLabel} isSaved={isSaved} highlight={passedThreshold ? intent : null} />
+          <PropertyDeckFace property={activeProperty} applicationStatus={application?.statusLabel} isSaved={isSaved} highlight={passedThreshold ? intent : null} />
           <SwipeIntentBadge intent={intent || leaving?.action} opacity={leaving ? 1 : dragRatio} ready={passedThreshold} />
         </div>
       </div>
@@ -405,7 +418,7 @@ function SmartMatchDeck({
   )
 }
 
-function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null }) {
+function PropertyDeckFace({ property, applicationStatus, isSaved, highlight = null }) {
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
   const roomListing = isRoomListing(property.listingCategory)
@@ -453,7 +466,7 @@ function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null }
           </ul>
         </div>
         <div className="flex flex-wrap gap-2">
-          {getSecondarySignalPills({ enquiryStatus, isNew, trustSignal, isSaved, availability, updated }).map(({ tone, label }) => (
+          {getSecondarySignalPills({ applicationStatus, isNew, trustSignal, isSaved, availability, updated }).map(({ tone, label }) => (
             <Pill key={label} tone={tone}>{label}</Pill>
           ))}
         </div>
@@ -465,9 +478,9 @@ function PropertyDeckFace({ property, enquiryStatus, isSaved, highlight = null }
 // Caps the swipe card's secondary status pills to the ~2 signals most likely to change a
 // tenant's decision (an existing application first, then freshness/trust) — everything else
 // still reaches the tenant through Property Details, which is one tap away.
-function getSecondarySignalPills({ enquiryStatus, isNew, trustSignal, isSaved, availability, updated }) {
+function getSecondarySignalPills({ applicationStatus, isNew, trustSignal, isSaved, availability, updated }) {
   return [
-    enquiryStatus ? { tone: 'dark', label: enquiryStatus } : null,
+    applicationStatus ? { tone: 'dark', label: applicationStatus } : null,
     isNew ? { tone: 'new', label: 'New' } : trustSignal ? { tone: 'trust', label: trustSignal } : null,
     isSaved ? { tone: 'green', label: 'Saved' } : null,
     availability ? { tone: 'green', label: availability } : updated ? { tone: 'trust', label: updated } : null,
@@ -495,7 +508,7 @@ function SwipeIntentBadge({ intent, opacity, ready }) {
   )
 }
 
-function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInterest, onSave }) {
+function PropertyBrowseCard({ property, isSaved, applicationStatus, onDetails, onInterest, onSave }) {
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
   const isPromoted = isListingPromoted(property)
@@ -537,14 +550,14 @@ function PropertyBrowseCard({ property, isSaved, enquiryStatus, onDetails, onInt
           {trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}
           {availability ? <Pill tone="green">{availability}</Pill> : null}
         </div>
-        {enquiryStatus ? (
+        {applicationStatus ? (
           <div className="rounded-[20px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
-            Enquiry status: {enquiryStatus}
+            Application status: {applicationStatus}
           </div>
         ) : null}
         <div className="grid grid-cols-2 gap-2">
           <Button variant={isSaved ? 'secondary' : 'primary'} data-account-action="save-property" onClick={onSave}>{isSaved ? 'Saved' : 'Save'}</Button>
-          <Button variant="dark" data-account-action={enquiryStatus ? 'open-message' : 'send-interest'} onClick={onInterest}>{enquiryStatus ? 'Open' : 'Interested'}</Button>
+          <Button variant="dark" data-account-action={applicationStatus ? 'view-application' : 'send-interest'} onClick={onInterest}>{applicationStatus ? 'View status' : 'Apply'}</Button>
         </div>
       </div>
     </article>

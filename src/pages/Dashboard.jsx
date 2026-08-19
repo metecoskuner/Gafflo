@@ -5,6 +5,7 @@ import MatchBadge from '../components/MatchBadge'
 import { getViewingRows, hasCoreMatchFacts } from '../config/rentalJourney'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
+import useApplications from '../context/useApplications'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
@@ -15,9 +16,13 @@ export default function Dashboard() {
 
 function TenantDashboard() {
   const navigate = useNavigate()
-  const { activeProperties, savedProperties, tenantEnquiries, tenantProfile } = useAppState()
+  const { activeProperties, savedProperties, tenantProfile } = useAppState()
+  const { tenantApplications } = useApplications()
   const topProperty = [...activeProperties].sort((a, b) => b.match.score - a.match.score)[0]
-  const viewings = getViewingRows(tenantEnquiries, 'tenant')
+  // Real applications never carry a `.viewing` sub-object (Stage D deliberately never fabricates
+  // one — see the Stage D report) so this always and honestly renders the empty state until
+  // Stage F wires real viewings; no mock data or extra branching needed here for that.
+  const viewings = getViewingRows(tenantApplications, 'tenant')
 
   return (
     <div className="space-y-5">
@@ -39,7 +44,7 @@ function TenantDashboard() {
       <section className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
         <Metric label="Active" value={String(activeProperties.length)} />
         <Metric label="Saved" value={String(savedProperties.length)} />
-        <Metric label="Enquiries" value={String(tenantEnquiries.length)} />
+        <Metric label="Applications" value={String(tenantApplications.length)} />
       </section>
 
       <UpcomingViewings rows={viewings} role="tenant" onOpenMessages={() => navigate('/messages')} />
@@ -84,11 +89,15 @@ function TenantDashboard() {
 
 function LandlordDashboard() {
   const navigate = useNavigate()
-  const { conversations, landlordEnquiries } = useAppState()
-  const newInterest = landlordEnquiries.filter((enquiry) => enquiry.status === 'sent').length
+  const { conversations } = useAppState()
+  const { landlordApplications } = useApplications()
+  const newInterest = landlordApplications.filter((application) => application.status === 'sent').length
   const unreadMessages = conversations.filter((conversation) => conversation.unreadFor === 'landlord').length
-  const viewings = landlordEnquiries.filter((enquiry) => ['viewing proposed', 'viewing confirmed'].includes(enquiry.viewing?.status)).length
-  const viewingRows = getViewingRows(landlordEnquiries, 'landlord')
+  // Real applications never carry a `.viewing` sub-object (Stage D deliberately never fabricates
+  // one), so both of these always and honestly resolve to zero/empty until Stage F wires real
+  // viewings — see the matching comment on TenantDashboard above.
+  const viewings = landlordApplications.filter((application) => ['viewing_proposed', 'viewing_confirmed'].includes(application.viewing?.status)).length
+  const viewingRows = getViewingRows(landlordApplications, 'landlord')
 
   return (
     <div className="space-y-5">

@@ -10,7 +10,7 @@ import { normalizeViewingSlots, validateViewingChoice, validateViewingProposal }
 import { mockConversations, mockEnquiries, mockTenants } from '../data/marketplace'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { getLocalDateKey } from '../utils/localDate'
-import { hasDuplicateEnquiry, hasDuplicateRecentMessage, hasLandlordMessage, sanitizeMessageBody } from '../utils/messagingRules'
+import { hasDuplicateRecentMessage, hasLandlordMessage, sanitizeMessageBody } from '../utils/messagingRules'
 import { belongsToViewer } from '../utils/ownership'
 import AppStateContext from './AppStateContext'
 import useAccountProfile from './useAccountProfile'
@@ -422,55 +422,34 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'success', message: 'Enquiry sent.' })
       return getOrCreateConversationForEnquiry(nextEnquiry)
     },
-    expressSmartMatchInterest(propertyId) {
+    // Stage D: the actual apply-to-listing write is real now (see useApplications().applyToListing,
+    // called by MarketplaceDiscover before this runs) — this stays local-only bookkeeping for the
+    // Smart Match deck's own daily card/interest allowance and dismissal, never enquiry/conversation
+    // creation. Returns whether the local gating allowed the interest to be recorded at all, so the
+    // caller knows whether to bother calling the real apply action.
+    recordSmartMatchInterest(propertyId) {
       if (activeRole === 'landlord') {
-        setToast({ type: 'info', message: 'Switch to tenant mode to send interest.' })
-        return null
+        setToast({ type: 'info', message: 'Switch to tenant mode to apply.' })
+        return false
       }
-      const existing = hasDuplicateEnquiry(enquiries, propertyId, currentTenantId)
-        ? enquiries.find((enquiry) => enquiry.propertyId === propertyId && enquiry.tenantId === currentTenantId)
-        : null
-      let conversationId = existing ? getOrCreateConversationForEnquiry(existing) : null
-      if (!conversationId) {
-        if (todaysSmartMatchActivity.interests >= effectiveSmartMatchInterestAllowance) {
-          setToast({ type: 'info', message: 'Daily interest limit reached. You can still browse and save listings.' })
-          return null
-        }
-        if (todaysSmartMatchActivity.cards >= effectiveSmartMatchCardAllowance) {
-          setToast({ type: 'info', message: 'Daily Smart Match card limit reached. Browse is still available.' })
-          return null
-        }
-        if (isBlockedThread(conversations, propertyId, currentTenantId)) {
-          setToast({ type: 'info', message: 'Messaging is blocked for this listing.' })
-          return null
-        }
-        const property = getPublicPropertyById(properties, propertyId)
-        if (!property) {
-          setToast({ type: 'info', message: 'This listing is not accepting new enquiries.' })
-          return null
-        }
-        const now = new Date().toISOString()
-        const nextEnquiry = {
-          id: `enquiry-${propertyId}-${Date.now()}`,
-          propertyId,
-          tenantId: currentTenantId,
-          ownerId: property?.ownerId || currentOwnerId,
-          status: 'sent',
-          createdAt: now,
-          updatedAt: now,
-          message: `I am interested in ${property?.title || 'this property'}.`,
-          viewing: { status: 'none', proposedSlots: [], selectedSlot: '' },
-        }
-        persistEnquiries([nextEnquiry, ...enquiries])
-        conversationId = getOrCreateConversationForEnquiry(nextEnquiry)
+      if (todaysSmartMatchActivity.interests >= effectiveSmartMatchInterestAllowance) {
+        setToast({ type: 'info', message: 'Daily interest limit reached. You can still browse and save listings.' })
+        return false
       }
-      if (dismissedPropertyIds.includes(propertyId)) return conversationId
+      if (todaysSmartMatchActivity.cards >= effectiveSmartMatchCardAllowance) {
+        setToast({ type: 'info', message: 'Daily Smart Match card limit reached. Browse is still available.' })
+        return false
+      }
+      if (!getPublicPropertyById(properties, propertyId)) {
+        setToast({ type: 'info', message: 'This listing is not accepting new applications.' })
+        return false
+      }
       const next = dismissedPropertyIds.includes(propertyId) ? dismissedPropertyIds : [...dismissedPropertyIds, propertyId]
       setDismissedPropertyIds(next)
       setDismissedPropertyIdsState(next)
       markSmartMatchAction('interested')
-      setToast({ type: 'success', message: 'Interest sent.' })
-      return conversationId
+      setToast({ type: 'success', message: 'Application sent.' })
+      return true
     },
     openConversationForEnquiry(enquiryId) {
       const enquiry = enquiries.find((item) => item.id === enquiryId)

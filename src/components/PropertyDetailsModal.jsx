@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
+import useApplications from '../context/useApplications'
 import { domainLabel } from '../config/domainOptions'
+import { isTerminalApplicationStatus } from '../config/applicationStatus'
 import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
 import { formatFreshness, shouldShowTenantMatch } from '../config/listingPresentation'
 import { canListingReceiveEnquiry } from '../config/rentalJourney'
@@ -17,20 +19,19 @@ import TrustSummary from './TrustSummary'
 
 // previewProperty + onClose let a landlord preview an in-progress, unsaved listing draft exactly
 // as CreateListing will pass it: real tenant-facing layout, no route, no persistence. Everything
-// else (route-based lookup, access rules, enquiry actions) is untouched for the normal case.
+// else (route-based lookup, access rules, application actions) is untouched for the normal case.
 export default function PropertyDetailsModal({ standalone = false, previewProperty = null, onClose }) {
   const { propertyId } = useParams()
   const {
     blockPropertyOwner,
-    createEnquiry,
     currentTenantId,
     properties,
     reportListing,
     savedPropertyIds,
     saveProperty,
     removeSavedProperty,
-    tenantEnquiries,
   } = useAppState()
+  const { getTenantApplicationForListing, applyToListing, withdraw } = useApplications()
   const { activeRole: role, profile } = useAccountProfile()
   const navigate = useNavigate()
   const routeProperty = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
@@ -59,11 +60,20 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [close])
 
-  const enquiry = property && !previewProperty ? tenantEnquiries.find((item) => item.propertyId === property.id) : null
-  const hasHistoricalRelationship = role === 'tenant' && (Boolean(enquiry) || savedPropertyIds.includes(propertyId))
+  // Keyed by propertyId rather than reset via an effect/ref: route param changes reuse this same
+  // mounted instance rather than remounting (confirmed during Stage C), so a plain useState would
+  // let a leftover apply error/pending flag from one property bleed into the next one navigated
+  // to. Deriving applyPending/applyError below (ignoring stored state for any other propertyId)
+  // keeps that reset purely a render-time derivation instead.
+  const [applyState, setApplyState] = useState({ propertyId: null, pending: false, error: '' })
+  const applyPending = applyState.propertyId === propertyId && applyState.pending
+  const applyError = applyState.propertyId === propertyId ? applyState.error : ''
+
+  const application = property && !previewProperty ? getTenantApplicationForListing(property.id) : null
+  const hasHistoricalRelationship = role === 'tenant' && (Boolean(application) || savedPropertyIds.includes(propertyId))
   // Real listing ownership (property.ownerId) is the real auth uuid (Stage C) — profile.id is
-  // that same uuid (profiles.id = auth.users.id), never the fixture currentOwnerId, which only
-  // still means anything for the still-mock enquiry/conversation domain below.
+  // that same uuid (profiles.id = auth.users.id). canViewListing only ever reads viewerId for the
+  // landlord/'own' branch below; the fixture currentTenantId here is inert for a tenant viewer.
   const viewerId = role === 'landlord' ? profile?.id : currentTenantId
   // A preview is always the landlord's own in-progress draft — no route-based access check applies.
   const access = previewProperty ? { allowed: true, mode: 'own' } : canViewListing({ role, viewerId, property, hasHistoricalRelationship })
@@ -98,11 +108,20 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   const ownerOccupied = property.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM
   const updated = formatFreshness(property.updatedAt)
   const availabilityConfirmed = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
-  const handleEnquire = () => {
-    if (!enquiry && !canEnquire) return
-    const conversationId = createEnquiry(property.id)
-    if (!conversationId) return
-    navigate(`/messages/${conversationId}`)
+  const applicationTerminal = Boolean(application) && isTerminalApplicationStatus(application.status)
+
+  const handleApply = async () => {
+    if (application || !canEnquire || applyPending) return
+    setApplyState({ propertyId, pending: true, error: '' })
+    const { error } = await applyToListing(property.id)
+    setApplyState({ propertyId, pending: false, error: error || '' })
+  }
+
+  const handleWithdraw = async () => {
+    if (!application || applicationTerminal || applyPending) return
+    setApplyState({ propertyId, pending: true, error: '' })
+    const { error } = await withdraw(application.id)
+    setApplyState({ propertyId, pending: false, error: error || '' })
   }
 
   return (
@@ -159,7 +178,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
                 <section className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-800">Listing no longer active</p>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
-                    This listing is {(listingStatusLabels[property.listingStatus] || 'no longer active').toLowerCase()} and is no longer part of public discovery. You can still see it because of your saved property or enquiry history.
+                    This listing is {(listingStatusLabels[property.listingStatus] || 'no longer active').toLowerCase()} and is no longer part of public discovery. You can still see it because of your saved property or application history.
                   </p>
                 </section>
               ) : null}
@@ -287,21 +306,10 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
                 </section>
               ) : null}
 
-              {enquiry?.viewing?.status === 'viewing proposed' ? (
-                <DetailSection title="Viewing proposed">
-                  <p className="text-sm leading-6 text-slate-600">Choose a proposed slot in Messages to confirm a viewing.</p>
-                </DetailSection>
+              {tenantContext && application ? <ApplicationStatus application={application} /> : null}
+              {tenantContext && applyError ? (
+                <p className="rounded-[18px] bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{applyError}</p>
               ) : null}
-              {enquiry?.viewing?.status === 'viewing confirmed' ? (
-                <section className="is-success-pulse rounded-[22px] border border-emerald-100 bg-emerald-50/85 p-4">
-                  <p className="text-sm font-semibold text-emerald-950">Viewing confirmed</p>
-                  <p className="mt-1 text-sm leading-6 text-emerald-800">
-                    {enquiry.viewing.selectedSlot?.label || 'Time to confirm'} · keep the conversation open for access details.
-                  </p>
-                </section>
-              ) : null}
-
-              {tenantContext && enquiry ? <ApplicationStatus enquiry={enquiry} /> : null}
 
               <TrustSummary property={property} />
 
@@ -333,11 +341,19 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
                 </Button>
                 <Button
                   variant="dark"
-                  data-account-action={enquiry ? 'open-message' : 'send-interest'}
-                  disabled={!enquiry && !canEnquire}
-                  onClick={handleEnquire}
+                  data-account-action={application ? 'withdraw-application' : 'send-interest'}
+                  disabled={(!application && !canEnquire) || applyPending || applicationTerminal}
+                  onClick={application ? handleWithdraw : handleApply}
                 >
-                  {enquiry ? 'Open enquiry' : canEnquire ? 'Interested' : 'Closed'}
+                  {applyPending
+                    ? 'Please wait…'
+                    : application
+                      ? applicationTerminal
+                        ? application.statusLabel
+                        : 'Withdraw application'
+                      : canEnquire
+                        ? 'Apply'
+                        : 'Closed'}
                 </Button>
               </div>
             )}

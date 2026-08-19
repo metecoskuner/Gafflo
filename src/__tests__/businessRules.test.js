@@ -1,4 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { mapApplicationRowToApplication } from '../config/applicationAdapter'
+import {
+  applicantPipelineTabs,
+  getApplicationPipelineGroup,
+  getApplicationStatusInfo,
+  getLandlordApplicationActions,
+  isLandlordEngagedApplicationStatus,
+  isTerminalApplicationStatus,
+} from '../config/applicationStatus'
 import { canTransitionApplication, terminalApplicationStatuses } from '../config/applicationTransitions'
 import { normalizePetPolicy, normalizePropertyType, normalizeLeaseMonths, normalizeSmoking } from '../config/domainOptions'
 import { filterApplicantsByProperty, getValidApplicantPropertyId } from '../config/applicantFilters'
@@ -777,5 +786,129 @@ describe('pricing and entitlements', () => {
 
     const closedEnquiry = { status: 'closed', createdAt: '2030-01-01T00:00:00.000Z' }
     expect(canSendPremiumFollowUp({ enquiry: closedEnquiry, conversation: { blockedBy: null, messages: [] }, plan: TENANT_PLAN.GAFFLO_PLUS, now })).toBe(false)
+  })
+})
+
+describe('Stage D — real application status/pipeline mapping', () => {
+  it('labels every real backend status, and falls back honestly for an unknown one', () => {
+    expect(getApplicationStatusInfo('sent').label).toBe('Sent')
+    expect(getApplicationStatusInfo('landlord_interested').label).toBe('Landlord interested')
+    expect(getApplicationStatusInfo('not_selected').label).toBe('Not selected')
+    expect(getApplicationStatusInfo(undefined).label).toBe('Sent')
+    expect(getApplicationStatusInfo('some_future_status').label).toBe('some_future_status')
+  })
+
+  it('treats only not_selected/withdrawn/closed as terminal', () => {
+    expect(isTerminalApplicationStatus('not_selected')).toBe(true)
+    expect(isTerminalApplicationStatus('withdrawn')).toBe(true)
+    expect(isTerminalApplicationStatus('closed')).toBe(true)
+    for (const status of ['sent', 'viewed', 'landlord_interested', 'shortlisted', 'viewing_proposed', 'viewing_confirmed']) {
+      expect(isTerminalApplicationStatus(status)).toBe(false)
+    }
+  })
+
+  it('treats landlord_interested/shortlisted/viewing_proposed/viewing_confirmed as landlord-engaged', () => {
+    expect(isLandlordEngagedApplicationStatus('landlord_interested')).toBe(true)
+    expect(isLandlordEngagedApplicationStatus('viewing_confirmed')).toBe(true)
+    expect(isLandlordEngagedApplicationStatus('sent')).toBe(false)
+    expect(isLandlordEngagedApplicationStatus('not_selected')).toBe(false)
+  })
+
+  it('only ever offers the four real landlord decision targets, excluding the current status, and none once terminal', () => {
+    expect(getLandlordApplicationActions('sent').map((action) => action.status).sort()).toEqual(
+      ['closed', 'landlord_interested', 'not_selected', 'shortlisted'].sort(),
+    )
+    expect(getLandlordApplicationActions('landlord_interested').map((action) => action.status)).not.toContain('landlord_interested')
+    for (const terminal of ['not_selected', 'withdrawn', 'closed']) {
+      expect(getLandlordApplicationActions(terminal)).toEqual([])
+    }
+    // Never offered — Viewings are Stage F's own guarded RPCs, and sent/viewed/withdrawn are
+    // never a landlord-authored decision.
+    const allTargets = new Set(getLandlordApplicationActions('sent').map((action) => action.status))
+    expect(allTargets.has('viewing_proposed')).toBe(false)
+    expect(allTargets.has('viewing_confirmed')).toBe(false)
+    expect(allTargets.has('withdrawn')).toBe(false)
+  })
+
+  it('groups every real status into exactly one of the five pipeline tabs', () => {
+    expect(getApplicationPipelineGroup('sent')).toBe('new')
+    expect(getApplicationPipelineGroup('viewed')).toBe('new')
+    expect(getApplicationPipelineGroup('landlord_interested')).toBe('interested')
+    expect(getApplicationPipelineGroup('shortlisted')).toBe('shortlisted')
+    expect(getApplicationPipelineGroup('viewing_proposed')).toBe('viewing')
+    expect(getApplicationPipelineGroup('viewing_confirmed')).toBe('viewing')
+    expect(getApplicationPipelineGroup('not_selected')).toBe('closed')
+    expect(getApplicationPipelineGroup('withdrawn')).toBe('closed')
+    expect(getApplicationPipelineGroup('closed')).toBe('closed')
+    expect(applicantPipelineTabs.map((tab) => tab.id)).toEqual(['new', 'interested', 'shortlisted', 'viewing', 'closed'])
+  })
+})
+
+describe('Stage D — real application row adapter', () => {
+  const row = {
+    id: 'app-1',
+    listing_id: 'listing-1',
+    tenant_id: 'tenant-1',
+    status: 'shortlisted',
+    tenant_snapshot: {
+      display_name: 'Alex Applicant',
+      target_city: 'Dublin',
+      preferred_areas: ['Rathmines'],
+      budget_min: 1200,
+      budget_max: 1800,
+      move_in_date: '2027-02-01',
+      lease_length_months: 12,
+      household_size: 2,
+      applying_as_couple: true,
+      looking_for: 'room',
+      employment_status: 'full_time',
+      student: false,
+      pets: 'none',
+      smoking: 'no',
+      furnished_preference: 'any',
+      parking_needed: false,
+      private_bathroom_preferred: true,
+      bills_included_preferred: false,
+      owner_occupied_acceptable: true,
+      references_ready: true,
+      income_ready: true,
+      id_ready: false,
+      bio: 'Quiet professional.',
+    },
+    rental_fit_score: 74,
+    rental_fit_breakdown: { reasons: ['Great fit'], warnings: ['One thing'], hard_stops: [] },
+    rental_fit_algorithm_version: 'v1',
+    first_viewed_at: '2027-01-02T10:00:00.000Z',
+    created_at: '2027-01-01T10:00:00.000Z',
+    updated_at: '2027-01-02T10:00:00.000Z',
+  }
+
+  it('translates listing_id/tenant_id into the frontend property-lookup idiom', () => {
+    const application = mapApplicationRowToApplication(row)
+    expect(application.propertyId).toBe('listing-1')
+    expect(application.tenantId).toBe('tenant-1')
+    expect(application.id).toBe('app-1')
+    expect(application.status).toBe('shortlisted')
+  })
+
+  it('never recomputes Rental Fit — it carries the exact frozen score/reasons/warnings/hardStops stored server-side', () => {
+    const application = mapApplicationRowToApplication(row)
+    expect(application.match).toEqual({ score: 74, reasons: ['Great fit'], warnings: ['One thing'], hardStops: [] })
+  })
+
+  it('maps the frozen tenant_snapshot using the exact same field translations as a live tenant_profiles row, plus displayName', () => {
+    const application = mapApplicationRowToApplication(row)
+    expect(application.tenant.displayName).toBe('Alex Applicant')
+    expect(application.tenant.budgetMin).toBe(1200)
+    expect(application.tenant.budgetMax).toBe(1800)
+    expect(application.tenant.householdSize).toBe(2)
+    expect(application.tenant.applyingAsCouple).toBe(true)
+    expect(application.tenant.referencesReady).toBe(true)
+    expect(application.tenant.idReady).toBe(false)
+    expect(application.tenant.bio).toBe('Quiet professional.')
+  })
+
+  it('returns null for a null row rather than throwing', () => {
+    expect(mapApplicationRowToApplication(null)).toBeNull()
   })
 })

@@ -1,9 +1,15 @@
-import { applicationStatusSteps, getApplicationStatus, getApplicationStep, isClosedStatus } from '../config/rentalJourney'
+import {
+  applicationPipelineStepCount,
+  getApplicationPipelineStep,
+  getApplicationStatusInfo,
+  isLandlordEngagedApplicationStatus,
+  isTerminalApplicationStatus,
+} from '../config/applicationStatus'
 
 export function ApplicationStatusPill({ status }) {
-  const statusInfo = getApplicationStatus(status)
-  const closed = isClosedStatus(status)
-  const strong = ['landlord interested', 'shortlisted', 'viewing proposed', 'viewing confirmed'].includes(status)
+  const statusInfo = getApplicationStatusInfo(status)
+  const closed = isTerminalApplicationStatus(status)
+  const strong = isLandlordEngagedApplicationStatus(status)
 
   return (
     <span
@@ -20,12 +26,12 @@ export function ApplicationStatusPill({ status }) {
   )
 }
 
-export default function ApplicationStatus({ enquiry, compact = false }) {
-  if (!enquiry) return null
-  const statusInfo = getApplicationStatus(enquiry.status)
-  const step = getApplicationStep(enquiry.status)
-  const closed = isClosedStatus(enquiry.status)
-  const progress = closed ? 100 : Math.round((step / applicationStatusSteps.length) * 100)
+export default function ApplicationStatus({ application, compact = false }) {
+  if (!application) return null
+  const statusInfo = getApplicationStatusInfo(application.status)
+  const closed = isTerminalApplicationStatus(application.status)
+  const step = getApplicationPipelineStep(application.status)
+  const progress = closed ? 100 : Math.round((step / applicationPipelineStepCount) * 100)
 
   return (
     <section className={`rounded-[22px] border ${closed ? 'border-slate-200 bg-slate-50' : 'border-indigo-100 bg-indigo-50/55'} ${compact ? 'px-3 py-3' : 'p-4'}`}>
@@ -34,7 +40,7 @@ export default function ApplicationStatus({ enquiry, compact = false }) {
           <p className="text-sm font-semibold text-slate-950">{compact ? 'Application status' : "What's happening?"}</p>
           <p className="mt-1 text-sm leading-6 text-slate-600">{statusInfo.description}</p>
         </div>
-        <ApplicationStatusPill status={enquiry.status} />
+        <ApplicationStatusPill status={application.status} />
       </div>
       {!closed ? (
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white">

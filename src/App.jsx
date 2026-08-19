@@ -13,6 +13,7 @@ import { ANY_VALUE, domainLabel, furnishedOptions, propertyTypeOptions, roomType
 import { cityOptions } from './config/locationOptions'
 import { LISTING_CATEGORIES, listingCategoryOptions } from './config/listingCategories'
 import { AppStateProvider } from './context/MarketplaceState'
+import { ApplicationsProvider } from './context/ApplicationsProvider'
 import { AuthProvider } from './context/AuthProvider'
 import { AccountProfileProvider } from './context/AccountProfileProvider'
 import { ListingsProvider } from './context/ListingsProvider'
@@ -215,9 +216,11 @@ export default function App() {
         <AccountProfileProvider>
           <ProfileGate>
             <ListingsProvider>
-              <AppStateProvider>
-                <AppLayout />
-              </AppStateProvider>
+              <ApplicationsProvider>
+                <AppStateProvider>
+                  <AppLayout />
+                </AppStateProvider>
+              </ApplicationsProvider>
             </ListingsProvider>
           </ProfileGate>
         </AccountProfileProvider>

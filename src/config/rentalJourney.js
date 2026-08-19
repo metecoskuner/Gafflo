@@ -1,12 +1,3 @@
-export const applicationStatusSteps = [
-  'sent',
-  'viewed',
-  'landlord interested',
-  'shortlisted',
-  'viewing proposed',
-  'viewing confirmed',
-]
-
 export const applicationStatuses = {
   sent: {
     label: 'Sent',
@@ -60,35 +51,12 @@ export const applicationStatuses = {
   },
 }
 
-export const applicantPipelineTabs = [
-  { id: 'new', label: 'New' },
-  { id: 'interested', label: 'Interested' },
-  { id: 'shortlisted', label: 'Shortlisted' },
-  { id: 'viewing', label: 'Viewing' },
-  { id: 'closed', label: 'Closed' },
-]
-
 export function getApplicationStatus(status) {
   return applicationStatuses[status] || {
     label: status || 'Sent',
     tenantTitle: status || 'Sent',
     description: 'Your enquiry is being reviewed.',
   }
-}
-
-export function getApplicationStep(status) {
-  const index = applicationStatusSteps.indexOf(status)
-  if (index >= 0) return index + 1
-  if (['rejected', 'closed', 'viewing cancelled', 'withdrawn'].includes(status)) return applicationStatusSteps.length
-  return 1
-}
-
-export function getPipelineGroup(status) {
-  if (['sent', 'viewed'].includes(status)) return 'new'
-  if (status === 'landlord interested') return 'interested'
-  if (status === 'shortlisted') return 'shortlisted'
-  if (['viewing proposed', 'viewing confirmed'].includes(status)) return 'viewing'
-  return 'closed'
 }
 
 export function isClosedStatus(status) {

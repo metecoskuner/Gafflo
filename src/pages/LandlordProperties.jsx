@@ -10,6 +10,7 @@ import { getListingActions, listingStatusLabels } from '../config/listingLifecyc
 import { getLandlordPlanConfig, getListingProductConfig, LANDLORD_PLAN, LISTING_PRODUCT } from '../config/pricingPlans'
 import { canBoostListing } from '../config/promotion'
 import useAppState from '../context/useAppState'
+import useApplications from '../context/useApplications'
 import useListings from '../context/useListings'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
@@ -37,6 +38,7 @@ export default function LandlordProperties() {
   const navigate = useNavigate()
   const { landlordPlan, landlordProperties } = useAppState()
   const { markRented, pauseListing, requestReview, resumeListing } = useListings()
+  const { landlordApplications } = useApplications()
   const [allowanceBlock, setAllowanceBlock] = useState(null)
   const [boostPreview, setBoostPreview] = useState(null)
   const [actionError, setActionError] = useState('')
@@ -96,6 +98,10 @@ export default function LandlordProperties() {
           const plan = getListingActionPlan(property.listingStatus)
           const transitions = getListingActions(property.listingStatus)
           const isPending = pendingPropertyId === property.id
+          // Real applications only (Stage D) — a draft/paused/rejected listing can never actually
+          // have one (create_application() requires status = 'published'), so this is always 0
+          // for those, never a fabricated count.
+          const applicantCount = landlordApplications.filter((application) => application.propertyId === property.id).length
           // Free-plan active-listing allowance is a frontend-only soft gate today — the backend
           // resume_listing() RPC deliberately defers real enforcement to a future payments/
           // entitlements phase (see its migration comment) — so this pre-check still only
@@ -177,6 +183,11 @@ export default function LandlordProperties() {
                         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
                           {listingStatusLabels[property.listingStatus] || property.listingStatus}
                         </span>
+                        {['published', 'active'].includes(property.listingStatus) ? (
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                            {applicantCount} applicant{applicantCount === 1 ? '' : 's'}
+                          </span>
+                        ) : null}
                       </div>
                       <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">{property.title}</h2>
                       <p className="mt-1 text-sm text-slate-500">

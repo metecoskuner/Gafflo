@@ -7,12 +7,14 @@ import MatchBadge from '../components/MatchBadge'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, LISTING_CATEGORIES, listingCategoryLabel } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
+import useApplications from '../context/useApplications'
 import { formatDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatCurrency'
 
 export default function SavedProperties() {
   const navigate = useNavigate()
-  const { createEnquiry, savedProperties, removeSavedProperty, tenantEnquiries, toast, dismissToast } = useAppState()
+  const { savedProperties, removeSavedProperty, toast, dismissToast } = useAppState()
+  const { getTenantApplicationForListing } = useApplications()
   const [imageFailures, setImageFailures] = useState({})
 
   const sortedSavedProperties = useMemo(
@@ -23,10 +25,6 @@ export default function SavedProperties() {
   const averageRent = sortedSavedProperties.length
     ? Math.round(sortedSavedProperties.reduce((total, property) => total + property.rent, 0) / sortedSavedProperties.length)
     : 0
-  const openEnquiry = (propertyId) => {
-    const conversationId = createEnquiry(propertyId)
-    if (conversationId) navigate(`/messages/${conversationId}`)
-  }
 
   useEffect(() => {
     if (!toast) return undefined
@@ -89,7 +87,7 @@ export default function SavedProperties() {
       <section className="grid gap-4 xl:grid-cols-2">
         {sortedSavedProperties.map((property) => {
           const imageFailed = Boolean(imageFailures[property.id])
-          const enquiry = tenantEnquiries.find((item) => item.propertyId === property.id)
+          const application = getTenantApplicationForListing(property.id)
           const roomListing = isRoomListing(property.listingCategory)
 
           return (
@@ -119,7 +117,7 @@ export default function SavedProperties() {
                     <span className="rounded-full bg-emerald-50/95 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-soft">
                       Saved
                     </span>
-                    {enquiry ? <ApplicationStatusPill status={enquiry.status} /> : null}
+                    {application ? <ApplicationStatusPill status={application.status} /> : null}
                     <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-soft">
                       {listingCategoryLabel(property.listingCategory)}
                     </span>
@@ -167,7 +165,7 @@ export default function SavedProperties() {
                   ))}
                 </div>
 
-                {enquiry ? <ApplicationStatus enquiry={enquiry} compact /> : null}
+                {application ? <ApplicationStatus application={application} compact /> : null}
 
                 <div className="rounded-[22px] border border-emerald-100 bg-emerald-50/70 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-600">Top match reason</p>
@@ -176,18 +174,13 @@ export default function SavedProperties() {
                   </p>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <Button
                     variant="dark"
                     onClick={() => navigate(`/properties/${property.id}`)}
                   >
                     Details
                   </Button>
-                  {enquiry ? (
-                    <Button variant="secondary" onClick={() => openEnquiry(property.id)}>
-                      Open status
-                    </Button>
-                  ) : null}
                   <Button
                     variant="secondary"
                     className="text-rose-600 hover:border-rose-100 hover:bg-rose-50"

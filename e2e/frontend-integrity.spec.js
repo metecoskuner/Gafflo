@@ -230,20 +230,25 @@ test('smart match pass updates the visible deck at mobile width', async ({ page 
   await expect(page.getByRole('button', { name: /Interested|Limit reached/ })).toBeVisible()
 })
 
-test('smart match interested records enquiry state and keeps controls usable at mobile width', async ({ page }) => {
+// Stage D: "Interested" now submits a real create_application() row (see the Stage D report's
+// CTA audit) rather than writing a mock gafflo.enquiries entry — so this asserts the real,
+// durable result through the UI itself (switching to Browse and checking the same listing now
+// shows a real application status pill) instead of inspecting localStorage for a key the app no
+// longer writes to on this path.
+test('smart match interested submits a real application and keeps controls usable at mobile width', async ({ page }) => {
   await page.setViewportSize(viewport390)
-  await seedState(page, { enquiries: [], conversations: [], dismissed: [] })
+  await seedState(page, { dismissed: [] })
   await page.goto('/discover')
 
   const firstCard = await visibleSmartCardLabel(page)
-  const startingEnquiryCount = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.enquiries') || '[]').length)
+  const firstCardTitle = firstCard.replace('Open ', '')
   await page.getByRole('button', { name: 'Interested' }).click()
-  await expect.poll(async () => {
-    const enquiries = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.enquiries') || '[]'))
-    return enquiries.length
-  }).toBeGreaterThan(startingEnquiryCount)
   await expect.poll(() => visibleSmartCardLabel(page)).not.toBe(firstCard)
   await expect(page.getByRole('button', { name: 'Pass' })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Browse' }).click()
+  const appliedCard = page.locator('article', { hasText: firstCardTitle }).first()
+  await expect(appliedCard.getByText(/Application status:/)).toBeVisible()
 })
 
 test('save and saved page stay consistent through remove', async ({ page }) => {
@@ -338,7 +343,7 @@ test('property details open, scroll, close, and keep 390px geometry stable', asy
 })
 
 test('tenant enquiry opens messages with waiting composer and blocks second unsolicited message', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage D skip audit: this is Stage E Messaging (composer/duplicate-message-guard), not Stage D Applications — deliberately not re-enabled. Still moderator-blocked as originally noted, but now doubly so: Stage D removed the 'click Interested -> auto-navigate to /messages/conversation-...' mechanic this test depends on entirely (PropertyDetailsModal's Apply button no longer creates or opens a conversation — see the Stage D report's application/messaging decoupling section), so even a moderator credential would not make this exact test valid again as written. It will need a real Stage E rewrite, not a moderator credential.")
   await seedState(page, { enquiries: [], conversations: [] })
   await page.goto('/discover')
   await page.getByRole('button', { name: /^Open (?!filters)/ }).first().click()
@@ -443,7 +448,7 @@ test('loads incomplete listing draft without writing fabricated enum defaults', 
 })
 
 test('property-scoped applicants can be opened and cleared', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage D skip audit: confirmed Stage D Applications territory (Applicants.jsx's ?property= scoping, now backed by real landlordApplications) — but still genuinely blocked, for a stronger reason than originally recorded: this needs a landlord identity that BOTH this suite controls AND owns a real published listing with a real applicant, and live investigation during Stage D confirmed none of landlordDefault/landlordListingOwnerA/landlordListingOwnerB own any of the handful of real published listings in gafflo-dev (those were published via direct backend/dashboard moderation by accounts this suite has no credentials for). The exact fixture this test used ('property-rathmines-2bed') no longer exists as real data regardless. getValidApplicantPropertyId()/filterApplicantsByProperty() themselves remain covered for real by existing unit tests (src/__tests__/businessRules.test.js), and e2e/applications.spec.js covers the landlord-side privacy/empty-state claims that ARE reachable without an owned published listing — see the Stage D final report for the full breakdown of what could and couldn't be reached.")
   await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/properties')
 
@@ -927,7 +932,7 @@ test('bottom nav remains visible and does not block a lower primary action', asy
 })
 
 test('landlord dashboard surfaces a "what needs your attention" summary instead of duplicated metrics', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage D skip audit: confirmed Stage D Applications territory (Dashboard.jsx's newInterest is now real landlordApplications.filter(status === 'sent').length) — but the 'new applicant' text needs a real applicant on a real published listing owned by a frontend-controlled identity, and live investigation during Stage D confirmed no such identity/listing combination exists in gafflo-dev (see the property-scoped-applicants skip above for the same underlying constraint). The companion test right below this one ('...calm empty state when nothing needs attention') already covers the zero-applicants path for real, and e2e/applications.spec.js's empty-state test confirms a real zero-applications landlord sees the honest empty Applicants page — the remaining gap is specifically the non-empty 'N new applicants' rendering, which is unreachable without a moderator credential this environment does not have.")
   await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/dashboard')
 
@@ -973,7 +978,7 @@ test('landlord dashboard shows a calm empty state when nothing needs attention �
 })
 
 test('smart match card caps secondary status pills at two high-value signals', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage D skip audit: this was already unreachable regardless of moderator access (buildTestProperty's gafflo.properties fixture is inert — Stage C made real Supabase listings the only source), and Stage D adds a second, permanent reason: the deck card's status pill now reads getTenantApplicationForListing()?.statusLabel from real applications (see MarketplaceDiscover.jsx's SmartMatchDeck), never the mock enquiries fixture this test seeds — so no moderator credential could ever make the specific mechanism this test exercises real again as written. The underlying claim (a real application status pill renders on a real Browse/Smart Match card) is covered for real by e2e/applications.spec.js's main apply test; the specific 'caps at two pills, saved is dropped in favour of status+freshness' priority-ordering claim has no real-backend equivalent yet since it needs multiple simultaneous real signals (new + saved + application status) on one real listing, which the same moderator/ownership constraint still blocks.")
   const now = new Date().toISOString()
   const property = buildTestProperty({
     id: 'property-pill-cap-test',
