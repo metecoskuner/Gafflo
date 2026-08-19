@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
@@ -131,6 +131,28 @@ export default function CreateListing() {
   const listingPhotos = useMemo(() => editingProperty?.photoMetadata || [], [editingProperty])
 
   const [form, setForm] = useState(() => (editingProperty ? propertyToForm(editingProperty) : createInitialForm()))
+  // Direct navigation to /listings/:id/edit (a fresh page load — bookmark, reload, or a real
+  // link click) mounts this component before ListingsProvider's async fetch has resolved, so
+  // editingProperty is still undefined at the useState initializer above and the form would
+  // silently start empty. Once editingProperty actually loads, sync form from it exactly once.
+  //
+  // Deliberately gated on wasEditingRouteAtMount, not just "isEditing": the redirect right after
+  // creating a new draft (the effect above) does NOT remount this component — React Router keeps
+  // the same CreateListing instance and just updates its params/route match — so a plain "sync
+  // once editingProperty appears" would also fire partway through that flow, after the landlord
+  // has already been typing into the freshly-defaulted (createInitialForm()) form, and clobber
+  // their in-progress edits with the still-nearly-empty real row (confirmed: this exact
+  // regression happened during the skip-audit fix and was caught by a real e2e run, not just
+  // reasoning about it). wasEditingRouteAtMount distinguishes the two cases precisely: true only
+  // when this component's very first render already had a real :propertyId in the URL — never
+  // true for a listing created and redirected to within this same mounted instance.
+  const wasEditingRouteAtMount = useRef(isEditing)
+  const hasSyncedFormFromServer = useRef(Boolean(editingProperty))
+  useEffect(() => {
+    if (!wasEditingRouteAtMount.current || hasSyncedFormFromServer.current || !editingProperty) return
+    hasSyncedFormFromServer.current = true
+    setForm(propertyToForm(editingProperty))
+  }, [editingProperty])
   const [errors, setErrors] = useState({})
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState('')

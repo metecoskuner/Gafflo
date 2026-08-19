@@ -325,4 +325,95 @@ test.describe('Stage C — real listings + Storage photos', () => {
     })
     expect(res.status).toBe(400)
   })
+
+  // Skip-audit findings (post-merge review of the 29 e2e/frontend-integrity.spec.js skips):
+  // the three tests below close real gaps found during that audit rather than duplicate
+  // anything already covered above.
+
+  test('landlord own-listing preview (route-based) hides tenant match content for any pre-published status', async ({ page }) => {
+    // canViewListing()'s 'own' branch (components/PropertyDetailsModal.jsx via
+    // config/listingLifecycle.js) is role+ownerId only, with no status condition at all — a
+    // landlord can view their own listing at any status, so a plain draft is enough here; no
+    // moderator credential is needed for this specific claim, unlike most of the audit's other
+    // findings.
+    const draft = await createDraftViaRest('landlordListingOwnerA', { title: 'E2E own-view listing' })
+    await seedSession(page, 'landlordListingOwnerA')
+    await page.goto(`/properties/${draft.id}`)
+    await expect(page.getByRole('heading', { name: 'E2E own-view listing' })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Why this .* fits you/)).toHaveCount(0)
+    await expect(page.getByText(/rental fit|Unscored/)).toHaveCount(0)
+  })
+
+  test('editing an already-submitted listing saves fields without re-requesting review or changing status', async ({ page }) => {
+    const draft = await createDraftViaRest('landlordListingOwnerA', {
+      title: 'E2E already-submitted listing',
+      area: 'Rathmines',
+      city: 'Dublin',
+      rent: 1400,
+      deposit: 1400,
+      available_from: '2030-01-01',
+      min_stay_months: 6,
+      property_type: 'apartment',
+      bedrooms: 1,
+      bathrooms: 1,
+      max_occupants: 1,
+      description: 'A genuinely complete description, long enough to satisfy request_listing_review readiness for this isolation test.',
+    })
+    const path = `${draft.id}/cover.png`
+    await fetch(`${SUPABASE_URL}/storage/v1/object/listing-photos/${path}`, {
+      method: 'POST',
+      headers: { apikey: ANON_KEY, Authorization: `Bearer ${draft.accessToken}`, 'Content-Type': 'image/png' },
+      body: TINY_PNG,
+    })
+    await rest('rpc/register_listing_image', {
+      method: 'POST',
+      accessToken: draft.accessToken,
+      body: { p_listing_id: draft.id, p_storage_path: path, p_label: 'cover', p_is_cover: true },
+    })
+    await rest('rpc/request_listing_review', { method: 'POST', accessToken: draft.accessToken, body: { p_listing_id: draft.id } })
+    const submitted = await rest(`listings?id=eq.${draft.id}&select=status`, { accessToken: draft.accessToken })
+    expect(submitted.json[0].status).toBe('pending_verification')
+
+    await seedSession(page, 'landlordListingOwnerA')
+    await page.goto(`/listings/${draft.id}/edit`)
+    await expect(page.getByLabel('Title')).toHaveValue('E2E already-submitted listing', { timeout: 10000 })
+    // canRequestReview is false once past draft/rejected (see CreateListing.jsx) — only a plain
+    // "Save changes" action is offered, never "Request review" or "Save draft" again.
+    await expect(page.getByRole('button', { name: 'Request review' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Save draft' })).toHaveCount(0)
+    await page.getByLabel('Title').fill('E2E already-submitted listing, edited')
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await expect(page).toHaveURL(/\/properties$/, { timeout: 10000 })
+
+    const after = await rest(`listings?id=eq.${draft.id}&select=status,title`, { accessToken: draft.accessToken })
+    expect(after.json[0].status).toBe('pending_verification') // unchanged — never silently moved back to draft
+    expect(after.json[0].title).toBe('E2E already-submitted listing, edited')
+  })
+
+  test('a fresh draft leaves genuinely unknown fields null while enum fields keep their real, honest schema defaults', async () => {
+    // Phase 1B's own migration comment is explicit about this split: rent/deposit/bedrooms/
+    // bathrooms/max_occupants/property_type/available_from/min_stay_months stay nullable
+    // (genuinely unknown until the landlord answers), while furnished/parking/pets_policy/
+    // smoking_policy get a real NOT NULL schema default — not a frontend fabrication, and not
+    // the same thing as the fields above staying null. Both halves of that split matter and
+    // neither was covered by the audit's earlier tests.
+    const draft = await createDraftViaRest('landlordListingOwnerA', { title: 'E2E null-semantics listing' })
+    const row = await rest(
+      `listings?id=eq.${draft.id}&select=property_type,bedrooms,bathrooms,max_occupants,rent,deposit,available_from,min_stay_months,furnished,parking,pets_policy,smoking_policy`,
+      { accessToken: draft.accessToken },
+    )
+    const listing = row.json[0]
+    expect(listing.property_type).toBeNull()
+    expect(listing.bedrooms).toBeNull()
+    expect(listing.bathrooms).toBeNull()
+    expect(listing.max_occupants).toBeNull()
+    expect(listing.rent).toBeNull()
+    expect(listing.deposit).toBeNull()
+    expect(listing.available_from).toBeNull()
+    expect(listing.min_stay_months).toBeNull()
+    expect(listing.furnished).toBe('unfurnished')
+    expect(listing.parking).toBe('none')
+    expect(listing.pets_policy).toBe('not_allowed')
+    expect(listing.smoking_policy).toBe('no')
+  })
 })

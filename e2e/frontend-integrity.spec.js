@@ -458,7 +458,7 @@ test('property-scoped applicants can be opened and cleared', async ({ page }) =>
 })
 
 test('landlord own-listing preview hides tenant match content', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage C: retired — this exact scenario (fixture title 'Bright two-bedroom apartment in Rathmines', reached via a landlord Properties-list Preview click) can no longer be constructed against real Supabase data, but the underlying claim was miscategorized as moderator-blocked in the original Stage C skip pass: canViewListing()'s own-listing branch is role+ownerId only, with no status condition, so it never actually needed a published listing. Real, corrected coverage now lives in e2e/listings.spec.js's 'landlord own-listing preview (route-based) hides tenant match content for any pre-published status'.")
   await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/properties')
 
@@ -566,7 +566,7 @@ test('tenant can still view a previously saved listing after it becomes inactive
 })
 
 test('editing a published listing cannot silently move it back into review', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage C: blocked (specifically for 'published' status — reaching it genuinely requires a moderator credential this environment does not have) — but the underlying claim this test exists to protect (editing a listing that is not draft/rejected must never re-attempt request_listing_review or move its status) is now covered for real, using pending_verification as the reachable stand-in for 'any non-draft/rejected status': e2e/listings.spec.js's 'editing an already-submitted listing saves fields without re-requesting review or changing status'. That replacement test is also what caught and fixed the real CreateListing.jsx bug this exact skip would otherwise have hidden — see the Stage C final report.")
   const published = buildTestProperty({ id: 'property-edit-published', listingStatus: 'published' })
   await seedState(page, { identity: 'landlordDefault', properties: [published] })
   await page.goto(`/listings/${published.id}/edit`)
