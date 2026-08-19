@@ -23,7 +23,6 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   const {
     blockPropertyOwner,
     createEnquiry,
-    currentOwnerId,
     currentTenantId,
     properties,
     reportListing,
@@ -32,7 +31,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     removeSavedProperty,
     tenantEnquiries,
   } = useAppState()
-  const { activeRole: role } = useAccountProfile()
+  const { activeRole: role, profile } = useAccountProfile()
   const navigate = useNavigate()
   const routeProperty = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
   const property = previewProperty || routeProperty
@@ -62,7 +61,10 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
 
   const enquiry = property && !previewProperty ? tenantEnquiries.find((item) => item.propertyId === property.id) : null
   const hasHistoricalRelationship = role === 'tenant' && (Boolean(enquiry) || savedPropertyIds.includes(propertyId))
-  const viewerId = role === 'landlord' ? currentOwnerId : currentTenantId
+  // Real listing ownership (property.ownerId) is the real auth uuid (Stage C) — profile.id is
+  // that same uuid (profiles.id = auth.users.id), never the fixture currentOwnerId, which only
+  // still means anything for the still-mock enquiry/conversation domain below.
+  const viewerId = role === 'landlord' ? profile?.id : currentTenantId
   // A preview is always the landlord's own in-progress draft — no route-based access check applies.
   const access = previewProperty ? { allowed: true, mode: 'own' } : canViewListing({ role, viewerId, property, hasHistoricalRelationship })
 

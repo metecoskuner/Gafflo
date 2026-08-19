@@ -1,71 +1,48 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { canTransitionApplication, nextViewingStatusForApplication } from '../config/applicationTransitions'
-import {
-  ANY_VALUE,
-  normalizeFurnished,
-  normalizeParking,
-  normalizePetPolicy,
-  normalizeSmoking,
-} from '../config/domainOptions'
+import { ANY_VALUE } from '../config/domainOptions'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
-import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
-import { normalizeListingDraftForStorage, normalizeListingForStorage } from '../config/listingCategories'
-import { getDurableListingImages, getDurablePhotoMetadata } from '../config/photoMetadata'
-import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
+import { canListingReceiveEnquiry } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
 import { isLaunchAccessEnabled, smartMatchAccess } from '../config/smartMatch'
-import { getActiveListingAllowance, getEffectiveInterestAllowance, getEffectiveSmartMatchAllowance, getInterestAllowance, getSmartMatchAllowance } from '../config/entitlements'
+import { getEffectiveInterestAllowance, getEffectiveSmartMatchAllowance, getInterestAllowance, getSmartMatchAllowance } from '../config/entitlements'
 import { normalizeViewingSlots, validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
-import { mockConversations, mockEnquiries, mockProperties, mockTenants } from '../data/marketplace'
+import { mockConversations, mockEnquiries, mockTenants } from '../data/marketplace'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
-import { getFutureViewingSlots } from '../utils/dateUtils'
 import { getLocalDateKey } from '../utils/localDate'
 import { hasDuplicateEnquiry, hasDuplicateRecentMessage, hasLandlordMessage, sanitizeMessageBody } from '../utils/messagingRules'
 import { belongsToViewer } from '../utils/ownership'
 import AppStateContext from './AppStateContext'
 import useAccountProfile from './useAccountProfile'
+import useListings from './useListings'
 import {
   getConversations,
   getDismissedPropertyIds,
   getEnquiries,
   getLandlordPlan,
-  getLocalProperties,
+  getPropertyReports,
   getSavedPropertyIds,
   getSmartMatchActivity,
   getTenantPlan,
   setConversations,
   setDismissedPropertyIds,
   setEnquiries,
-  setLocalProperties,
+  setPropertyReports,
   setSavedPropertyIds,
   setSmartMatchActivity,
 } from '../utils/storage'
 
 // ---- DEMO/MOCK compatibility fixture ids — NOT the real authenticated account ----------------
-// These are stand-in ids for the still-frozen mock marketplace (properties, enquiries,
-// conversations, saved-listing lists — all still localStorage-only, no listings/applications/
-// messaging backend integration exists yet). Stage B (real profiles/tenant_profiles/
-// landlord_profiles, see AccountProfileProvider) deliberately does NOT extend to this: the real
-// authenticated identity is `useAuth().user.id` (realAccountId), and the real tenant_profiles/
-// landlord_profiles rows for that identity now flow into this file's `tenantProfile`/
-// `landlordProfile` below — but their `.id` field is intentionally forced back to these fixture
-// constants (fixtureViewerId), never the real auth uuid. Every mock enquiry/conversation
-// fixture (mockEnquiries, mockConversations, data/marketplace.js) is keyed to these exact
-// fixture strings and has no relationship to real backend ids. Blending the two — e.g. making a
-// real authenticated tenant "own" a fixture enquiry, or a real landlord "own" fixture listings
-// by their real id — would misrepresent data that was never actually theirs.
-// Remove these two constants, and every fixture id they touch, only once the domain that
-// actually owns each identity's real data (listings in Stage C, applications/messaging/viewings
-// in later stages) is backend-integrated and can supply a real id instead. Until then, no new
-// code should add further dependencies on either constant.
+// Stage C retired gafflo.properties and every mock-listing fallback: real listing ownership is
+// now always the real owner_id/auth.uid() (see ListingsProvider, config/listingAdapter.js), and
+// landlordProperties/properties below never fall back to currentOwnerId. These two constants
+// survive only for the domains Stage C explicitly does not integrate — enquiries, conversations,
+// messaging — which are still localStorage-only mock fixtures (mockEnquiries, mockConversations,
+// data/marketplace.js) keyed to these exact strings, with no relationship to real backend ids.
+// Remove them once Applications/Messaging (a later stage) makes enquiry/conversation ownership a
+// real backend fact the way listing ownership now is.
 const currentTenantId = 'tenant-local'
 const currentOwnerId = 'owner-private-1'
-
-// Fallback only for malformed/legacy fixture listing records with no ownerName of their own
-// (see normalizeStoredProperty below) — never the real authenticated landlord's identity, which
-// now comes from AccountProfileProvider's real landlord_profiles.display_name. Deliberately not
-// a fabricated persona name (no more "Maeve Doyle" standing in for real account data).
-const fixtureOwnerNameFallback = 'Private landlord'
 
 const defaultPropertyFilters = {
   priceMin: '',
@@ -84,55 +61,6 @@ const defaultPropertyFilters = {
   pets: 'Any',
   parking: 'Any',
   leaseLength: 'Any',
-}
-
-const defaultPropertyImage =
-  'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80'
-
-function normalizeStoredProperty(property) {
-  const isLegacyCreatedListing = property.source === 'created' && !property.ownerId
-  const listingStatus = property.listingStatus || (isLegacyCreatedListing ? 'pending_verification' : 'published')
-  const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage(property) : normalizeListingForStorage(property)
-  const { propertyType } = normalizedListing
-  const viewingSlots = normalizeViewingSlots(property.viewingSlots)
-
-  return {
-    ...normalizedListing,
-    ownerId: property.ownerId || (isLegacyCreatedListing ? currentOwnerId : undefined),
-    ownerName: property.ownerName || property.landlordName || fixtureOwnerNameFallback,
-    ownerType: property.ownerType || 'Private landlord',
-    bedrooms: normalizedListing.bedrooms,
-    bathrooms: normalizedListing.bathrooms,
-    maxOccupants: normalizedListing.maxOccupants,
-    furnished: normalizeFurnished(normalizedListing.furnished || 'Furnished'),
-    parking: normalizeParking(normalizedListing.parking || 'No'),
-    minStayMonths: listingStatus === 'draft' ? normalizedListing.minStayMonths : property.minStayMonths || 6,
-    listingStatus,
-    listingRules: property.listingRules || property.houseRules || [],
-    features: property.features || property.amenities || [propertyType],
-    images: getDurableListingImages(property.photoMetadata || property.images || [], defaultPropertyImage, normalizedListing.listingCategory),
-    photoMetadata: getDurablePhotoMetadata(property.photoMetadata || property.images || [defaultPropertyImage], normalizedListing.listingCategory),
-    viewingType: property.viewingType || 'In-person',
-    updatedAt: property.updatedAt || property.createdAt || '',
-    availabilityConfirmedAt: property.availabilityConfirmedAt || '',
-    promotion: property.promotion || null,
-    smokingAllowed: normalizeSmoking(normalizedListing.smokingAllowed || 'No'),
-    petsAllowed: normalizePetPolicy(normalizedListing.petsAllowed || 'Not comfortable'),
-    viewingSlots: viewingSlots.length ? viewingSlots : getFutureViewingSlots(),
-    trust: property.trust || {
-      emailVerified: false,
-      phoneVerified: false,
-      identityStatus: 'not_verified',
-      landlordVerification: 'pending',
-      propertyVerification: 'pending',
-      internalDemoState: true,
-    },
-  }
-}
-
-function mergeLocalAndMockProperties(localProperties, mockProperties) {
-  const localIds = new Set(localProperties.map((property) => property.id))
-  return [...localProperties, ...getVisibleMvpMockProperties(mockProperties).filter((property) => !localIds.has(property.id))]
 }
 
 function normalizeStoredConversation(conversation) {
@@ -173,19 +101,6 @@ function getStatusLabel(status) {
   return getApplicationStatus(status).label
 }
 
-function getListingStatusLabel(status) {
-  const labels = {
-    published: 'published',
-    active: 'published',
-    pending_verification: 'in review',
-    draft: 'saved as draft',
-    paused: 'paused',
-    rejected: 'not approved',
-    rented: 'marked as rented',
-  }
-  return labels[status] || 'updated'
-}
-
 function getPublicPropertyById(properties, propertyId) {
   return properties.find((item) => item.id === propertyId && canListingReceiveEnquiry(item))
 }
@@ -221,7 +136,12 @@ export function AppStateProvider({ children }) {
   )
   const [tenantPlan] = useState(() => getTenantPlan())
   const [landlordPlan] = useState(() => getLandlordPlan())
-  const [localProperties, setLocalPropertiesState] = useState(() => getLocalProperties())
+  // Real Supabase source of truth for listings/photos (Stage C) — see ListingsProvider. This
+  // provider only reads from it and composes it with the still-mock enquiry/conversation
+  // domains below; every listing write (create/edit/lifecycle/photos) goes through
+  // useListings() directly from CreateListing.jsx/LandlordProperties.jsx, never through here.
+  const { myListings, publicListings } = useListings()
+  const [propertyReports, setPropertyReportsState] = useState(() => getPropertyReports())
   const [savedPropertyIds, setSavedPropertyIdsState] = useState(() => getSavedPropertyIds())
   const [dismissedPropertyIds, setDismissedPropertyIdsState] = useState(() => getDismissedPropertyIds())
   const [smartMatchActivity, setSmartMatchActivityState] = useState(() => getSmartMatchActivity())
@@ -238,14 +158,20 @@ export function AppStateProvider({ children }) {
   const pendingMessageKeys = useRef(new Set())
 
   const tenants = useMemo(() => [tenantProfile, ...mockTenants].filter(Boolean), [tenantProfile])
-  const baseProperties = useMemo(
-    () => mergeLocalAndMockProperties(localProperties, mockProperties).map(normalizeStoredProperty),
-    [localProperties],
-  )
-  const properties = useMemo(
-    () => baseProperties.map((property) => ({ ...property, match: calculatePropertyMatch(tenantProfile, property) })),
-    [baseProperties, tenantProfile],
-  )
+  // publicListings only ever contains status='published' rows (any owner); myListings only ever
+  // contains the real authenticated user's own rows, in any status (draft/pending/paused/
+  // rejected/rented included) — a landlord must see their own non-published listings, but never
+  // another owner's. De-duplicated by id, own-listing data (fuller: exact_address/eircode/
+  // rejection_reason) taking precedence over the narrower public projection of the same row.
+  const properties = useMemo(() => {
+    const ownIds = new Set(myListings.map((property) => property.id))
+    const merged = [...myListings, ...publicListings.filter((property) => !ownIds.has(property.id))]
+    return merged.map((property) => ({
+      ...property,
+      localReport: propertyReports[property.id] || null,
+      match: calculatePropertyMatch(tenantProfile, property),
+    }))
+  }, [myListings, publicListings, propertyReports, tenantProfile])
 
   const activeProperties = useMemo(() => properties.filter((property) => ['published', 'active'].includes(property.listingStatus)), [properties])
   const discoveryProperties = useMemo(
@@ -293,7 +219,13 @@ export function AppStateProvider({ children }) {
         .filter((conversation) => conversation.property),
     [activeRole, conversations, enrichedEnquiries, properties, tenants],
   )
-  const landlordProperties = useMemo(() => properties.filter((property) => property.ownerId === currentOwnerId), [properties])
+  // Always the real authenticated user's own listings (get_my_listings(), RLS-scoped server-side
+  // to auth.uid()) — never the fixture currentOwnerId. See the Stage C final report's mock-id
+  // audit for exactly which ids still use the fixture (only enquiries/conversations, below).
+  const landlordProperties = useMemo(
+    () => myListings.map((property) => ({ ...property, localReport: propertyReports[property.id] || null, match: calculatePropertyMatch(tenantProfile, property) })),
+    [myListings, propertyReports, tenantProfile],
+  )
   const landlordEnquiries = useMemo(() => enrichedEnquiries.filter((enquiry) => enquiry.ownerId === currentOwnerId), [enrichedEnquiries])
   const tenantEnquiries = useMemo(() => enrichedEnquiries.filter((enquiry) => enquiry.tenantId === currentTenantId), [enrichedEnquiries])
   const todayKey = getLocalDateKey()
@@ -324,9 +256,9 @@ export function AppStateProvider({ children }) {
     setConversations(next)
     setConversationsState(next)
   }, [])
-  const persistProperties = useCallback((next) => {
-    setLocalProperties(next)
-    setLocalPropertiesState(next)
+  const persistPropertyReports = useCallback((next) => {
+    setPropertyReports(next)
+    setPropertyReportsState(next)
   }, [])
   const persistSmartMatchActivity = useCallback((next) => {
     setSmartMatchActivity(next)
@@ -685,22 +617,15 @@ export function AppStateProvider({ children }) {
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, blockedBy } : conversation)))
       setToast({ type: 'info', message: 'User blocked in this conversation.' })
     },
+    // Local-only safety annotation, deliberately decoupled from the real listings array: it
+    // never touches listings/listing_images (no backend moderation-report table exists yet),
+    // and it must survive regardless of whether propertyId belongs to a real or (still-mocked)
+    // fixture property.
     reportListing(propertyId, reason) {
       const property = properties.find((item) => item.id === propertyId)
       if (!property || !String(reason || '').trim()) return
-      const localExists = localProperties.some((item) => item.id === propertyId)
-      const fixture = mockProperties.find((item) => item.id === propertyId)
-      const reportedAt = new Date().toISOString()
-      const update = (item) =>
-        item.id === propertyId
-          ? { ...item, localReport: { reason: String(reason).trim(), reportedAt } }
-          : item
-      const next = localExists
-        ? localProperties.map(update)
-        : fixture
-          ? [{ ...fixture, localReport: { reason: String(reason).trim(), reportedAt } }, ...localProperties]
-          : localProperties
-      persistProperties(next)
+      const next = { ...propertyReports, [propertyId]: { reason: String(reason).trim(), reportedAt: new Date().toISOString() } }
+      persistPropertyReports(next)
       setToast({ type: 'success', message: 'Report saved locally on this device.' })
     },
     blockPropertyOwner(propertyId) {
@@ -734,109 +659,10 @@ export function AppStateProvider({ children }) {
       }
       setToast({ type: 'info', message: 'User blocked locally. Existing history is preserved.' })
     },
-    addProperty(property) {
-      if (activeRole !== 'landlord') return null
-      const now = new Date().toISOString()
-      const listingStatus = property.listingStatus || 'draft'
-      const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage(property) : normalizeListingForStorage(property)
-      const nextProperty = {
-        ...property,
-        id: `property-local-${Date.now()}`,
-        ownerId: currentOwnerId,
-        ownerName: landlordProfile.displayName,
-        ownerType: 'Private landlord',
-        ...normalizedListing,
-        rent: listingStatus === 'draft' ? property.rent : Number(property.rent),
-        rentMonthly: listingStatus === 'draft' ? property.rent : Number(property.rent),
-        deposit: listingStatus === 'draft' ? property.deposit : Number(property.deposit),
-        createdAt: now,
-        updatedAt: now,
-        availabilityConfirmedAt: now,
-        listingStatus,
-        features: property.amenities?.slice(0, 4) || [],
-        images: getDurableListingImages(property.photoMetadata || property.images || [], defaultPropertyImage, property.listingCategory),
-        photoMetadata: getDurablePhotoMetadata(property.photoMetadata || property.images || [defaultPropertyImage], property.listingCategory),
-        viewingSlots: normalizeViewingSlots(property.viewingSlots).length ? normalizeViewingSlots(property.viewingSlots) : getFutureViewingSlots(),
-        trust: {
-          emailVerified: Boolean(landlordProfile.trust?.emailVerified),
-          phoneVerified: Boolean(landlordProfile.trust?.phoneVerified),
-          identityStatus: landlordProfile.trust?.identityStatus || 'not_verified',
-          landlordVerification: landlordProfile.trust?.landlordVerification || 'pending',
-          propertyVerification: 'pending',
-          internalDemoState: true,
-        },
-      }
-      persistProperties([nextProperty, ...localProperties])
-      setToast({ type: 'success', message: 'Property saved.' })
-      return nextProperty.id
-    },
-    updateProperty(propertyId, patch) {
-      if (activeRole !== 'landlord') return null
-      const currentProperty = properties.find((property) => property.id === propertyId && property.ownerId === currentOwnerId)
-      if (!currentProperty) return null
-      const localExists = localProperties.some((property) => property.id === propertyId)
-      const fixture = mockProperties.find((property) => property.id === propertyId)
-      const requestedStatus = patch.listingStatus || currentProperty.listingStatus
-      const listingStatus = canTransitionListing(currentProperty.listingStatus, requestedStatus) ? requestedStatus : currentProperty.listingStatus
-      const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage({ ...currentProperty, ...patch }) : normalizeListingForStorage({ ...currentProperty, ...patch })
-      const normalizedPatch = {
-        ...normalizedListing,
-        listingStatus,
-        furnished: patch.furnished ? normalizeFurnished(patch.furnished) : currentProperty.furnished,
-        parking: patch.parking ? normalizeParking(patch.parking) : currentProperty.parking,
-        smokingAllowed: patch.smokingAllowed ? normalizeSmoking(patch.smokingAllowed) : currentProperty.smokingAllowed,
-        petsAllowed: patch.petsAllowed ? normalizePetPolicy(patch.petsAllowed) : currentProperty.petsAllowed,
-        updatedAt: new Date().toISOString(),
-        availabilityConfirmedAt: patch.availableFrom && patch.availableFrom !== currentProperty.availableFrom ? new Date().toISOString() : currentProperty.availabilityConfirmedAt,
-      }
-      const update = (property) => (property.id === propertyId ? { ...property, ...normalizedPatch } : property)
-      const next = localExists
-        ? localProperties.map(update)
-        : fixture
-          ? [{ ...fixture, ...normalizedPatch, ownerId: currentOwnerId }, ...localProperties]
-          : localProperties
-      persistProperties(next)
-      setToast({ type: 'success', message: 'Listing updated.' })
-      return propertyId
-    },
-    // Returns { ok: true } on success, or { ok: false, reason } when the operation could not be
-    // completed — the caller must show that honestly (e.g. an upgrade explanation for
-    // reason === 'allowance') rather than treating a blocked change as if it succeeded.
-    updatePropertyStatus(propertyId, listingStatus) {
-      if (activeRole !== 'landlord') return { ok: false, reason: 'not-landlord' }
-      const allowedStatuses = ['published', 'pending_verification', 'draft', 'paused', 'rejected', 'rented']
-      if (!allowedStatuses.includes(listingStatus)) return { ok: false, reason: 'invalid-status' }
-      const currentProperty = properties.find((property) => property.id === propertyId && property.ownerId === currentOwnerId)
-      if (!currentProperty || currentProperty.listingStatus === listingStatus) return { ok: false, reason: 'no-op' }
-      if (!canTransitionListing(currentProperty.listingStatus, listingStatus)) return { ok: false, reason: 'invalid-transition' }
-
-      // Frontend-only allowance check — this narrows what the UI offers, it is not a
-      // server-enforced limit. A Free landlord already over the allowance from existing/demo
-      // listings keeps those listings; only a *new* move into an active status is blocked.
-      const activeStatuses = ['published', 'active']
-      const enteringActive = activeStatuses.includes(listingStatus) && !activeStatuses.includes(currentProperty.listingStatus)
-      if (enteringActive) {
-        const allowance = getActiveListingAllowance(landlordPlan)
-        const activeCount = landlordProperties.filter(
-          (property) => property.id !== propertyId && activeStatuses.includes(property.listingStatus),
-        ).length
-        if (activeCount >= allowance) {
-          return { ok: false, reason: 'allowance', allowance, activeCount }
-        }
-      }
-
-      const localExists = localProperties.some((property) => property.id === propertyId)
-      const fixture = mockProperties.find((property) => property.id === propertyId)
-      const now = new Date().toISOString()
-      const next = localExists
-        ? localProperties.map((property) => (property.id === propertyId ? { ...property, listingStatus, updatedAt: now } : property))
-        : fixture
-          ? [{ ...fixture, listingStatus, updatedAt: now }, ...localProperties]
-          : localProperties
-      persistProperties(next)
-      setToast({ type: 'info', message: `Listing ${getListingStatusLabel(listingStatus)}.` })
-      return { ok: true }
-    },
+    // Listing create/edit/lifecycle/photo writes go directly through useListings() from
+    // CreateListing.jsx and LandlordProperties.jsx now (Stage C) — this context stays a
+    // read-composition layer for listings, matching ListingsProvider's own "centralize listing
+    // data access" role instead of duplicating a second write surface here.
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>

@@ -136,8 +136,12 @@ export function getTrustSignals(property) {
   ].filter(Boolean)
 }
 
+// `trust` is `null` for every real listing on purpose (see config/listingAdapter.js) — a default
+// parameter alone does not cover an explicitly passed null, only undefined, so it is normalized
+// here rather than relying on the call site to remember that every time.
 export function getTrustStatusLabel(status, trust = {}) {
-  if (trust.internalDemoState) return 'Not shown'
+  const safeTrust = trust || {}
+  if (safeTrust.internalDemoState) return 'Not shown'
   const labels = {
     verified: 'Verified',
     pending: 'Pending',

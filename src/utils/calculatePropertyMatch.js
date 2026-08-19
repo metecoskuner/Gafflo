@@ -27,12 +27,12 @@ function isKnownNumber(value) {
 
 export function calculatePropertyMatch(tenantProfile, property) {
   if (!tenantProfile) {
+    // null, never an invented number (e.g. the old flat 68) — this listing genuinely has not
+    // been scored against anything yet. See components/MatchBadge.jsx for how a null score
+    // renders as "Unscored" rather than a fabricated percentage.
     return {
-      score: 68,
-      reasons: [
-        'Create a tenant profile to unlock more precise rental-fit matching.',
-        'This match score is based on the property listing until your profile is complete.',
-      ],
+      score: null,
+      reasons: ['Add a tenant profile to see a personalized Rental Fit score for this listing.'],
       warnings: [],
       hardStops: [],
     }

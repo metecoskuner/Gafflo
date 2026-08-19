@@ -15,6 +15,7 @@ import { LISTING_CATEGORIES, listingCategoryOptions } from './config/listingCate
 import { AppStateProvider } from './context/MarketplaceState'
 import { AuthProvider } from './context/AuthProvider'
 import { AccountProfileProvider } from './context/AccountProfileProvider'
+import { ListingsProvider } from './context/ListingsProvider'
 import useAccountProfile from './context/useAccountProfile'
 import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
@@ -213,9 +214,11 @@ export default function App() {
       <AuthGate>
         <AccountProfileProvider>
           <ProfileGate>
-            <AppStateProvider>
-              <AppLayout />
-            </AppStateProvider>
+            <ListingsProvider>
+              <AppStateProvider>
+                <AppLayout />
+              </AppStateProvider>
+            </ListingsProvider>
           </ProfileGate>
         </AccountProfileProvider>
       </AuthGate>

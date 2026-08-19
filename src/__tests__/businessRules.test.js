@@ -607,7 +607,11 @@ describe('frontend integrity helpers', () => {
     expect(getDurablePhotoMetadata([{ src: 'blob:http://localhost/photo' }], LISTING_CATEGORIES.ENTIRE_PROPERTY)).toEqual([])
   })
 
-  it('explains that session-only photos cannot be submitted for review', () => {
+  // Stage C: photos are uploaded and durably registered in real Storage the moment a landlord
+  // adds them (see CreateListing.jsx) — there is no more session-only/blob-URL intermediate
+  // state, so there is no longer a distinct "kept for this session only" message to show. Any
+  // zero-photo listing gets the same plain "add a photo" message regardless of history.
+  it('requires at least one durable photo before review, with no session-only distinction', () => {
     const listing = {
       title: 'Bright listing',
       rent: 1200,
@@ -622,10 +626,9 @@ describe('frontend integrity helpers', () => {
       bathrooms: 1,
       maxOccupants: 1,
     }
-    const withSessionPhotos = validateListingForReview(listing, '2029-01-01', { photoCount: 0, hasSessionOnlyPhotos: true })
-    expect(withSessionPhotos.errors.images).toMatch(/session only/i)
-    const withNoPhotos = validateListingForReview(listing, '2029-01-01', { photoCount: 0, hasSessionOnlyPhotos: false })
+    const withNoPhotos = validateListingForReview(listing, '2029-01-01', { photoCount: 0 })
     expect(withNoPhotos.errors.images).toBe('Add at least one listing photo before requesting review.')
+    expect(validateListingForReview(listing, '2029-01-01', { photoCount: 1 }).errors.images).toBeUndefined()
   })
 
   it('filters applicants by valid property query only', () => {

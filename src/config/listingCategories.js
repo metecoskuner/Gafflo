@@ -186,11 +186,9 @@ export function validateListingForReview(listing = {}, today = '', options = {})
   if (!positiveInteger(listing.minStayMonths, 0)) errors.minStayMonths = 'Minimum stay must be at least 1 month.'
   addTextError(errors, 'description', listing.description, 40, 900, 'Add at least 40 characters so renters understand the listing.')
   if (reviewPhotoCount < 1) {
-    errors.images = options.hasSessionOnlyPhotos
-      ? "Uploaded photos are kept for this browser session only — there's no photo storage yet, so review can't be requested until a durably-saved photo is added. Save as a draft to keep your work."
-      : isRoomListing(normalized.listingCategory)
-        ? 'Add at least one room photo before requesting review.'
-        : 'Add at least one listing photo before requesting review.'
+    errors.images = isRoomListing(normalized.listingCategory)
+      ? 'Add at least one room photo before requesting review.'
+      : 'Add at least one listing photo before requesting review.'
   }
 
   if (normalized.listingCategory === LISTING_CATEGORIES.ENTIRE_PROPERTY) {

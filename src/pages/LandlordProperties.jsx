@@ -5,10 +5,12 @@ import EmptyState from '../components/EmptyState'
 import PricingEntryCard from '../components/PricingEntryCard'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, listingCategoryLabel, LISTING_CATEGORIES } from '../config/listingCategories'
+import { getActiveListingAllowance } from '../config/entitlements'
 import { getListingActions, listingStatusLabels } from '../config/listingLifecycle'
 import { getLandlordPlanConfig, getListingProductConfig, LANDLORD_PLAN, LISTING_PRODUCT } from '../config/pricingPlans'
 import { canBoostListing } from '../config/promotion'
 import useAppState from '../context/useAppState'
+import useListings from '../context/useListings'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
@@ -33,9 +35,12 @@ function getListingActionPlan(status) {
 
 export default function LandlordProperties() {
   const navigate = useNavigate()
-  const { landlordProperties, landlordEnquiries, updatePropertyStatus } = useAppState()
+  const { landlordPlan, landlordProperties } = useAppState()
+  const { markRented, pauseListing, requestReview, resumeListing } = useListings()
   const [allowanceBlock, setAllowanceBlock] = useState(null)
   const [boostPreview, setBoostPreview] = useState(null)
+  const [actionError, setActionError] = useState('')
+  const [pendingPropertyId, setPendingPropertyId] = useState(null)
   const counts = useMemo(
     () =>
       statusTabs.reduce((acc, status) => {
@@ -81,15 +86,42 @@ export default function LandlordProperties() {
         </div>
       </section>
 
+      {actionError ? (
+        <div className="rounded-[22px] border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{actionError}</div>
+      ) : null}
+
       <section className="grid gap-4">
         {landlordProperties.map((property) => {
-          const applicantCount = landlordEnquiries.filter((enquiry) => enquiry.propertyId === property.id).length
           const roomListing = isRoomListing(property.listingCategory)
           const plan = getListingActionPlan(property.listingStatus)
           const transitions = getListingActions(property.listingStatus)
-          const runTransition = (status) => {
-            const result = updatePropertyStatus(property.id, status)
-            if (result && result.reason === 'allowance') setAllowanceBlock(result)
+          const isPending = pendingPropertyId === property.id
+          // Free-plan active-listing allowance is a frontend-only soft gate today — the backend
+          // resume_listing() RPC deliberately defers real enforcement to a future payments/
+          // entitlements phase (see its migration comment) — so this pre-check still only
+          // narrows what the UI offers before ever calling the real RPC, never replaces it.
+          const runTransition = async (status) => {
+            if (status === 'published') {
+              const allowance = getActiveListingAllowance(landlordPlan)
+              const activeCount = landlordProperties.filter(
+                (item) => item.id !== property.id && ['published', 'active'].includes(item.listingStatus),
+              ).length
+              if (activeCount >= allowance) {
+                setAllowanceBlock({ allowance, activeCount })
+                return
+              }
+            }
+            setActionError('')
+            setPendingPropertyId(property.id)
+            const action =
+              status === 'pending_verification' ? requestReview
+                : status === 'published' ? resumeListing
+                  : status === 'paused' ? pauseListing
+                    : status === 'rented' ? markRented
+                      : null
+            const { error } = action ? await action(property.id) : { error: null }
+            setPendingPropertyId(null)
+            if (error) setActionError(error)
           }
           const renderAction = (key, isPrimary) => {
             if (key === 'preview') {
@@ -124,6 +156,8 @@ export default function LandlordProperties() {
                 key={key}
                 variant={isPrimary ? 'dark' : 'secondary'}
                 className={destructiveSecondaryClass}
+                disabled={isPending}
+                isLoading={isPending}
                 onClick={() => runTransition(transition.status)}
               >
                 {isPrimary ? plan.primaryLabel : transition.label}
@@ -142,9 +176,6 @@ export default function LandlordProperties() {
                       <div className="flex flex-wrap gap-2">
                         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
                           {listingStatusLabels[property.listingStatus] || property.listingStatus}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                          {applicantCount} applicant{applicantCount === 1 ? '' : 's'}
                         </span>
                       </div>
                       <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">{property.title}</h2>

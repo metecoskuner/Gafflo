@@ -4,7 +4,7 @@ const KEYS = {
   smartMatchActivity: 'gafflo.smart-match-activity',
   enquiries: 'gafflo.enquiries',
   conversations: 'gafflo.conversations',
-  properties: 'gafflo.properties',
+  propertyReports: 'gafflo.property-reports',
   tenantPlan: 'gafflo.tenant-plan',
   landlordPlan: 'gafflo.landlord-plan',
 }
@@ -13,7 +13,6 @@ const LEGACY_KEYS = {
   saved: 'gaffly.saved-rooms',
   dismissed: 'gaffly.reviewed-rooms',
   conversations: 'gaffly.conversations',
-  properties: 'gaffly.created-listings',
 }
 
 function getJson(key, fallback, legacyKey) {
@@ -69,12 +68,17 @@ export function setConversations(conversations) {
   setJson(KEYS.conversations, conversations)
 }
 
-export function getLocalProperties() {
-  return getJson(KEYS.properties, [], LEGACY_KEYS.properties)
+// Stage C: local-only safety annotations (see MarketplaceState.jsx's reportListing) keyed by
+// listing id — never the listing data itself, which now lives in real Supabase (see
+// ListingsProvider). Deliberately never reads the retired gafflo.properties/gaffly.created-
+// listings keys as a fallback: a stale local report dict must not resurrect old mock listing
+// records that no longer exist anywhere real.
+export function getPropertyReports() {
+  return getJson(KEYS.propertyReports, {})
 }
 
-export function setLocalProperties(properties) {
-  setJson(KEYS.properties, properties)
+export function setPropertyReports(reports) {
+  setJson(KEYS.propertyReports, reports)
 }
 
 // Local-only plan state for this prototype. No purchase flow sets these yet — they exist so

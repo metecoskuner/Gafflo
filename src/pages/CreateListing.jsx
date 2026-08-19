@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
@@ -29,8 +29,10 @@ import {
   validateListingForReview,
 } from '../config/listingCategories'
 import { cityOptions } from '../config/locationOptions'
-import { getDurableListingImages, getDurablePhotoMetadata, getPhotoLabelOptions, isSessionObjectUrl, normalizePhotoMetadata, validatePhotoFiles } from '../config/photoMetadata'
+import { MAX_LISTING_PHOTOS, validatePhotoFiles } from '../config/photoMetadata'
+import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
+import useListings from '../context/useListings'
 import { getTodayIsoDate } from '../utils/dateUtils'
 
 const viewingTypeOptions = ['In-person', 'Virtual or in-person']
@@ -84,7 +86,6 @@ function createInitialForm() {
     laundry: true,
     wardrobeStorage: true,
     description: '',
-    listingTerms: '',
     householdSummary: '',
   })
 }
@@ -92,30 +93,65 @@ function createInitialForm() {
 export default function CreateListing() {
   const navigate = useNavigate()
   const { propertyId } = useParams()
-  const { addProperty, currentOwnerId, landlordProfile, landlordProperties, updateProperty } = useAppState()
+  const { landlordProperties } = useAppState()
+  const { landlordProfile, profile } = useAccountProfile()
+  const { createListing, deleteImage, loading: listingsLoading, reorderImages, requestReview, setCoverImage, updateListing, uploadImage } = useListings()
+
+  const isEditing = Boolean(propertyId)
   const editingProperty = useMemo(() => landlordProperties.find((property) => property.id === propertyId), [landlordProperties, propertyId])
+  const [draftError, setDraftError] = useState('')
+
+  // A real listings row must exist before any photo can be uploaded (the Storage path is
+  // {listing_id}/{image_id}.ext — see services/listingsService.js) and before any field edit has
+  // somewhere real to persist to. For a brand-new listing this creates that real, empty draft row
+  // immediately on entering the screen — a real DB UUID from the first render onward, never a
+  // client-generated `property-local-${Date.now()}` id — then replaces the URL with that
+  // listing's real /listings/:id/edit route. Staying on /listings/new instead would mean a
+  // reload (or the back button) re-runs this effect and silently creates a second, abandoned
+  // draft every time; redirecting means a reload always lands back on THIS same draft via the
+  // ordinary isEditing path below.
+  useEffect(() => {
+    if (isEditing) return
+    let cancelled = false
+    createListing({ listingCategory: LISTING_CATEGORIES.ENTIRE_PROPERTY }).then(({ data, error }) => {
+      if (cancelled) return
+      if (error) {
+        setDraftError('Could not start a new listing. Please go back and try again.')
+        return
+      }
+      navigate(`/listings/${data.id}/edit`, { replace: true })
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing])
+
+  const listingId = editingProperty?.id || null
+  const listingPhotos = useMemo(() => editingProperty?.photoMetadata || [], [editingProperty])
+
   const [form, setForm] = useState(() => (editingProperty ? propertyToForm(editingProperty) : createInitialForm()))
-  const [photoItems, setPhotoItems] = useState(() => normalizePhotoMetadata(editingProperty?.photoMetadata || editingProperty?.images || [], editingProperty?.listingCategory))
-  const photoItemsRef = useRef(photoItems)
   const [errors, setErrors] = useState({})
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [showPreview, setShowPreview] = useState(false)
-  const listingPhotos = useMemo(() => normalizePhotoMetadata(photoItems, form.listingCategory), [form.listingCategory, photoItems])
+  const [uploadError, setUploadError] = useState('')
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+  const [pendingImageId, setPendingImageId] = useState(null)
   const previewImages = useMemo(() => (listingPhotos.length ? listingPhotos.map((photo) => photo.src) : [defaultImage]), [listingPhotos])
-  const durablePhotoCount = useMemo(() => getDurablePhotoMetadata(listingPhotos, form.listingCategory).length, [listingPhotos, form.listingCategory])
-  const hasSessionOnlyPhotos = useMemo(() => listingPhotos.some((photo) => isSessionObjectUrl(photo.src)), [listingPhotos])
   const today = getTodayIsoDate()
   const roomListing = isRoomListing(form.listingCategory)
   const lockedCategory = editingProperty && !canChangeListingCategory(editingProperty, form.listingCategory).allowed
 
-  // Tenant-facing preview of the in-progress draft — real presentation component, nothing
-  // persisted, no score (landlord role never sees Rental Fit), no publish side effect.
+  // Tenant-facing preview of the in-progress draft — real presentation component, nothing new
+  // persisted beyond what's already saved, no score (landlord role never sees Rental Fit), no
+  // publish side effect.
   const previewProperty = useMemo(
     () => ({
       ...form,
-      id: editingProperty?.id || 'preview-draft',
-      ownerId: currentOwnerId,
-      ownerName: landlordProfile.displayName,
+      id: listingId || 'preview-draft',
+      ownerId: profile?.id,
+      ownerName: landlordProfile?.displayName || '',
       ownerType: 'Private landlord',
       listingStatus: editingProperty?.listingStatus || 'draft',
       rent: Number(form.rent) || 0,
@@ -133,28 +169,11 @@ export default function CreateListing() {
       features: buildFeatures(form),
       listingRules: buildListingRules(form),
       approximateAddress: `${form.area.trim() || 'Area'} area`,
-      trust: {
-        emailVerified: false,
-        phoneVerified: false,
-        identityStatus: 'not_verified',
-        landlordVerification: 'pending',
-        propertyVerification: 'pending',
-        internalDemoState: true,
-      },
+      trust: null,
+      promotion: null,
     }),
-    [form, previewImages, editingProperty, currentOwnerId, landlordProfile],
+    [form, previewImages, listingId, profile, landlordProfile, editingProperty],
   )
-
-  useEffect(() => {
-    photoItemsRef.current = photoItems
-  }, [photoItems])
-
-  useEffect(() => {
-    return () => {
-      const sessionUrls = photoItemsRef.current.map((photo) => photo.src).filter(isSessionObjectUrl)
-      sessionUrls.forEach((src) => URL.revokeObjectURL(src))
-    }
-  }, [])
 
   const updateField = (field, value) => {
     setForm((current) => normalizeListingFormState({ ...current, [field]: value }))
@@ -173,131 +192,150 @@ export default function CreateListing() {
       setErrors((current) => ({ ...current, listingCategory: safety.reason }))
       return
     }
-    const hasSessionPhotos = listingPhotos.some((photo) => photo.sessionOnly || isSessionObjectUrl(photo.src))
-    const resetMessage = hasSessionPhotos
-      ? 'Changing category will reset fields that do not apply to the new listing type and remove photos from this editing session. Continue?'
-      : 'Changing category will reset fields that do not apply to the new listing type. Continue?'
-    if (safety.requiresConfirmation && !window.confirm(resetMessage)) return
+    if (safety.requiresConfirmation && !window.confirm('Changing category will reset fields that do not apply to the new listing type. Continue?')) return
     setErrors((current) => {
       const next = { ...current }
       delete next.listingCategory
       return next
     })
-    if (hasSessionPhotos) {
-      listingPhotos.forEach((photo) => {
-        if (isSessionObjectUrl(photo.src)) URL.revokeObjectURL(photo.src)
-      })
-      setPhotoItems([])
-    } else {
-      setPhotoItems((current) => normalizePhotoMetadata(current, nextCategory))
-    }
     setForm((current) => applyCategoryDefaults(current, nextCategory))
   }
 
-  const handlePhotoUpload = (event) => {
+  const handlePhotoUpload = async (event) => {
     const files = Array.from(event.target.files || [])
-    const validation = validatePhotoFiles(files, listingPhotos)
-    setErrors((current) => {
-      const next = { ...current }
-      if (validation.errors.length) next.images = validation.errors[0]
-      else delete next.images
-      return next
-    })
-    if (!validation.accepted.length) {
-      event.target.value = ''
-      return
-    }
-
-    const nextPhotos = validation.accepted.map(({ file, fileKey }) => ({
-      id: `photo-${Date.now()}-${fileKey}`,
-      src: URL.createObjectURL(file),
-      sessionOnly: true,
-      label: getPhotoLabelOptions(form.listingCategory)[0],
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      fileKey,
-      isCover: false,
-    }))
-    setPhotoItems((current) => normalizePhotoMetadata([...current, ...nextPhotos], form.listingCategory))
     event.target.value = ''
+    if (!listingId) return
+    const validation = validatePhotoFiles(files, listingPhotos)
+    setUploadError(validation.errors[0] || '')
+    if (!validation.accepted.length) return
+
+    setIsUploadingPhoto(true)
+    for (const { file } of validation.accepted) {
+      const { error } = await uploadImage(listingId, file, { label: listingPhotos.length === 0 ? 'cover' : 'other' })
+      if (error) {
+        setUploadError(error)
+        break
+      }
+    }
+    setIsUploadingPhoto(false)
   }
 
-  const updatePhotoLabel = (photoId, label) => {
-    setPhotoItems((current) => normalizePhotoMetadata(current.map((photo) => (photo.id === photoId ? { ...photo, label } : photo)), form.listingCategory))
+  const removePhoto = async (photo) => {
+    setPendingImageId(photo.id)
+    const { error } = await deleteImage(photo.id, photo.storagePath)
+    setPendingImageId(null)
+    if (error) setUploadError(error)
   }
 
-  const removePhoto = (photoId) => {
-    setPhotoItems((current) => {
-      const removedPhoto = current.find((photo) => photo.id === photoId)
-      if (removedPhoto?.src && isSessionObjectUrl(removedPhoto.src)) URL.revokeObjectURL(removedPhoto.src)
-      return normalizePhotoMetadata(current.filter((photo) => photo.id !== photoId), form.listingCategory)
-    })
+  const movePhoto = async (photo, direction) => {
+    const index = listingPhotos.findIndex((item) => item.id === photo.id)
+    const nextIndex = index + direction
+    if (index < 0 || nextIndex < 0 || nextIndex >= listingPhotos.length) return
+    const reordered = [...listingPhotos]
+    const [item] = reordered.splice(index, 1)
+    reordered.splice(nextIndex, 0, item)
+    setPendingImageId(photo.id)
+    const { error } = await reorderImages(listingId, reordered.map((entry) => entry.id))
+    setPendingImageId(null)
+    if (error) setUploadError(error)
   }
 
-  const movePhoto = (photoId, direction) => {
-    setPhotoItems((current) => {
-      const index = current.findIndex((photo) => photo.id === photoId)
-      const nextIndex = index + direction
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current
-      const next = [...current]
-      const [item] = next.splice(index, 1)
-      next.splice(nextIndex, 0, item)
-      return normalizePhotoMetadata(next, form.listingCategory)
-    })
-  }
-
-  const chooseCover = (photoId) => {
-    setPhotoItems((current) => {
-      const cover = current.find((photo) => photo.id === photoId)
-      if (!cover) return current
-      return normalizePhotoMetadata([cover, ...current.filter((photo) => photo.id !== photoId)], form.listingCategory)
-    })
+  const chooseCover = async (photo) => {
+    setPendingImageId(photo.id)
+    const { error } = await setCoverImage(listingId, photo.id)
+    setPendingImageId(null)
+    if (error) setUploadError(error)
   }
 
   const validate = () => {
-    const result = validateListingForReview(form, today, { photoCount: durablePhotoCount, hasSessionOnlyPhotos })
+    const result = validateListingForReview(form, today, { photoCount: listingPhotos.length })
     setErrors(result.errors)
     return result.valid
   }
 
-  const handleSubmit = (event, listingStatus = 'pending_verification') => {
+  // request_listing_review() only accepts a listing whose status is 'draft' or 'rejected' — a
+  // listing that already went live (published/paused/rented) or is already mid-review
+  // (pending_verification) has nothing to "request"; editing it is just a plain field save. A
+  // brand-new listing defaults to true since it is always created as 'draft' (see the draft
+  // useEffect above) and editingProperty may not have caught up to that yet on the very first render.
+  const canRequestReview = ['draft', 'rejected'].includes(editingProperty?.listingStatus || 'draft')
+
+  const handleSubmit = async (event, targetStatus = 'pending_verification') => {
     event.preventDefault()
-    if (listingStatus !== 'draft' && !validate()) return
+    if (!listingId) return
+    const isDraft = targetStatus === 'draft'
+    const willRequestReview = !isDraft && canRequestReview
+    if (willRequestReview && !validate()) return
 
     setIsSaving(true)
-    const isDraft = listingStatus === 'draft'
+    setSaveError('')
     const normalized = isDraft ? normalizeListingDraftForStorage(form) : normalizeListingForStorage(form)
-    const durablePhotoMetadata = getDurablePhotoMetadata(listingPhotos, form.listingCategory)
-    const payload = {
+    const fields = {
       ...normalized,
       title: form.title.trim(),
       description: form.description.trim(),
       area: form.area.trim(),
       city: form.city,
       approximateAddress: `${form.area.trim()} area`,
-      eircode: '',
       rent: isDraft ? nullableFormNumber(form.rent) : Number(form.rent),
       deposit: isDraft ? nullableFormNumber(form.deposit) : Number(form.deposit || 0),
       billsIncluded: Boolean(form.billsIncluded),
-      availableFrom: form.availableFrom,
+      availableFrom: form.availableFrom || null,
       minStayMonths: isDraft ? nullableFormInteger(form.minStayMonths) : Number(form.minStayMonths),
-      images: getDurableListingImages(listingPhotos, defaultImage, form.listingCategory),
       viewingType: form.viewingType,
-      listingStatus,
-      photoMetadata: durablePhotoMetadata.map(({ id, label, name, size, type, src, isCover }) => ({ id, label, name, size, type, src, isCover })),
       amenities: buildAmenities(form),
       features: buildFeatures(form),
       listingRules: buildListingRules(form),
-      listingTerms: form.listingTerms.trim(),
       householdSummary: form.householdSummary.trim(),
     }
-    const listingId = editingProperty ? updateProperty(editingProperty.id, payload) : addProperty(payload)
 
-    window.setTimeout(() => {
+    const { error: updateError } = await updateListing(listingId, fields)
+    if (updateError) {
       setIsSaving(false)
-      if (listingId) navigate('/properties')
-    }, 180)
+      setSaveError('Something went wrong saving this listing. Please try again.')
+      return
+    }
+
+    if (!willRequestReview) {
+      setIsSaving(false)
+      navigate('/properties')
+      return
+    }
+
+    const { error: reviewError } = await requestReview(listingId)
+    setIsSaving(false)
+    if (reviewError) {
+      setSaveError(reviewError)
+      return
+    }
+    navigate('/properties')
+  }
+
+  if (draftError) {
+    return (
+      <div className="mx-auto max-w-lg py-10 text-center">
+        <p className="text-sm font-medium text-rose-600">{draftError}</p>
+        <Button variant="secondary" className="mt-4" onClick={() => navigate('/properties')}>Back to properties</Button>
+      </div>
+    )
+  }
+
+  if (!listingId) {
+    // isEditing but landlordProperties hasn't resolved this id (still loading, or it belongs to
+    // someone else / never existed) — never a silent infinite spinner for the latter case.
+    if (isEditing && !listingsLoading) {
+      return (
+        <div className="mx-auto max-w-lg py-16 text-center">
+          <p className="text-sm font-medium text-slate-600">This listing could not be found.</p>
+          <Button variant="secondary" className="mt-4" onClick={() => navigate('/properties')}>Back to properties</Button>
+        </div>
+      )
+    }
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center">
+        <span className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600" role="status" aria-label="Starting your listing" />
+      </div>
+    )
   }
 
   return (
@@ -307,7 +345,7 @@ export default function CreateListing() {
           <img src={previewImages[0]} alt="Listing preview" className="h-full w-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/82 via-slate-950/16 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-5 text-white">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">{editingProperty ? 'Edit listing' : 'Create listing'}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">{isEditing ? 'Edit listing' : 'Create listing'}</p>
             <h1 className="text-balance mt-2 text-[1.65rem] font-semibold leading-tight tracking-tight min-[390px]:text-3xl">{form.title || 'List your property'}</h1>
             <p className="mt-2 text-sm text-slate-200">
               {listingCategoryLabel(form.listingCategory)} · {form.area || 'Area'}, {form.city} {form.rent ? `· €${form.rent}/mo` : ''}
@@ -344,12 +382,12 @@ export default function CreateListing() {
 
         <PhotoSection
           photos={listingPhotos}
-          category={form.listingCategory}
           fallbackImage={defaultImage}
-          error={errors.images}
+          error={errors.images || uploadError}
+          isUploading={isUploadingPhoto}
+          pendingImageId={pendingImageId}
           onChange={handlePhotoUpload}
           onCover={chooseCover}
-          onLabel={updatePhotoLabel}
           onMove={movePhoto}
           onRemove={removePhoto}
         />
@@ -372,17 +410,22 @@ export default function CreateListing() {
             Check the highlighted fields before requesting review.
           </div>
         ) : null}
+        {saveError ? (
+          <div className="rounded-[22px] border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{saveError}</div>
+        ) : null}
 
         <Button type="button" variant="secondary" className="w-full" onClick={() => setShowPreview(true)}>
           Preview listing
         </Button>
 
-        <div className="grid grid-cols-[0.9fr_1.1fr] gap-2 rounded-[24px] border border-slate-200 bg-white/96 p-2 shadow-soft">
-          <Button variant="secondary" onClick={(event) => handleSubmit(event, 'draft')}>
-            Save draft
-          </Button>
+        <div className={`grid gap-2 rounded-[24px] border border-slate-200 bg-white/96 p-2 shadow-soft ${canRequestReview ? 'grid-cols-[0.9fr_1.1fr]' : 'grid-cols-1'}`}>
+          {canRequestReview ? (
+            <Button variant="secondary" disabled={isSaving} onClick={(event) => handleSubmit(event, 'draft')}>
+              Save draft
+            </Button>
+          ) : null}
           <Button type="submit" disabled={isSaving} isLoading={isSaving}>
-            {isSaving ? 'Saving' : 'Request review'}
+            {isSaving ? 'Saving' : canRequestReview ? 'Request review' : 'Save changes'}
           </Button>
         </div>
       </form>
@@ -404,56 +447,63 @@ function nullableFormNumber(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
-function PhotoSection({ category, error, fallbackImage, onChange, onCover, onLabel, onMove, onRemove, photos }) {
-  const labels = getPhotoLabelOptions(category)
-  const displayPhotos = photos.length ? photos : [{ id: 'fallback', src: fallbackImage, label: labels[0], isCover: true }]
+function PhotoSection({ error, fallbackImage, isUploading, onChange, onCover, onMove, onRemove, pendingImageId, photos }) {
+  const displayPhotos = photos.length ? photos : [{ id: 'fallback', src: fallbackImage, isCover: true }]
 
   return (
-    <FormSection title="Photos" description="Uploaded files are previews only — they are kept for this browser session and are not saved with the listing. There's no photo storage yet, so at least one durably-saved photo is required before requesting review.">
+    <FormSection title="Photos" description="Photos are uploaded and saved to your listing as soon as you add them — no separate save step. At least one photo is required before requesting review.">
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700">Add photos</span>
         <input
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           multiple
+          disabled={isUploading || photos.length >= MAX_LISTING_PHOTOS}
           onChange={onChange}
-          className="min-h-12 w-full rounded-[18px] border border-indigo-100 bg-white px-4 py-3 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-emerald-700"
+          className="min-h-12 w-full rounded-[18px] border border-indigo-100 bg-white px-4 py-3 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-emerald-700 disabled:opacity-60"
         />
         {error ? <span className="mt-2 block text-xs font-medium text-rose-500">{error}</span> : null}
-        <span className="mt-2 block text-xs leading-5 text-slate-500">Up to 8 images. Each image must be under 2 MB.</span>
+        <span className="mt-2 block text-xs leading-5 text-slate-500">
+          {isUploading ? 'Uploading…' : `JPEG, PNG or WEBP. Up to ${MAX_LISTING_PHOTOS} images. Each image must be under 2 MB.`}
+        </span>
       </label>
       <div className="mt-4 grid gap-3">
-        {displayPhotos.map((photo, index) => (
-          <div key={photo.id} className="surface-line grid gap-3 rounded-[20px] bg-white p-3 min-[390px]:grid-cols-[7rem_1fr]">
-            <PhotoPreview src={photo.src} alt={`Preview ${index + 1}`} />
-            <div className="min-w-0 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{index === 0 ? 'Cover image' : `Photo ${index + 1}`}</p>
-                  <p className="mt-1 truncate text-xs text-slate-500">{photo.name || 'Listing preview'}</p>
+        {displayPhotos.map((photo, index) => {
+          const isPending = pendingImageId === photo.id
+          return (
+            <div key={photo.id} className="surface-line grid gap-3 rounded-[20px] bg-white p-3 min-[390px]:grid-cols-[7rem_1fr]">
+              <PhotoPreview src={photo.src} alt={`Preview ${index + 1}`} />
+              <div className="min-w-0 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">{photo.isCover ? 'Cover image' : `Photo ${index + 1}`}</p>
+                  </div>
+                  {photo.id !== 'fallback' ? (
+                    <button
+                      type="button"
+                      aria-label={`Remove photo ${index + 1}`}
+                      disabled={isPending}
+                      onClick={() => onRemove(photo)}
+                      className="min-h-10 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:opacity-60"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
-                {photo.id !== 'fallback' ? (
-                  <button type="button" aria-label={`Remove photo ${index + 1}`} onClick={() => onRemove(photo.id)} className="min-h-10 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700">
-                    Remove
-                  </button>
-                ) : null}
-              </div>
 
-              {photo.id !== 'fallback' ? (
-                <>
-                  <SelectInput label="Photo label" value={photo.label} onChange={(event) => onLabel(photo.id, event.target.value)} options={labels.map((label) => ({ label, value: label }))} />
+                {photo.id !== 'fallback' ? (
                   <div className="grid grid-cols-3 gap-2">
-                    <Button type="button" variant="secondary" className="px-2" disabled={index === 0} aria-label={`Move photo ${index + 1} up`} onClick={() => onMove(photo.id, -1)}>Up</Button>
-                    <Button type="button" variant="secondary" className="px-2" disabled={index === photos.length - 1} aria-label={`Move photo ${index + 1} down`} onClick={() => onMove(photo.id, 1)}>Down</Button>
-                    <Button type="button" variant={index === 0 ? 'primary' : 'secondary'} className="px-2" disabled={index === 0} aria-label={`Make photo ${index + 1} the cover`} onClick={() => onCover(photo.id)}>
-                      {index === 0 ? 'Cover' : 'Set cover'}
+                    <Button type="button" variant="secondary" className="px-2" disabled={isPending || index === 0} aria-label={`Move photo ${index + 1} up`} onClick={() => onMove(photo, -1)}>Up</Button>
+                    <Button type="button" variant="secondary" className="px-2" disabled={isPending || index === photos.length - 1} aria-label={`Move photo ${index + 1} down`} onClick={() => onMove(photo, 1)}>Down</Button>
+                    <Button type="button" variant={photo.isCover ? 'primary' : 'secondary'} className="px-2" disabled={isPending || photo.isCover} aria-label={`Make photo ${index + 1} the cover`} onClick={() => onCover(photo)}>
+                      {photo.isCover ? 'Cover' : 'Set cover'}
                     </Button>
                   </div>
-                </>
-              ) : null}
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </FormSection>
   )
@@ -461,7 +511,7 @@ function PhotoSection({ category, error, fallbackImage, onChange, onCover, onLab
 
 function PhotoPreview({ alt, src }) {
   const [failed, setFailed] = useState(false)
-  if (failed) {
+  if (failed || !src) {
     return (
       <div className="flex h-36 w-full items-center justify-center rounded-[18px] bg-slate-100 px-3 text-center text-xs font-medium text-slate-500 min-[390px]:h-28 min-[390px]:w-28">
         Preview unavailable
@@ -580,13 +630,12 @@ function AmenitiesSection({ form, roomListing, updateField }) {
 
 function TermsSection({ form, errors, roomListing, updateField }) {
   return (
-    <FormSection title="Description and terms" description="Describe the listing without adding demographic or personality matching requirements.">
+    <FormSection title="Description" description="Describe the listing without adding demographic or personality matching requirements.">
       <div className="grid gap-4">
         <FormInput textarea rows={4} label={roomListing ? 'Room description' : 'Property description'} value={form.description} maxLength={900} error={errors.description} onChange={(event) => updateField('description', event.target.value)} />
         {roomListing ? (
           <FormInput textarea rows={3} label="Household summary" value={form.householdSummary} maxLength={500} error={errors.householdSummary} onChange={(event) => updateField('householdSummary', event.target.value)} />
         ) : null}
-        <FormInput textarea rows={4} label="Listing terms" value={form.listingTerms} maxLength={700} error={errors.listingTerms} onChange={(event) => updateField('listingTerms', event.target.value)} />
       </div>
     </FormSection>
   )

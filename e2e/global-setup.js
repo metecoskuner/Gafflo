@@ -86,6 +86,12 @@ const IDENTITIES = {
   // to (Dublin -> Cork) — reusing tenantDefault here would corrupt every other test that reads
   // it expecting Dublin to stay Dublin.
   tenantSelectSaveTest: { role: 'tenant', tenant: { ...TENANT_BASE_ROW } },
+  // Stage C — real listings/Storage ownership-isolation coverage (e2e/listings.spec.js) needs
+  // two distinct real landlord identities, neither of which can be landlordDefault/
+  // landlordForSignOutTest: the isolation tests read each other's auth.uid() at test time and
+  // must never race with unrelated tests mutating those shared identities' own listing state.
+  landlordListingOwnerA: { role: 'landlord', landlord: { display_name: 'Listing Owner A' } },
+  landlordListingOwnerB: { role: 'landlord', landlord: { display_name: 'Listing Owner B' } },
 }
 
 async function signUp(url, anonKey, email, password) {
