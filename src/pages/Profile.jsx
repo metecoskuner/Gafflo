@@ -28,6 +28,7 @@ import { cityOptions, getAreaOptionsForCity, normalizePreferredAreas, resetAreas
 import { getTenantProfileCompleteness } from '../config/rentalJourney'
 import { LISTING_CATEGORIES } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
+import useAuth from '../context/useAuth'
 import { getTodayIsoDate, isPastIsoDate } from '../utils/dateUtils'
 
 const lookingForChoices = [
@@ -282,6 +283,7 @@ function TenantProfile() {
               navigate('/dashboard')
             }}
           />
+          <AccountSection />
           <Button type="submit" className="w-full">Save tenant profile</Button>
         </form>
       </ProfileShell>
@@ -386,6 +388,7 @@ function LandlordProfile() {
             navigate('/dashboard')
           }}
         />
+        <AccountSection />
         <Button type="submit" className="w-full">Save landlord profile</Button>
       </form>
       {showPlans ? <LandlordPlansPreview onClose={() => setShowPlans(false)} /> : null}
@@ -475,10 +478,40 @@ function PreferredAreasInput({ areaDraft, areas, city, onAdd, onDraft, onRemove,
   )
 }
 
-// Demo/local-QA tool only — there is no auth yet, so this is how both sides of the product
-// get previewed on one device. Deliberately styled apart from the real profile sections above
-// (dashed border, warning tone, explicit "Demo tool" label) so it never reads as a normal
-// account feature. Remove once real accounts exist — do not carry this forward as a feature.
+// The real account identity — genuinely signed in via Supabase Auth, distinct from the
+// tenant/landlord profile forms above. Shows only what Supabase itself reports (the session
+// email) and offers the one real account-level action Stage A provides: signing out.
+function AccountSection() {
+  const { signOut, user } = useAuth()
+  const [isSigningOut, setIsSigningOut] = useState(false)
+
+  return (
+    <section className="surface-line rounded-[24px] bg-white p-4">
+      <div className="text-sm font-semibold text-slate-950">Account</div>
+      <p className="mt-1 text-sm leading-6 text-slate-600">Signed in as {user?.email}</p>
+      <Button
+        type="button"
+        variant="secondary"
+        className="mt-3 w-full"
+        isLoading={isSigningOut}
+        disabled={isSigningOut}
+        onClick={async () => {
+          setIsSigningOut(true)
+          await signOut()
+        }}
+      >
+        Sign out
+      </Button>
+    </section>
+  )
+}
+
+// Demo/local-QA tool only — RoleSelection still stands in for real profile creation (see
+// RoleSelection.jsx), so this remains how both sides of the product get previewed on one
+// device even though real auth now exists. Deliberately styled apart from the real profile
+// sections above (dashed border, warning tone, explicit "Demo tool" label) so it never reads
+// as a normal account feature. Remove once tenant/landlord profile persistence (Stage B) makes
+// role a real backend fact instead of a local toggle.
 function RoleSwitch({ onTenant, onLandlord }) {
   return (
     <section className="rounded-[24px] border border-dashed border-amber-300 bg-amber-50/60 p-4">

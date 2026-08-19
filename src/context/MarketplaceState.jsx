@@ -47,6 +47,19 @@ import {
   setTenantProfile,
 } from '../utils/storage'
 
+// ---- DEMO/MOCK compatibility fixture ids — NOT the real authenticated account ----------------
+// These are stand-in ids for the frozen local mock marketplace (properties, enquiries,
+// conversations, saved-listing lists — all still localStorage-only, none of it backend-
+// integrated yet). Stage A (Supabase Auth) intentionally does not touch this file: the real
+// authenticated identity is `useAuth().user.id`, available globally via AuthProvider, and it
+// must never be blended with these fixture ids. Blindly replacing every ownerId/tenantId below
+// with the real user.id today would corrupt this mock data, whose every relationship (saved
+// listings, enquiries, conversations, ownership checks in utils/ownership.js) is keyed to these
+// exact fixture strings and has no backend counterpart yet.
+// Remove these two constants, and every fixture id they touch, only once the domain that
+// actually owns each identity's real data (listings/applications in Stage B or C, messaging/
+// viewings later) is backend-integrated and can supply a real id instead. Until then, no new
+// code should add further dependencies on either constant.
 const currentTenantId = 'tenant-local'
 const currentOwnerId = 'owner-private-1'
 

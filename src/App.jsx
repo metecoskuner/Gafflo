@@ -7,10 +7,12 @@ import GaffloSelect from './components/GaffloSelect'
 import Navbar from './components/Navbar'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
 import Button from './components/Button'
+import AuthGate from './components/AuthGate'
 import { ANY_VALUE, domainLabel, furnishedOptions, propertyTypeOptions, roomTypeOptions } from './config/domainOptions'
 import { cityOptions } from './config/locationOptions'
 import { LISTING_CATEGORIES, listingCategoryOptions } from './config/listingCategories'
 import { AppStateProvider } from './context/MarketplaceState'
+import { AuthProvider } from './context/AuthProvider'
 import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from './utils/dateUtils'
@@ -194,9 +196,13 @@ function AppLayout() {
 
 export default function App() {
   return (
-    <AppStateProvider>
-      <AppLayout />
-    </AppStateProvider>
+    <AuthProvider>
+      <AuthGate>
+        <AppStateProvider>
+          <AppLayout />
+        </AppStateProvider>
+      </AuthGate>
+    </AuthProvider>
   )
 }
 

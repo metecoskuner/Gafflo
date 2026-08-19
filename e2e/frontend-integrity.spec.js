@@ -1,5 +1,13 @@
 import { Buffer } from 'node:buffer'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// Written by e2e/global-setup.js: the real Supabase session key/value for this run's
+// throwaway authenticated test user, so seedState can re-assert it after clearing localStorage.
+const authSession = JSON.parse(readFileSync(path.join(__dirname, '.auth', 'session.json'), 'utf8'))
 
 const tenantAccount = { role: 'tenant', landlordType: null, completed: true }
 const landlordAccount = { role: 'landlord', landlordType: 'private_landlord', completed: true }
@@ -26,6 +34,11 @@ const tenantProfile = {
 async function seedState(page, { account = tenantAccount, profile = tenantProfile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride } = {}) {
   await page.addInitScript((state) => {
     window.localStorage.clear()
+    // Real auth boundary (Stage A): this suite exercises the mock marketplace behind the auth
+    // gate, not the auth flow itself (see e2e/auth.spec.js for that) — the clear() above would
+    // otherwise wipe the real Supabase session global-setup seeded, booting every test back to
+    // the sign-in screen before it ever reaches the marketplace.
+    window.localStorage.setItem(state.authSession.storageKey, state.authSession.storageValue)
     if (state.account) window.localStorage.setItem('gafflo.account', JSON.stringify(state.account))
     if (state.profile) window.localStorage.setItem('gafflo.tenant-profile', JSON.stringify(state.profile))
     if (state.properties) window.localStorage.setItem('gafflo.properties', JSON.stringify(state.properties))
@@ -40,7 +53,7 @@ async function seedState(page, { account = tenantAccount, profile = tenantProfil
     // deterministically exercise the post-launch (non-launch) limit UX without touching the
     // committed smartMatchAccess.launchAccessEnabled=true value real users get.
     if (state.launchOverride !== undefined) window.localStorage.setItem('gafflo.test-launch-access-override', String(state.launchOverride))
-  }, { account, profile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride })
+  }, { account, profile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride, authSession })
 }
 
 function todayDateKey() {
