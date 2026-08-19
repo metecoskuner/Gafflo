@@ -6,6 +6,7 @@ import EmptyState from '../components/EmptyState'
 import MatchBadge from '../components/MatchBadge'
 import { filterVisibleEnquiryHistory } from '../config/entitlements'
 import { isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
+import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { getFutureViewingSlots } from '../utils/dateUtils'
@@ -22,7 +23,8 @@ const landlordQuickReplies = [
 export default function Messages() {
   const navigate = useNavigate()
   const { conversationId } = useParams()
-  const { conversations, dismissToast, role, tenantPlan, toast, unarchiveConversation } = useAppState()
+  const { conversations, dismissToast, tenantPlan, toast, unarchiveConversation } = useAppState()
+  const { activeRole: role } = useAccountProfile()
   const sortedConversations = useMemo(() => {
     const sorted = [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     if (role !== 'tenant') return sorted
@@ -52,7 +54,7 @@ export default function Messages() {
         </div>
       )
     }
-    return <ChatThread conversation={conversation} />
+    return <ChatThread conversation={conversation} role={role} />
   }
 
   const archiveToast = toast?.action === 'undo-archive' ? (
@@ -221,7 +223,7 @@ function ConversationListRow({ conversation, onOpen, role }) {
   )
 }
 
-function ChatThread({ conversation }) {
+function ChatThread({ conversation, role }) {
   const navigate = useNavigate()
   const {
     archiveConversation,
@@ -231,7 +233,6 @@ function ChatThread({ conversation }) {
     muteConversation,
     proposeViewing,
     reportConversation,
-    role,
     sendMessage,
   } = useAppState()
   const [draftMessage, setDraftMessage] = useState('')

@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import BrandLogo from './BrandLogo'
-import useAppState from '../context/useAppState'
+import useAccountProfile from '../context/useAccountProfile'
 
 const tenantLinks = [
   { to: '/discover', label: 'Discover' },
@@ -19,7 +19,7 @@ const landlordLinks = [
 
 export default function Navbar() {
   const navigate = useNavigate()
-  const { role } = useAppState()
+  const { activeRole: role } = useAccountProfile()
   const links = role === 'landlord' ? landlordLinks : tenantLinks
   const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
 

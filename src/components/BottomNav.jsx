@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 
 const renterItems = [
@@ -17,7 +18,8 @@ const hostItems = [
 ]
 
 export default function BottomNav() {
-  const { role, savedProperties } = useAppState()
+  const { savedProperties } = useAppState()
+  const { activeRole: role } = useAccountProfile()
   const items = role === 'landlord' ? hostItems : renterItems
 
   return (

@@ -8,11 +8,14 @@ import Navbar from './components/Navbar'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
 import Button from './components/Button'
 import AuthGate from './components/AuthGate'
+import ProfileGate from './components/ProfileGate'
 import { ANY_VALUE, domainLabel, furnishedOptions, propertyTypeOptions, roomTypeOptions } from './config/domainOptions'
 import { cityOptions } from './config/locationOptions'
 import { LISTING_CATEGORIES, listingCategoryOptions } from './config/listingCategories'
 import { AppStateProvider } from './context/MarketplaceState'
 import { AuthProvider } from './context/AuthProvider'
+import { AccountProfileProvider } from './context/AccountProfileProvider'
+import useAccountProfile from './context/useAccountProfile'
 import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from './utils/dateUtils'
@@ -24,6 +27,7 @@ import DiscoverProperties from './pages/DiscoverProperties'
 import TenantProfile from './pages/Profile'
 import RoleSelection from './pages/RoleSelection'
 import TenantOnboarding from './pages/TenantOnboarding'
+import LandlordOnboarding from './pages/LandlordOnboarding'
 import LandlordProperties from './pages/LandlordProperties'
 import Applicants from './pages/Applicants'
 
@@ -77,7 +81,15 @@ function AppLayout() {
   const shouldRenderPropertyDetailsRoutes = Boolean(backgroundLocation) || /^\/(properties|rooms)\/[^/]+$/.test(location.pathname)
   const isLandingPage = routeLocation.pathname === '/'
   const isAppRoute = !isLandingPage
-  const { activeFilterCount, hasOnboardedTenant, hasSelectedRole, role } = useAppState()
+  const { activeFilterCount } = useAppState()
+  const { activeRole: role, hasTenantProfile, hasLandlordProfile } = useAccountProfile()
+  // Distinct from hasTenantProfile/hasLandlordProfile on purpose: choosing a role in
+  // RoleSelection persists last_active_role immediately (real intent) but does not create the
+  // role's profile row yet (target_city/looking_for, display_name — genuinely required fields
+  // with no truthful value at that point). "Has selected a role" must stay true through that
+  // in-progress-onboarding window, or a fresh tenant pick would bounce straight back to
+  // RoleSelection instead of falling through to TenantOnboarding below.
+  const hasSelectedRole = Boolean(role)
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
 
@@ -102,7 +114,8 @@ function AppLayout() {
   }, [routeLocation.pathname])
 
   if (!hasSelectedRole) return <RoleSelection />
-  if (role === 'tenant' && !hasOnboardedTenant) return <TenantOnboarding />
+  if (role === 'tenant' && !hasTenantProfile) return <TenantOnboarding />
+  if (role === 'landlord' && !hasLandlordProfile) return <LandlordOnboarding />
 
   return (
     <>
@@ -198,9 +211,13 @@ export default function App() {
   return (
     <AuthProvider>
       <AuthGate>
-        <AppStateProvider>
-          <AppLayout />
-        </AppStateProvider>
+        <AccountProfileProvider>
+          <ProfileGate>
+            <AppStateProvider>
+              <AppLayout />
+            </AppStateProvider>
+          </ProfileGate>
+        </AccountProfileProvider>
       </AuthGate>
     </AuthProvider>
   )

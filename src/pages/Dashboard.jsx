@@ -3,12 +3,13 @@ import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import MatchBadge from '../components/MatchBadge'
 import { getViewingRows, hasCoreMatchFacts } from '../config/rentalJourney'
+import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
 export default function Dashboard() {
-  const { role } = useAppState()
+  const { activeRole: role } = useAccountProfile()
   return role === 'landlord' ? <LandlordDashboard /> : <TenantDashboard />
 }
 

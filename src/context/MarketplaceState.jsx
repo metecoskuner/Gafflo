@@ -10,7 +10,6 @@ import {
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { normalizeListingDraftForStorage, normalizeListingForStorage } from '../config/listingCategories'
-import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getDurableListingImages, getDurablePhotoMetadata } from '../config/photoMetadata'
 import { canListingReceiveEnquiry, canTransitionListing } from '../config/listingLifecycle'
 import { getApplicationStatus, isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
@@ -24,95 +23,49 @@ import { getLocalDateKey } from '../utils/localDate'
 import { hasDuplicateEnquiry, hasDuplicateRecentMessage, hasLandlordMessage, sanitizeMessageBody } from '../utils/messagingRules'
 import { belongsToViewer } from '../utils/ownership'
 import AppStateContext from './AppStateContext'
+import useAccountProfile from './useAccountProfile'
 import {
-  getAccount,
   getConversations,
   getDismissedPropertyIds,
   getEnquiries,
   getLandlordPlan,
-  getLandlordProfile,
   getLocalProperties,
   getSavedPropertyIds,
   getSmartMatchActivity,
   getTenantPlan,
-  getTenantProfile,
-  setAccount,
   setConversations,
   setDismissedPropertyIds,
   setEnquiries,
-  setLandlordProfile,
   setLocalProperties,
   setSavedPropertyIds,
   setSmartMatchActivity,
-  setTenantProfile,
 } from '../utils/storage'
 
 // ---- DEMO/MOCK compatibility fixture ids — NOT the real authenticated account ----------------
-// These are stand-in ids for the frozen local mock marketplace (properties, enquiries,
-// conversations, saved-listing lists — all still localStorage-only, none of it backend-
-// integrated yet). Stage A (Supabase Auth) intentionally does not touch this file: the real
-// authenticated identity is `useAuth().user.id`, available globally via AuthProvider, and it
-// must never be blended with these fixture ids. Blindly replacing every ownerId/tenantId below
-// with the real user.id today would corrupt this mock data, whose every relationship (saved
-// listings, enquiries, conversations, ownership checks in utils/ownership.js) is keyed to these
-// exact fixture strings and has no backend counterpart yet.
+// These are stand-in ids for the still-frozen mock marketplace (properties, enquiries,
+// conversations, saved-listing lists — all still localStorage-only, no listings/applications/
+// messaging backend integration exists yet). Stage B (real profiles/tenant_profiles/
+// landlord_profiles, see AccountProfileProvider) deliberately does NOT extend to this: the real
+// authenticated identity is `useAuth().user.id` (realAccountId), and the real tenant_profiles/
+// landlord_profiles rows for that identity now flow into this file's `tenantProfile`/
+// `landlordProfile` below — but their `.id` field is intentionally forced back to these fixture
+// constants (fixtureViewerId), never the real auth uuid. Every mock enquiry/conversation
+// fixture (mockEnquiries, mockConversations, data/marketplace.js) is keyed to these exact
+// fixture strings and has no relationship to real backend ids. Blending the two — e.g. making a
+// real authenticated tenant "own" a fixture enquiry, or a real landlord "own" fixture listings
+// by their real id — would misrepresent data that was never actually theirs.
 // Remove these two constants, and every fixture id they touch, only once the domain that
-// actually owns each identity's real data (listings/applications in Stage B or C, messaging/
-// viewings later) is backend-integrated and can supply a real id instead. Until then, no new
+// actually owns each identity's real data (listings in Stage C, applications/messaging/viewings
+// in later stages) is backend-integrated and can supply a real id instead. Until then, no new
 // code should add further dependencies on either constant.
 const currentTenantId = 'tenant-local'
 const currentOwnerId = 'owner-private-1'
 
-// budgetMin/budgetMax/moveInDate/householdSize are deliberately null, not a fabricated number —
-// these are optional facts a tenant provides on their own terms, never invented on their behalf.
-// See utils/calculatePropertyMatch.js for how matching treats them as unknown, not €0/no-date/1.
-const defaultTenantProfile = {
-  id: currentTenantId,
-  name: '',
-  targetCity: 'Dublin',
-  preferredAreas: [],
-  budgetMin: null,
-  budgetMax: null,
-  moveInDate: null,
-  leaseLength: '12 months',
-  householdSize: null,
-  employmentStatus: 'Full-time',
-  studentStatus: 'No',
-  pets: 'No pets',
-  smoking: 'No',
-  furnishedPreference: 'Any',
-  parkingNeeded: 'No',
-  referencesReady: false,
-  incomeReady: false,
-  idReady: false,
-  bio: '',
-  lookingFor: 'any',
-  privateBathroomPreferred: false,
-  billsIncludedPreferred: false,
-  ownerOccupiedAcceptable: true,
-  applyingAsCouple: false,
-}
-
-const defaultTenantProfileLoadDefaults = Object.fromEntries(Object.entries(defaultTenantProfile).filter(([key]) => key !== 'applyingAsCouple'))
-
-const defaultLandlordProfile = {
-  id: currentOwnerId,
-  displayName: 'Maeve Doyle',
-  landlordType: 'private_landlord',
-  companyName: '',
-  phone: '+353 87 000 0000',
-  email: 'maeve@example.test',
-  preferredContactMethod: 'In-app message',
-  verificationStatus: 'Landlord verification pending',
-  trust: {
-    emailVerified: true,
-    phoneVerified: false,
-    identityStatus: 'not_verified',
-    landlordVerification: 'pending',
-    internalDemoState: true,
-  },
-  bio: 'Private landlord managing a small number of rental places.',
-}
+// Fallback only for malformed/legacy fixture listing records with no ownerName of their own
+// (see normalizeStoredProperty below) — never the real authenticated landlord's identity, which
+// now comes from AccountProfileProvider's real landlord_profiles.display_name. Deliberately not
+// a fabricated persona name (no more "Maeve Doyle" standing in for real account data).
+const fixtureOwnerNameFallback = 'Private landlord'
 
 const defaultPropertyFilters = {
   priceMin: '',
@@ -146,7 +99,7 @@ function normalizeStoredProperty(property) {
   return {
     ...normalizedListing,
     ownerId: property.ownerId || (isLegacyCreatedListing ? currentOwnerId : undefined),
-    ownerName: property.ownerName || property.landlordName || defaultLandlordProfile.displayName,
+    ownerName: property.ownerName || property.landlordName || fixtureOwnerNameFallback,
     ownerType: property.ownerType || 'Private landlord',
     bedrooms: normalizedListing.bedrooms,
     bathrooms: normalizedListing.bathrooms,
@@ -249,13 +202,23 @@ function canTenantSendMessage(conversation, enquiry) {
 }
 
 export function AppStateProvider({ children }) {
-  const [account, setAccountState] = useState(() => getAccount())
-  const [tenantProfile, setTenantProfileState] = useState(() => normalizeTenantProfileForState({ ...defaultTenantProfileLoadDefaults, ...getTenantProfile(), id: currentTenantId }))
-  // A genuinely fresh local profile (nothing ever saved to storage) means onboarding has not
-  // run yet. Once saved — via onboarding or the full profile form — this stays true for good,
-  // so a returning tenant is never sent through onboarding again.
-  const [hasOnboardedTenant, setHasOnboardedTenant] = useState(() => Boolean(getTenantProfile()))
-  const [landlordProfile, setLandlordProfileState] = useState(() => ({ ...defaultLandlordProfile, ...getLandlordProfile(), id: currentOwnerId }))
+  // The real account/role/profile layer (AccountProfileProvider, a parent of this provider in
+  // App.jsx) is the only source of truth for WHO the user is and WHAT roles they've set up.
+  // This provider consumes it only for two purposes that still legitimately belong to the mock
+  // marketplace: (a) feeding the real tenant's real preferences into calculatePropertyMatch so
+  // Rental Fit scoring against the still-mock listing set uses genuine data, not a fabricated
+  // profile, and (b) knowing which mode ("tenant"/"landlord") the current viewer is in for the
+  // mock enquiry/conversation filtering below. See the fixture-id comment above for why the
+  // resulting tenantProfile/landlordProfile objects still carry a fixture `.id`.
+  const { activeRole, tenantProfile: realTenantProfile, landlordProfile: realLandlordProfile } = useAccountProfile()
+  const tenantProfile = useMemo(
+    () => (realTenantProfile ? { ...realTenantProfile, id: currentTenantId } : null),
+    [realTenantProfile],
+  )
+  const landlordProfile = useMemo(
+    () => (realLandlordProfile ? { ...realLandlordProfile, id: currentOwnerId } : null),
+    [realLandlordProfile],
+  )
   const [tenantPlan] = useState(() => getTenantPlan())
   const [landlordPlan] = useState(() => getLandlordPlan())
   const [localProperties, setLocalPropertiesState] = useState(() => getLocalProperties())
@@ -274,7 +237,7 @@ export function AppStateProvider({ children }) {
   const [toast, setToast] = useState(null)
   const pendingMessageKeys = useRef(new Set())
 
-  const tenants = useMemo(() => [tenantProfile, ...mockTenants], [tenantProfile])
+  const tenants = useMemo(() => [tenantProfile, ...mockTenants].filter(Boolean), [tenantProfile])
   const baseProperties = useMemo(
     () => mergeLocalAndMockProperties(localProperties, mockProperties).map(normalizeStoredProperty),
     [localProperties],
@@ -320,7 +283,7 @@ export function AppStateProvider({ children }) {
       conversations
         .map(normalizeStoredConversation)
         .filter((conversation) => !conversation.archived)
-        .filter((conversation) => belongsToViewer(conversation, account?.role, currentTenantId, currentOwnerId))
+        .filter((conversation) => belongsToViewer(conversation, activeRole, currentTenantId, currentOwnerId))
         .map((conversation) => ({
           ...conversation,
           property: properties.find((property) => property.id === conversation.propertyId) || null,
@@ -328,7 +291,7 @@ export function AppStateProvider({ children }) {
           tenant: tenants.find((tenant) => tenant.id === conversation.tenantId) || null,
         }))
         .filter((conversation) => conversation.property),
-    [account?.role, conversations, enrichedEnquiries, properties, tenants],
+    [activeRole, conversations, enrichedEnquiries, properties, tenants],
   )
   const landlordProperties = useMemo(() => properties.filter((property) => property.ownerId === currentOwnerId), [properties])
   const landlordEnquiries = useMemo(() => enrichedEnquiries.filter((enquiry) => enquiry.ownerId === currentOwnerId), [enrichedEnquiries])
@@ -353,10 +316,6 @@ export function AppStateProvider({ children }) {
     isLaunchFree: launchAccessEnabled,
   }
 
-  const persistAccount = useCallback((nextAccount) => {
-    setAccount(nextAccount)
-    setAccountState(nextAccount)
-  }, [])
   const persistEnquiries = useCallback((next) => {
     setEnquiries(next)
     setEnquiriesState(next)
@@ -407,7 +366,7 @@ export function AppStateProvider({ children }) {
         tenantId: enquiry.tenantId,
         ownerId: enquiry.ownerId,
         archived: false,
-        unreadFor: account?.role === 'tenant' ? 'landlord' : 'tenant',
+        unreadFor: activeRole === 'tenant' ? 'landlord' : 'tenant',
         createdAt: now,
         updatedAt: now,
         messages: [
@@ -422,17 +381,12 @@ export function AppStateProvider({ children }) {
       persistConversations([nextConversation, ...conversations])
       return nextConversation.id
     },
-    [account?.role, conversations, persistConversations, properties],
+    [activeRole, conversations, persistConversations, properties],
   )
 
   const value = {
-    account,
     currentTenantId,
     currentOwnerId,
-    role: account?.role || null,
-    landlordType: account?.landlordType || null,
-    hasSelectedRole: Boolean(account?.role),
-    hasOnboardedTenant,
     tenants,
     tenantProfile,
     landlordProfile,
@@ -456,37 +410,6 @@ export function AppStateProvider({ children }) {
     toast,
     activeFilterCount: Object.entries(propertyFilters).filter(([, value]) => value && !['Any', ANY_VALUE].includes(value)).length,
     dismissToast: () => setToast(null),
-    selectRole(role, landlordType = null) {
-      persistAccount({ role, landlordType, completed: true })
-      setToast({ type: 'success', message: role === 'tenant' ? 'Tenant mode selected.' : 'Landlord mode selected.' })
-    },
-    switchRole(role, landlordType = null) {
-      persistAccount({ role, landlordType, completed: true })
-      setToast({ type: 'info', message: `Switched to ${role === 'tenant' ? 'tenant' : 'landlord'} mode.` })
-    },
-    saveTenantProfile(profile) {
-      const next = normalizeTenantProfileForStorage({ ...profile, id: currentTenantId }, defaultTenantProfile)
-      setTenantProfile(next)
-      setTenantProfileState(next)
-      setHasOnboardedTenant(true)
-      setToast({ type: 'success', message: 'Tenant profile saved.' })
-    },
-    // Persists only the minimum match-driving facts collected during onboarding. Everything
-    // else stays at neutral defaults until the tenant chooses to fill in Profile — never a
-    // fabricated preference (an invented budget, an invented city) presented as their own.
-    completeTenantOnboarding(essentials) {
-      if (account?.role !== 'tenant') return
-      const next = normalizeTenantProfileForStorage({ ...defaultTenantProfileLoadDefaults, ...essentials, id: currentTenantId }, defaultTenantProfile)
-      setTenantProfile(next)
-      setTenantProfileState(next)
-      setHasOnboardedTenant(true)
-    },
-    saveLandlordProfile(profile) {
-      const next = { ...defaultLandlordProfile, ...profile, id: currentOwnerId, propertyCount: undefined }
-      setLandlordProfile(next)
-      setLandlordProfileState(next)
-      setToast({ type: 'success', message: 'Landlord profile saved.' })
-    },
     setPropertyFilters(nextFilters) {
       setPropertyFiltersState((current) => ({ ...current, ...nextFilters }))
     },
@@ -536,7 +459,7 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'info', message: 'Discovery reset. Daily usage is unchanged.' })
     },
     createEnquiry(propertyId, message = '') {
-      if (account?.role === 'landlord') {
+      if (activeRole === 'landlord') {
         setToast({ type: 'info', message: 'Switch to tenant mode to send an enquiry.' })
         return null
       }
@@ -568,7 +491,7 @@ export function AppStateProvider({ children }) {
       return getOrCreateConversationForEnquiry(nextEnquiry)
     },
     expressSmartMatchInterest(propertyId) {
-      if (account?.role === 'landlord') {
+      if (activeRole === 'landlord') {
         setToast({ type: 'info', message: 'Switch to tenant mode to send interest.' })
         return null
       }
@@ -619,17 +542,17 @@ export function AppStateProvider({ children }) {
     },
     openConversationForEnquiry(enquiryId) {
       const enquiry = enquiries.find((item) => item.id === enquiryId)
-      if (!enquiry || !belongsToViewer(enquiry, account?.role, currentTenantId, currentOwnerId)) return null
+      if (!enquiry || !belongsToViewer(enquiry, activeRole, currentTenantId, currentOwnerId)) return null
       return getOrCreateConversationForEnquiry(enquiry)
     },
     markConversationRead(conversationId) {
-      const reader = account?.role === 'landlord' ? 'landlord' : 'tenant'
+      const reader = activeRole === 'landlord' ? 'landlord' : 'tenant'
       const target = conversations.find((conversation) => conversation.id === conversationId)
       if (!target || target.unreadFor !== reader || !belongsToViewer(target, reader, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, unreadFor: null } : conversation)))
     },
     updateEnquiryStatus(enquiryId, status) {
-      if (account?.role !== 'landlord') return
+      if (activeRole !== 'landlord') return
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
       if (!target || !belongsToViewer(target, 'landlord', currentTenantId, currentOwnerId) || target.status === status || !canTransitionApplication(target.status, status)) return
       const now = new Date().toISOString()
@@ -652,7 +575,7 @@ export function AppStateProvider({ children }) {
     },
     proposeViewing(enquiryId, slots) {
       const validation = validateViewingProposal(slots)
-      if (account?.role !== 'landlord' || !validation.valid) {
+      if (activeRole !== 'landlord' || !validation.valid) {
         if (!validation.valid) setToast({ type: 'info', message: validation.reason })
         return
       }
@@ -674,7 +597,7 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'success', message: 'Viewing times proposed.' })
     },
     chooseViewing(enquiryId, slot) {
-      if (account?.role !== 'tenant') return
+      if (activeRole !== 'tenant') return
       const target = enquiries.find((enquiry) => enquiry.id === enquiryId)
       const validation = validateViewingChoice(target?.viewing, slot)
       if (!target || !belongsToViewer(target, 'tenant', currentTenantId, currentOwnerId) || !canTransitionApplication(target.status, 'viewing confirmed') || !validation.valid) {
@@ -697,7 +620,7 @@ export function AppStateProvider({ children }) {
       if (!trimmedBody) return
       const now = new Date().toISOString()
       const nowTime = new Date(now).getTime()
-      const sender = account?.role === 'landlord' ? 'landlord' : 'tenant'
+      const sender = activeRole === 'landlord' ? 'landlord' : 'tenant'
       const messageKey = `${conversationId}:${sender}:${trimmedBody}`
       if (pendingMessageKeys.current.has(messageKey)) return
       pendingMessageKeys.current.add(messageKey)
@@ -729,25 +652,25 @@ export function AppStateProvider({ children }) {
     },
     archiveConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || target.archived || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
+      if (!target || target.archived || !belongsToViewer(target, activeRole, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, archived: true } : conversation)))
       setToast({ type: 'info', message: 'Conversation archived.', action: 'undo-archive', conversationId })
     },
     unarchiveConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || !target.archived || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
+      if (!target || !target.archived || !belongsToViewer(target, activeRole, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, archived: false } : conversation)))
       setToast({ type: 'info', message: 'Conversation restored.' })
     },
     muteConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
+      if (!belongsToViewer(target, activeRole, currentTenantId, currentOwnerId)) return
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, muted: !conversation.muted } : conversation)))
       setToast({ type: 'info', message: 'Conversation preference updated.' })
     },
     reportConversation(conversationId, reason) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || target.reported || !String(reason || '').trim() || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
+      if (!target || target.reported || !String(reason || '').trim() || !belongsToViewer(target, activeRole, currentTenantId, currentOwnerId)) return
       persistConversations(
         conversations.map((conversation) =>
           conversation.id === conversationId ? { ...conversation, reported: true, reportReason: reason || 'Not specified' } : conversation,
@@ -757,8 +680,8 @@ export function AppStateProvider({ children }) {
     },
     blockConversation(conversationId) {
       const target = conversations.find((conversation) => conversation.id === conversationId)
-      if (!target || target.blockedBy || !belongsToViewer(target, account?.role, currentTenantId, currentOwnerId)) return
-      const blockedBy = account?.role === 'landlord' ? 'landlord' : 'tenant'
+      if (!target || target.blockedBy || !belongsToViewer(target, activeRole, currentTenantId, currentOwnerId)) return
+      const blockedBy = activeRole === 'landlord' ? 'landlord' : 'tenant'
       persistConversations(conversations.map((conversation) => (conversation.id === conversationId ? { ...conversation, blockedBy } : conversation)))
       setToast({ type: 'info', message: 'User blocked in this conversation.' })
     },
@@ -781,7 +704,7 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'success', message: 'Report saved locally on this device.' })
     },
     blockPropertyOwner(propertyId) {
-      if (account?.role === 'landlord') return
+      if (activeRole === 'landlord') return
       const property = properties.find((item) => item.id === propertyId)
       if (!property) return
       const now = new Date().toISOString()
@@ -812,7 +735,7 @@ export function AppStateProvider({ children }) {
       setToast({ type: 'info', message: 'User blocked locally. Existing history is preserved.' })
     },
     addProperty(property) {
-      if (account?.role !== 'landlord') return null
+      if (activeRole !== 'landlord') return null
       const now = new Date().toISOString()
       const listingStatus = property.listingStatus || 'draft'
       const normalizedListing = listingStatus === 'draft' ? normalizeListingDraftForStorage(property) : normalizeListingForStorage(property)
@@ -848,7 +771,7 @@ export function AppStateProvider({ children }) {
       return nextProperty.id
     },
     updateProperty(propertyId, patch) {
-      if (account?.role !== 'landlord') return null
+      if (activeRole !== 'landlord') return null
       const currentProperty = properties.find((property) => property.id === propertyId && property.ownerId === currentOwnerId)
       if (!currentProperty) return null
       const localExists = localProperties.some((property) => property.id === propertyId)
@@ -880,7 +803,7 @@ export function AppStateProvider({ children }) {
     // completed — the caller must show that honestly (e.g. an upgrade explanation for
     // reason === 'allowance') rather than treating a blocked change as if it succeeded.
     updatePropertyStatus(propertyId, listingStatus) {
-      if (account?.role !== 'landlord') return { ok: false, reason: 'not-landlord' }
+      if (activeRole !== 'landlord') return { ok: false, reason: 'not-landlord' }
       const allowedStatuses = ['published', 'pending_verification', 'draft', 'paused', 'rejected', 'rented']
       if (!allowedStatuses.includes(listingStatus)) return { ok: false, reason: 'invalid-status' }
       const currentProperty = properties.find((property) => property.id === propertyId && property.ownerId === currentOwnerId)

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import { domainLabel } from '../config/domainOptions'
 import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
@@ -26,12 +27,12 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     currentTenantId,
     properties,
     reportListing,
-    role,
     savedPropertyIds,
     saveProperty,
     removeSavedProperty,
     tenantEnquiries,
   } = useAppState()
+  const { activeRole: role } = useAccountProfile()
   const navigate = useNavigate()
   const routeProperty = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
   const property = previewProperty || routeProperty

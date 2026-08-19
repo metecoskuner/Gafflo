@@ -27,6 +27,7 @@ import {
 import { cityOptions, getAreaOptionsForCity, normalizePreferredAreas, resetAreasForCityChange } from '../config/locationOptions'
 import { getTenantProfileCompleteness } from '../config/rentalJourney'
 import { LISTING_CATEGORIES } from '../config/listingCategories'
+import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useAuth from '../context/useAuth'
 import { getTodayIsoDate, isPastIsoDate } from '../utils/dateUtils'
@@ -41,17 +42,21 @@ const employmentOptions = ['Full-time', 'Part-time', 'Student', 'Remote worker',
 const contactOptions = ['In-app message', 'Email', 'Phone']
 
 export default function Profile() {
-  const { role } = useAppState()
+  const { activeRole: role } = useAccountProfile()
   return role === 'landlord' ? <LandlordProfile /> : <TenantProfile />
 }
 
 function TenantProfile() {
   const navigate = useNavigate()
-  const { switchRole, tenantPlan, tenantProfile, saveTenantProfile } = useAppState()
+  const { tenantPlan } = useAppState()
+  const { profile, tenantProfile, updateDisplayName, updateTenantProfile } = useAccountProfile()
   const gaffloPlus = getTenantPlanConfig(TENANT_PLAN.GAFFLO_PLUS)
   const today = getTodayIsoDate()
   const [form, setForm] = useState(() => ({
     ...tenantProfile,
+    // tenant_profiles has no name column — the account-level display name lives on `profiles`
+    // (AccountProfileProvider), so it's merged in here and saved back separately on submit.
+    name: profile?.displayName || '',
     preferredAreas: normalizePreferredAreas(tenantProfile.preferredAreas || [], tenantProfile.targetCity),
     areaDraft: '',
     leaseLength: normalizeLeaseMonths(tenantProfile.leaseLength, 12),
@@ -67,6 +72,8 @@ function TenantProfile() {
   const areaOptions = useMemo(() => getAreaOptionsForCity(form.targetCity || 'Dublin'), [form.targetCity])
   const completeness = getTenantProfileCompleteness(form)
   const [showGaffloPlus, setShowGaffloPlus] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const validateField = (field, value, nextForm = form) => {
     const minBudget = Number(field === 'budgetMin' ? value : nextForm.budgetMin)
@@ -163,7 +170,7 @@ function TenantProfile() {
     update('preferredAreas', (form.preferredAreas || []).filter((item) => item !== area))
   }
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
     const fields = ['name', 'budgetMin', 'budgetMax', 'moveInDate', 'householdSize', 'applyingAsCouple', 'bio']
     const nextErrors = fields.reduce((acc, field) => {
@@ -174,17 +181,21 @@ function TenantProfile() {
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length) return
 
-    saveTenantProfile({
-      ...form,
-      // Leave budget/household size as null when the field is still empty — saving an
-      // unrelated edit (e.g. bio) must never fabricate a €0 budget or a household of 1.
-      budgetMin: form.budgetMin === '' || form.budgetMin === null ? null : Math.max(0, Number(form.budgetMin)),
-      budgetMax: form.budgetMax === '' || form.budgetMax === null ? null : Math.max(0, Number(form.budgetMax)),
-      householdSize: form.householdSize === '' || form.householdSize === null ? null : Math.max(1, Number(form.householdSize)),
-      preferredAreas: normalizePreferredAreas(form.preferredAreas, form.targetCity),
-      notifications: undefined,
-      areaDraft: undefined,
-    })
+    setIsSaving(true)
+    setSaveError('')
+    const trimmedName = String(form.name || '').trim()
+    const [nameResult, tenantResult] = await Promise.all([
+      trimmedName !== (profile?.displayName || '') ? updateDisplayName(trimmedName) : Promise.resolve({ error: null }),
+      updateTenantProfile({
+        ...form,
+        preferredAreas: normalizePreferredAreas(form.preferredAreas, form.targetCity),
+      }),
+    ])
+    setIsSaving(false)
+    if (nameResult.error || tenantResult.error) {
+      setSaveError('Something went wrong saving your profile. Please try again.')
+      return
+    }
     navigate('/discover')
   }
 
@@ -273,18 +284,17 @@ function TenantProfile() {
             <FormInput id="tenant-bio" textarea rows={5} label="Short bio" maxLength={600} value={form.bio || ''} error={errors.bio} onChange={(event) => update('bio', event.target.value)} />
           </Section>
 
-          <RoleSwitch
-            onTenant={() => {
-              switchRole('tenant')
-              navigate('/discover')
-            }}
-            onLandlord={() => {
-              switchRole('landlord', 'private_landlord')
-              navigate('/dashboard')
-            }}
-          />
+          <RoleSwitch />
           <AccountSection />
-          <Button type="submit" className="w-full">Save tenant profile</Button>
+
+          {saveError ? (
+            <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+              {saveError}
+            </div>
+          ) : null}
+          <Button type="submit" className="w-full" isLoading={isSaving} disabled={isSaving}>
+            Save tenant profile
+          </Button>
         </form>
       </ProfileShell>
       {showGaffloPlus ? <GaffloPlusPreview onClose={() => setShowGaffloPlus(false)} /> : null}
@@ -293,11 +303,13 @@ function TenantProfile() {
 }
 
 function LandlordProfile() {
-  const navigate = useNavigate()
-  const { landlordPlan, landlordProfile, saveLandlordProfile, switchRole } = useAppState()
+  const { landlordPlan } = useAppState()
+  const { landlordProfile, updateLandlordProfile } = useAccountProfile()
   const [form, setForm] = useState(landlordProfile)
   const [errors, setErrors] = useState({})
   const [showPlans, setShowPlans] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const landlordPlus = getLandlordPlanConfig(LANDLORD_PLAN.LANDLORD_PLUS)
   const freeListingAllowance = getActiveListingAllowance(LANDLORD_PLAN.FREE)
 
@@ -309,8 +321,6 @@ function LandlordProfile() {
         if (length > 80) return 'Keep the display name under 80 characters.'
         return ''
       },
-      email: () => (value && !/^\S+@\S+\.\S+$/.test(value) ? 'Enter a valid email address.' : ''),
-      phone: () => (String(value || '').length > 30 ? 'Keep the phone number under 30 characters.' : ''),
       bio: () => (String(value || '').length > 600 ? 'Keep profile information under 600 characters.' : ''),
     }
     return validators[field]?.() || ''
@@ -327,9 +337,9 @@ function LandlordProfile() {
     })
   }
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
-    const fields = ['displayName', 'email', 'phone', 'bio']
+    const fields = ['displayName', 'bio']
     const nextErrors = fields.reduce((acc, field) => {
       const error = validateField(field, form[field])
       if (error) acc[field] = error
@@ -338,11 +348,21 @@ function LandlordProfile() {
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length) return
 
-    saveLandlordProfile({ ...form, landlordType: 'private_landlord', companyName: '', propertyCount: undefined })
+    setIsSaving(true)
+    setSaveError('')
+    const { error } = await updateLandlordProfile({
+      displayName: form.displayName.trim(),
+      bio: form.bio,
+      preferredContactMethod: form.preferredContactMethod,
+    })
+    setIsSaving(false)
+    if (error) {
+      setSaveError('Something went wrong saving your profile. Please try again.')
+    }
   }
 
   return (
-    <ProfileShell eyebrow="Landlord profile" title="Listing owner profile" description="Verification status is tracked separately from choosing the landlord role.">
+    <ProfileShell eyebrow="Landlord profile" title="Listing owner profile" description="Shown to tenants when they view your listings.">
       <form onSubmit={submit} className="space-y-4">
         <Section title="Profile">
           <div className="grid gap-4 md:grid-cols-2">
@@ -351,13 +371,7 @@ function LandlordProfile() {
               <div className="text-sm font-medium text-slate-700">Type</div>
               <div className="mt-1 text-sm font-semibold text-slate-950">Private landlord</div>
             </div>
-            <FormInput id="landlord-phone" label="Phone" inputMode="tel" maxLength={30} value={form.phone || ''} error={errors.phone} onChange={(event) => update('phone', event.target.value)} />
-            <FormInput id="landlord-email" label="Email" type="email" inputMode="email" value={form.email || ''} error={errors.email} onChange={(event) => update('email', event.target.value)} />
             <SelectInput label="Preferred contact" value={form.preferredContactMethod || 'In-app message'} onChange={(event) => update('preferredContactMethod', event.target.value)} options={contactOptions.map(option)} />
-            <div className="surface-line rounded-[18px] bg-slate-50 px-4 py-3">
-              <div className="text-sm font-medium text-slate-700">Verification status</div>
-              <div className="mt-1 text-sm font-semibold text-slate-950">{form.verificationStatus || 'Verification pending'}</div>
-            </div>
           </div>
         </Section>
         <Section title="About">
@@ -378,18 +392,17 @@ function LandlordProfile() {
             onExplore={() => setShowPlans(true)}
           />
         ) : null}
-        <RoleSwitch
-          onTenant={() => {
-            switchRole('tenant')
-            navigate('/discover')
-          }}
-          onLandlord={() => {
-            switchRole('landlord', 'private_landlord')
-            navigate('/dashboard')
-          }}
-        />
+        <RoleSwitch />
         <AccountSection />
-        <Button type="submit" className="w-full">Save landlord profile</Button>
+
+        {saveError ? (
+          <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+            {saveError}
+          </div>
+        ) : null}
+        <Button type="submit" className="w-full" isLoading={isSaving} disabled={isSaving}>
+          Save landlord profile
+        </Button>
       </form>
       {showPlans ? <LandlordPlansPreview onClose={() => setShowPlans(false)} /> : null}
     </ProfileShell>
@@ -506,25 +519,43 @@ function AccountSection() {
   )
 }
 
-// Demo/local-QA tool only — RoleSelection still stands in for real profile creation (see
-// RoleSelection.jsx), so this remains how both sides of the product get previewed on one
-// device even though real auth now exists. Deliberately styled apart from the real profile
-// sections above (dashed border, warning tone, explicit "Demo tool" label) so it never reads
-// as a normal account feature. Remove once tenant/landlord profile persistence (Stage B) makes
-// role a real backend fact instead of a local toggle.
-function RoleSwitch({ onTenant, onLandlord }) {
+// A real account role switcher (Stage B) — no longer the demo-only local toggle it used to be.
+// Switching persists profiles.last_active_role for real; it never creates a new account, never
+// touches the auth session, and only ever offers the role the user does not currently have as
+// "Set up" — App.jsx's own onboarding gate takes it from there.
+function RoleSwitch() {
+  const navigate = useNavigate()
+  const { activeRole, hasLandlordProfile, hasTenantProfile, setActiveRole } = useAccountProfile()
+  const [isSwitching, setIsSwitching] = useState(false)
+  const [error, setError] = useState('')
+
+  const goTo = async (role) => {
+    if (role === activeRole) return
+    setIsSwitching(true)
+    setError('')
+    const { error: switchError } = await setActiveRole(role)
+    setIsSwitching(false)
+    if (switchError) {
+      setError('Something went wrong switching modes. Please try again.')
+      return
+    }
+    navigate(role === 'landlord' ? '/dashboard' : '/discover')
+  }
+
   return (
-    <section className="rounded-[24px] border border-dashed border-amber-300 bg-amber-50/60 p-4">
-      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-amber-800">
-        Demo tool
-      </span>
-      <div className="mt-2 text-sm font-semibold text-slate-950">Switch Gafflo view</div>
+    <section className="surface-line rounded-[24px] bg-white p-4">
+      <div className="text-sm font-semibold text-slate-950">Gafflo roles</div>
       <p className="mt-1 text-sm leading-6 text-slate-600">
-        Local-only preview of both sides of Gafflo before accounts exist. Not part of the real product.
+        Switch between the tenant and landlord sides of Gafflo, or set up the one you have not used yet.
       </p>
+      {error ? <p className="mt-2 text-sm font-medium text-rose-600">{error}</p> : null}
       <div className="mt-3 grid grid-cols-2 gap-3">
-        <Button variant="secondary" onClick={onTenant}>Tenant mode</Button>
-        <Button variant="secondary" onClick={onLandlord}>Landlord mode</Button>
+        <Button variant="secondary" isLoading={isSwitching} disabled={isSwitching || activeRole === 'tenant'} onClick={() => goTo('tenant')}>
+          {activeRole === 'tenant' ? 'Tenant mode active' : hasTenantProfile ? 'Switch to tenant' : 'Set up tenant'}
+        </Button>
+        <Button variant="secondary" isLoading={isSwitching} disabled={isSwitching || activeRole === 'landlord'} onClick={() => goTo('landlord')}>
+          {activeRole === 'landlord' ? 'Landlord mode active' : hasLandlordProfile ? 'Switch to landlord' : 'Set up landlord'}
+        </Button>
       </div>
     </section>
   )

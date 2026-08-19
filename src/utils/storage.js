@@ -1,7 +1,4 @@
 const KEYS = {
-  account: 'gafflo.account',
-  tenantProfile: 'gafflo.tenant-profile',
-  landlordProfile: 'gafflo.landlord-profile',
   saved: 'gafflo.saved-properties',
   dismissed: 'gafflo.dismissed-properties',
   smartMatchActivity: 'gafflo.smart-match-activity',
@@ -13,8 +10,6 @@ const KEYS = {
 }
 
 const LEGACY_KEYS = {
-  account: 'gafflo.onboarding',
-  tenantProfile: 'gaffly.tenant-profile',
   saved: 'gaffly.saved-rooms',
   dismissed: 'gaffly.reviewed-rooms',
   conversations: 'gaffly.conversations',
@@ -32,36 +27,6 @@ function getJson(key, fallback, legacyKey) {
 
 function setJson(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value))
-}
-
-export function getAccount() {
-  const account = getJson(KEYS.account, null, LEGACY_KEYS.account)
-  if (!account?.userType) return account
-  return {
-    role: account.userType === 'offering' ? 'landlord' : 'tenant',
-    landlordType: account.userType === 'offering' ? 'private_landlord' : null,
-    completed: true,
-  }
-}
-
-export function setAccount(account) {
-  setJson(KEYS.account, account)
-}
-
-export function getTenantProfile() {
-  return getJson(KEYS.tenantProfile, null, LEGACY_KEYS.tenantProfile)
-}
-
-export function setTenantProfile(profile) {
-  setJson(KEYS.tenantProfile, profile)
-}
-
-export function getLandlordProfile() {
-  return getJson(KEYS.landlordProfile, null)
-}
-
-export function setLandlordProfile(profile) {
-  setJson(KEYS.landlordProfile, profile)
 }
 
 export function getSavedPropertyIds() {

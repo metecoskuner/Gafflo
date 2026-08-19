@@ -6,7 +6,7 @@ import SegmentedControl from '../components/SegmentedControl'
 import SelectInput from '../components/SelectInput'
 import { LISTING_CATEGORIES } from '../config/listingCategories'
 import { cityOptions } from '../config/locationOptions'
-import useAppState from '../context/useAppState'
+import useAccountProfile from '../context/useAccountProfile'
 
 const lookingForChoices = [
   { value: LISTING_CATEGORIES.ENTIRE_PROPERTY, label: 'Entire property' },
@@ -23,9 +23,11 @@ const lookingForChoices = [
 // nudge to fill them in.
 export default function TenantOnboarding() {
   const navigate = useNavigate()
-  const { completeTenantOnboarding } = useAppState()
+  const { createTenantProfile } = useAccountProfile()
   const [form, setForm] = useState({ targetCity: '', lookingFor: '' })
   const [errors, setErrors] = useState({})
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const update = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }))
@@ -45,17 +47,23 @@ export default function TenantOnboarding() {
     return Object.keys(nextErrors).length === 0
   }
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
     if (!validate()) return
-    completeTenantOnboarding({
+    setIsSaving(true)
+    setSaveError('')
+    // Only the two genuinely required facts are sent — budget/move-in/household stay unset
+    // (real database NULL, not an invented 0/1/date) until the tenant chooses to add them later
+    // in Profile, exactly as onboarding has always promised.
+    const { error } = await createTenantProfile({
       targetCity: form.targetCity,
       lookingFor: form.lookingFor,
-      budgetMin: null,
-      budgetMax: null,
-      moveInDate: null,
-      householdSize: null,
     })
+    setIsSaving(false)
+    if (error) {
+      setSaveError('Something went wrong saving your profile. Please try again.')
+      return
+    }
     navigate('/discover')
   }
 
@@ -88,7 +96,15 @@ export default function TenantOnboarding() {
             error={errors.lookingFor}
           />
 
-          <Button type="submit" className="w-full">See my matches</Button>
+          {saveError ? (
+            <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+              {saveError}
+            </div>
+          ) : null}
+
+          <Button type="submit" className="w-full" isLoading={isSaving} disabled={isSaving}>
+            See my matches
+          </Button>
         </form>
       </section>
     </div>

@@ -5,42 +5,27 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-// Written by e2e/global-setup.js: the real Supabase session key/value for this run's
-// throwaway authenticated test user, so seedState can re-assert it after clearing localStorage.
-const authSession = JSON.parse(readFileSync(path.join(__dirname, '.auth', 'session.json'), 'utf8'))
+// Written by e2e/global-setup.js: a small fixed set of real, pre-configured Supabase identities
+// (real profiles/tenant_profiles/landlord_profiles rows, real last_active_role) — one per
+// distinct tenant/landlord shape this suite's fixtures need. Stage B retired
+// gafflo.account/gafflo.tenant-profile/gafflo.landlord-profile as authoritative for
+// authenticated users, so "which account" is now selected by injecting the right real session,
+// not by writing fake role/profile objects into localStorage.
+const identities = JSON.parse(readFileSync(path.join(__dirname, '.auth', 'identities.json'), 'utf8'))
 
-const tenantAccount = { role: 'tenant', landlordType: null, completed: true }
-const landlordAccount = { role: 'landlord', landlordType: 'private_landlord', completed: true }
 const viewport390 = { width: 390, height: 844 }
 
-const tenantProfile = {
-  id: 'tenant-local',
-  name: 'Local Tenant',
-  targetCity: 'Dublin',
-  preferredAreas: ['Rathmines'],
-  budgetMin: 1200,
-  budgetMax: 2400,
-  moveInDate: '',
-  leaseLength: '12',
-  householdSize: 1,
-  lookingFor: 'any',
-  applyingAsCouple: false,
-  pets: 'none',
-  smoking: 'no',
-  furnishedPreference: 'any',
-  parkingNeeded: 'no',
-}
-
-async function seedState(page, { account = tenantAccount, profile = tenantProfile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride } = {}) {
+async function seedState(page, { identity = 'tenantDefault', properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride } = {}) {
+  const session = identities[identity]
+  if (!session) throw new Error(`Unknown e2e identity "${identity}" — check e2e/global-setup.js's IDENTITIES map.`)
   await page.addInitScript((state) => {
     window.localStorage.clear()
-    // Real auth boundary (Stage A): this suite exercises the mock marketplace behind the auth
-    // gate, not the auth flow itself (see e2e/auth.spec.js for that) — the clear() above would
-    // otherwise wipe the real Supabase session global-setup seeded, booting every test back to
-    // the sign-in screen before it ever reaches the marketplace.
-    window.localStorage.setItem(state.authSession.storageKey, state.authSession.storageValue)
-    if (state.account) window.localStorage.setItem('gafflo.account', JSON.stringify(state.account))
-    if (state.profile) window.localStorage.setItem('gafflo.tenant-profile', JSON.stringify(state.profile))
+    // Real auth + profile boundary (Stage A/B): this suite exercises the mock marketplace
+    // behind the auth/profile gates, not those flows themselves (see e2e/auth.spec.js and
+    // e2e/profiles.spec.js for that) — the clear() above would otherwise wipe the real Supabase
+    // session global-setup seeded for this identity, booting every test back to the sign-in
+    // screen (or the wrong role/onboarding step) before it ever reaches the marketplace.
+    window.localStorage.setItem(state.session.storageKey, state.session.storageValue)
     if (state.properties) window.localStorage.setItem('gafflo.properties', JSON.stringify(state.properties))
     if (state.enquiries) window.localStorage.setItem('gafflo.enquiries', JSON.stringify(state.enquiries))
     if (state.conversations) window.localStorage.setItem('gafflo.conversations', JSON.stringify(state.conversations))
@@ -53,7 +38,7 @@ async function seedState(page, { account = tenantAccount, profile = tenantProfil
     // deterministically exercise the post-launch (non-launch) limit UX without touching the
     // committed smartMatchAccess.launchAccessEnabled=true value real users get.
     if (state.launchOverride !== undefined) window.localStorage.setItem('gafflo.test-launch-access-override', String(state.launchOverride))
-  }, { account, profile, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride, authSession })
+  }, { session, properties, enquiries, conversations, saved, dismissed, tenantPlan, landlordPlan, smartMatchActivity, launchOverride })
 }
 
 function todayDateKey() {
@@ -100,7 +85,7 @@ async function selectGafflo(page, label, optionText) {
 }
 
 test('fresh tenant onboarding asks only city and looking-for, then routes to discover leaving the rest unknown', async ({ page }) => {
-  await seedState(page, { account: null, profile: null })
+  await seedState(page, { identity: 'freshForTenantOnboarding' })
   await page.goto('/')
   await page.getByRole('button', { name: 'Continue as tenant' }).click()
   await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
@@ -118,18 +103,21 @@ test('fresh tenant onboarding asks only city and looking-for, then routes to dis
   await expect(page).toHaveURL(/\/discover$/)
   await expect(page.getByRole('heading', { name: 'Smart Match' })).toBeVisible()
 
-  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
-  expect(storedProfile.targetCity).toBe('Dublin')
-  expect(storedProfile.lookingFor).toBe('room')
+  // Real round trip: reload into /profile and read the actual persisted Supabase values back
+  // out of the rendered form, rather than a localStorage key the app no longer treats as
+  // authoritative.
+  await page.goto('/profile')
+  await expect(page.getByLabel('Target city')).toHaveText('Dublin')
+  await expect(page.getByRole('button', { name: 'A room', exact: true })).toHaveAttribute('aria-pressed', 'true')
   // Never fabricated — these stay unknown until the tenant explicitly provides them.
-  expect(storedProfile.budgetMin).toBeNull()
-  expect(storedProfile.budgetMax).toBeNull()
-  expect(storedProfile.moveInDate).toBeNull()
-  expect(storedProfile.householdSize).toBeNull()
+  await expect(page.getByLabel('Budget min (€)')).toHaveValue('')
+  await expect(page.getByLabel('Budget max (€)')).toHaveValue('')
+  await expect(page.getByLabel('Move-in date')).toHaveValue('')
+  await expect(page.getByLabel('Room applicants')).toHaveValue('')
 })
 
 test('onboarding never shows validation errors before a submit attempt, and only blocks on the two required answers', async ({ page }) => {
-  await seedState(page, { account: null, profile: null })
+  await seedState(page, { identity: 'freshForOnboardingValidation' })
   await page.goto('/')
   await page.getByRole('button', { name: 'Continue as tenant' }).click()
 
@@ -144,12 +132,19 @@ test('onboarding never shows validation errors before a submit attempt, and only
 })
 
 test('onboarding fits within 320-430px viewports without needing to scroll', async ({ page }) => {
-  await seedState(page, { account: null, profile: null })
-  // Paired with each width's typical device height (iPhone SE, 8, 12, 14 Pro Max).
+  await seedState(page, { identity: 'freshForOnboardingViewport' })
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Continue as tenant' }).click()
+  await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
+
+  // Choosing tenant persists real last_active_role — a second visit lands straight back on
+  // onboarding (tenant_profiles still doesn't exist yet), so only the first iteration needs to
+  // click through RoleSelection; the rest just re-check the same real in-progress state at
+  // other sizes. Paired with each width's typical device height (iPhone SE, 8, 12, 14 Pro Max).
   for (const { width, height } of [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 390, height: 844 }, { width: 430, height: 932 }]) {
     await page.setViewportSize({ width, height })
     await page.goto('/')
-    await page.getByRole('button', { name: 'Continue as tenant' }).click()
     await expect(page.getByRole('heading', { name: 'Let’s find your matches' })).toBeVisible()
     const overflowsViewport = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)
     expect(overflowsViewport, `onboarding should not need to scroll at ${width}x${height}`).toBe(false)
@@ -164,10 +159,7 @@ test('returning tenant with a saved profile is never sent through onboarding', a
 })
 
 test('a tenant who skipped budget in onboarding still sees ranked matches, never a false hard stop', async ({ page }) => {
-  await seedState(page, {
-    account: tenantAccount,
-    profile: { id: 'tenant-local', targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null },
-  })
+  await seedState(page, { identity: 'tenantNoFacts' })
   await page.goto('/discover')
   await expect(page.getByRole('heading', { name: 'Smart Match' })).toBeVisible()
   const card = page.getByRole('button', { name: /^Open (?!filters)/ }).first()
@@ -184,41 +176,42 @@ test('a tenant who skipped budget in onboarding still sees ranked matches, never
 })
 
 test('saving the profile without touching budget or household size does not fabricate values', async ({ page }) => {
-  await seedState(page, {
-    account: tenantAccount,
-    profile: { id: 'tenant-local', name: '', targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null },
-  })
+  await seedState(page, { identity: 'tenantNoFacts' })
   await page.goto('/profile')
   await page.getByLabel('Name').fill('Sam Rivera')
   await page.getByRole('button', { name: 'Save tenant profile' }).click()
+  await expect(page).toHaveURL(/\/discover$/)
 
-  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
-  expect(storedProfile.name).toBe('Sam Rivera')
-  expect(storedProfile.budgetMin).toBeNull()
-  expect(storedProfile.budgetMax).toBeNull()
-  expect(storedProfile.householdSize).toBeNull()
+  // Real round trip: reload straight into /profile and read the actual persisted Supabase
+  // values back out of the rendered form, rather than a localStorage key the app no longer
+  // treats as authoritative.
+  await page.goto('/profile')
+  await expect(page.getByLabel('Name')).toHaveValue('Sam Rivera')
+  await expect(page.getByLabel('Budget min (€)')).toHaveValue('')
+  await expect(page.getByLabel('Budget max (€)')).toHaveValue('')
+  await expect(page.getByLabel('Household size')).toHaveValue('')
 })
 
 test('tenant dashboard nudges to complete the profile only when core match facts are missing', async ({ page }) => {
-  await seedState(page, {
-    account: tenantAccount,
-    profile: { id: 'tenant-local', targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null },
-  })
+  await seedState(page, { identity: 'tenantNoFacts' })
   await page.goto('/dashboard')
   await expect(page.getByRole('heading', { name: 'Make your matches more accurate' })).toBeVisible()
 
-  await seedState(page, {
-    account: tenantAccount,
-    profile: { id: 'tenant-local', targetCity: 'Dublin', lookingFor: 'any', budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01', householdSize: 1 },
-  })
+  await seedState(page, { identity: 'tenantCompleteFacts' })
   await page.goto('/dashboard')
   await expect(page.getByRole('heading', { name: 'Make your matches more accurate' })).toHaveCount(0)
 })
 
-test('routes fresh landlord role selection to dashboard', async ({ page }) => {
-  await seedState(page, { account: null, profile: null })
+test('routes fresh landlord role selection through the required display-name step, then to dashboard', async ({ page }) => {
+  await seedState(page, { identity: 'freshForLandlordOnboarding' })
   await page.goto('/')
   await page.getByRole('button', { name: 'Continue as landlord' }).click()
+  // landlord_profiles.display_name is a real, required (NOT NULL) column with no truthful
+  // default — a genuinely fresh landlord must supply it before reaching the dashboard, unlike
+  // the old mock flow which had no such backend constraint to satisfy.
+  await expect(page.getByRole('heading', { name: 'What should tenants see as your name?' })).toBeVisible()
+  await page.getByLabel('Display name').fill('Fresh Landlord Onboarding Co')
+  await page.getByRole('button', { name: 'Continue to dashboard' }).click()
   await expect(page).toHaveURL(/\/dashboard$/)
   await expect(page.getByRole('heading', { name: 'Your properties at a glance.' })).toBeVisible()
 })
@@ -356,7 +349,7 @@ test('tenant enquiry opens messages with waiting composer and blocks second unso
 })
 
 test('tenant profile city change resets incompatible preferred areas', async ({ page }) => {
-  await seedState(page, { profile: { ...tenantProfile, preferredAreas: [] } })
+  await seedState(page, { identity: 'tenantNoAreas' })
   await page.goto('/profile')
 
   await selectGafflo(page, 'Suggested areas', 'Rathmines')
@@ -365,43 +358,29 @@ test('tenant profile city change resets incompatible preferred areas', async ({ 
   await expect(page.getByRole('button', { name: /Rathmines/ })).toHaveCount(0)
 })
 
-test('loads legacy coupleRequirement and persists applyingAsCouple only', async ({ page }) => {
-  await seedState(page, {
-    profile: {
-      ...tenantProfile,
-      name: 'Legacy Tenant',
-      preferredAreas: [],
-      householdSize: 2,
-      lookingFor: 'room',
-      applyingAsCouple: undefined,
-      coupleRequirement: true,
-    },
-  })
-
-  await page.goto('/profile')
-  await expect(page.getByLabel('Applying as a couple')).toBeChecked()
-  await page.getByRole('button', { name: 'Save tenant profile' }).click()
-
-  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
-  expect(storedProfile.applyingAsCouple).toBe(true)
-  expect(storedProfile).not.toHaveProperty('coupleRequirement')
-})
+// The "loads legacy coupleRequirement and persists applyingAsCouple only" e2e case was retired
+// in Stage B: it exercised a localStorage-era migration (a profile saved under the old
+// coupleRequirement field shape) that has no real equivalent — tenant_profiles has only ever
+// had applying_as_couple, so a real authenticated profile can never load in that legacy shape.
+// The underlying pure-function migration logic remains covered directly by
+// src/__tests__/businessRules.test.js's normalizeTenantProfileForState coverage.
 
 test('tenant profile separates two room applicants from applying as a couple', async ({ page }) => {
-  await seedState(page, { profile: { ...tenantProfile, householdSize: 2, lookingFor: 'room', applyingAsCouple: false } })
+  await seedState(page, { identity: 'tenantHousehold2Room' })
   await page.goto('/profile')
 
   await expect(page.getByLabel('Room applicants')).toHaveValue('2')
   await expect(page.getByLabel('Applying as a couple')).not.toBeChecked()
   await page.getByRole('button', { name: 'Save tenant profile' }).click()
+  await expect(page).toHaveURL(/\/discover$/)
 
-  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
-  expect(storedProfile.householdSize).toBe(2)
-  expect(storedProfile.applyingAsCouple).toBe(false)
+  await page.goto('/profile')
+  await expect(page.getByLabel('Room applicants')).toHaveValue('2')
+  await expect(page.getByLabel('Applying as a couple')).not.toBeChecked()
 })
 
 test('create and reopen draft preserves blank numeric field', async ({ page }) => {
-  await seedState(page, { account: landlordAccount, properties: [] })
+  await seedState(page, { identity: 'landlordDefault', properties: [] })
   await page.goto('/listings/new')
 
   await page.getByLabel('Title').fill('Draft Numeric Blank')
@@ -440,7 +419,7 @@ test('loads incomplete listing draft without writing fabricated enum defaults', 
     photoMetadata: [],
   }
 
-  await seedState(page, { account: landlordAccount, properties: [seededDraft] })
+  await seedState(page, { identity: 'landlordDefault', properties: [seededDraft] })
   await page.goto('/properties')
   await expect(page.getByRole('heading', { name: 'Incomplete enum draft' })).toBeVisible()
 
@@ -458,7 +437,7 @@ test('loads incomplete listing draft without writing fabricated enum defaults', 
 })
 
 test('property-scoped applicants can be opened and cleared', async ({ page }) => {
-  await seedState(page, { account: landlordAccount })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/properties')
 
   await page.locator('article').filter({ hasText: 'Bright two-bedroom apartment in Rathmines' }).getByRole('button', { name: 'Applicants' }).click()
@@ -472,7 +451,7 @@ test('property-scoped applicants can be opened and cleared', async ({ page }) =>
 })
 
 test('landlord own-listing preview hides tenant match content', async ({ page }) => {
-  await seedState(page, { account: landlordAccount })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/properties')
 
   await page.locator('article').filter({ hasText: 'Bright two-bedroom apartment in Rathmines' }).getByRole('button', { name: 'Preview' }).click()
@@ -533,7 +512,7 @@ function buildTestProperty(overrides = {}) {
 }
 
 test('request review blocks session-only photos and explains why', async ({ page }) => {
-  await seedState(page, { account: landlordAccount, properties: [] })
+  await seedState(page, { identity: 'landlordDefault', properties: [] })
   await page.goto('/listings/new')
 
   await page.getByLabel('Title').fill('Bright renovated room in Rathmines with lots of light')
@@ -562,7 +541,7 @@ test('tenant cannot open a listing that is not public and has no saved or enquir
 
 test('landlord cannot open another landlord\'s hidden listing', async ({ page }) => {
   const otherLandlordListing = buildTestProperty({ id: 'property-other-landlord-paused', ownerId: 'owner-agent-1', listingStatus: 'paused' })
-  await seedState(page, { account: landlordAccount, properties: [otherLandlordListing] })
+  await seedState(page, { identity: 'landlordDefault', properties: [otherLandlordListing] })
   await page.goto(`/properties/${otherLandlordListing.id}`)
   await expect(page.getByText('Property not available')).toBeVisible()
 })
@@ -577,7 +556,7 @@ test('tenant can still view a previously saved listing after it becomes inactive
 
 test('editing a published listing cannot silently move it back into review', async ({ page }) => {
   const published = buildTestProperty({ id: 'property-edit-published', listingStatus: 'published' })
-  await seedState(page, { account: landlordAccount, properties: [published] })
+  await seedState(page, { identity: 'landlordDefault', properties: [published] })
   await page.goto(`/listings/${published.id}/edit`)
 
   await page.getByLabel('Title').fill('Quiet two-bedroom flat in Ranelagh — repainted')
@@ -596,7 +575,7 @@ test('availability confirmation timestamp only refreshes when availableFrom actu
     availableFrom: '2030-01-01',
     availabilityConfirmedAt: '2029-01-01T00:00:00.000Z',
   })
-  await seedState(page, { account: landlordAccount, properties: [listing] })
+  await seedState(page, { identity: 'landlordDefault', properties: [listing] })
 
   await page.goto(`/listings/${listing.id}/edit`)
   await page.getByLabel('Title').fill('Quiet two-bedroom flat in Ranelagh — repainted')
@@ -741,7 +720,7 @@ test('draft listing with no rent set shows a clear placeholder instead of a fake
     images: [],
     photoMetadata: [],
   }
-  await seedState(page, { account: landlordAccount, properties: [rentlessDraft] })
+  await seedState(page, { identity: 'landlordDefault', properties: [rentlessDraft] })
   await page.goto('/properties')
 
   await expect(page.getByRole('heading', { name: 'Draft without a rent yet' })).toBeVisible()
@@ -865,7 +844,7 @@ test('Gafflo+ presentation closes via the X button, the backdrop, and Escape, an
 })
 
 test('landlord profile shows a Landlord Plus upgrade entry point with only real, wired benefits', async ({ page }) => {
-  await seedState(page, { account: landlordAccount, profile: null })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/profile')
 
   await expect(page.getByText('Landlord Plus')).toBeVisible()
@@ -875,7 +854,7 @@ test('landlord profile shows a Landlord Plus upgrade entry point with only real,
 
 test('landlord plans preview shows Free, Single Listing Plus, Landlord Plus and Boost with the trust line, and is non-transactional', async ({ page }) => {
   await page.setViewportSize(viewport390)
-  await seedState(page, { account: landlordAccount, profile: null })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/profile')
 
   await page.getByRole('button', { name: 'Explore plans and add-ons' }).click()
@@ -894,7 +873,7 @@ test('landlord plans preview shows Free, Single Listing Plus, Landlord Plus and 
 })
 
 test('free landlord cannot resume a listing beyond the active listing allowance', async ({ page }) => {
-  await seedState(page, { account: landlordAccount })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/properties')
 
   await page.locator('article').filter({ hasText: 'Drumcondra' }).getByRole('button', { name: 'Resume' }).click()
@@ -928,7 +907,7 @@ test('bottom nav remains visible and does not block a lower primary action', asy
 })
 
 test('landlord dashboard surfaces a "what needs your attention" summary instead of duplicated metrics', async ({ page }) => {
-  await seedState(page, { account: landlordAccount })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/dashboard')
 
   await expect(page.getByRole('heading', { name: 'What needs your attention' })).toBeVisible()
@@ -965,7 +944,7 @@ test('landlord dashboard shows a calm empty state when nothing needs attention �
     updatedAt: now,
     messages: [{ id: 'm-unrelated', sender: 'tenant', body: 'Hi', createdAt: now }],
   }
-  await seedState(page, { account: landlordAccount, enquiries: [unrelatedEnquiry], conversations: [unrelatedConversation] })
+  await seedState(page, { identity: 'landlordDefault', enquiries: [unrelatedEnquiry], conversations: [unrelatedConversation] })
   await page.goto('/dashboard')
 
   await expect(page.getByRole('heading', { name: 'What needs your attention' })).toBeVisible()
@@ -995,7 +974,7 @@ test('smart match card caps secondary status pills at two high-value signals', a
   }
 
   await seedState(page, {
-    profile: { ...tenantProfile, targetCity: 'Waterford', preferredAreas: [], budgetMin: 1400, budgetMax: 1600, moveInDate: '2030-01-01' },
+    identity: 'tenantWaterford',
     properties: [property],
     enquiries: [enquiry],
     conversations: [],
@@ -1121,7 +1100,7 @@ test('landlord quick replies insert text into the composer but never send automa
     updatedAt: now,
     messages: [{ id: 'm-qr-1', sender: 'tenant', body: 'Hi, is this still available?', createdAt: now }],
   }
-  await seedState(page, { account: landlordAccount, conversations: [conversation] })
+  await seedState(page, { identity: 'landlordDefault', conversations: [conversation] })
   await page.goto('/messages')
   await page.getByRole('button', { name: /Bright two-bedroom apartment in Rathmines/ }).click()
   await expectNoHorizontalOverflow(page)
@@ -1146,7 +1125,7 @@ test('landlord quick replies insert text into the composer but never send automa
 })
 
 test('Boost preview is informational only, non-transactional, and states the exposure-not-compatibility trust line', async ({ page }) => {
-  await seedState(page, { account: landlordAccount })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/properties')
 
   await page.locator('article').filter({ hasText: 'Rathmines' }).getByRole('button', { name: 'Boost listing' }).click()
@@ -1178,7 +1157,7 @@ function buildLifecycleProperties() {
 }
 
 test('each listing lifecycle stage shows exactly one clear primary action, and an unset rent stays honest', async ({ page }) => {
-  await seedState(page, { account: landlordAccount, properties: buildLifecycleProperties() })
+  await seedState(page, { identity: 'landlordDefault', properties: buildLifecycleProperties() })
   await page.goto('/properties')
 
   const draftCard = page.locator('article').filter({ hasText: 'Lifecycle stage draft listing' })
@@ -1200,7 +1179,7 @@ test('each listing lifecycle stage shows exactly one clear primary action, and a
 
 test('new landlord monetisation surfaces stay within mobile width with no horizontal overflow', async ({ page }) => {
   await page.setViewportSize(viewport390)
-  await seedState(page, { account: landlordAccount })
+  await seedState(page, { identity: 'landlordDefault' })
 
   await page.goto('/properties')
   await expectNoHorizontalOverflow(page)
@@ -1222,7 +1201,7 @@ test('new landlord monetisation surfaces stay within mobile width with no horizo
 })
 
 test('the Gafflo select opens on click, supports full keyboard interaction, and persists the chosen value', async ({ page }) => {
-  await seedState(page)
+  await seedState(page, { identity: 'tenantSelectSaveTest' })
   await page.goto('/profile')
 
   const trigger = page.getByLabel('Target city')
@@ -1245,10 +1224,12 @@ test('the Gafflo select opens on click, supports full keyboard interaction, and 
   await expect(trigger).toHaveAttribute('aria-expanded', 'false')
   await expect(trigger).toHaveText('Cork')
 
-  // The selection is real form state, not just visual — it's what actually gets saved.
+  // The selection is real form state, not just visual — it's what actually gets saved to
+  // Supabase, not just held in the UI.
   await page.getByRole('button', { name: 'Save tenant profile' }).click()
-  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
-  expect(storedProfile.targetCity).toBe('Cork')
+  await expect(page).toHaveURL(/\/discover$/)
+  await page.goto('/profile')
+  await expect(page.getByLabel('Target city')).toHaveText('Cork')
 })
 
 test('the Gafflo select closes on outside click, never overflows a narrow mobile viewport, and opening one closes another', async ({ page }) => {
@@ -1273,7 +1254,7 @@ test('the Gafflo select closes on outside click, never overflows a narrow mobile
 })
 
 test('toggling "Applying as a couple" on raises applicant count to at least 2, and toggling it off never reduces the count', async ({ page }) => {
-  await seedState(page, { profile: { ...tenantProfile, householdSize: 1, lookingFor: 'room', applyingAsCouple: false } })
+  await seedState(page, { identity: 'tenantHousehold1Room' })
   await page.goto('/profile')
 
   const householdField = page.getByLabel('Room applicants')
@@ -1293,12 +1274,15 @@ test('toggling "Applying as a couple" on raises applicant count to at least 2, a
   await expect(householdField).toHaveValue('2')
 
   await page.getByRole('button', { name: 'Save tenant profile' }).click()
-  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
-  expect(storedProfile).toMatchObject({ householdSize: 2, applyingAsCouple: false })
+  await expect(page).toHaveURL(/\/discover$/)
+
+  await page.goto('/profile')
+  await expect(page.getByLabel('Room applicants')).toHaveValue('2')
+  await expect(page.getByLabel('Applying as a couple')).not.toBeChecked()
 })
 
 test('3 applicants + Couple Yes stays 3, never clamped down to 2', async ({ page }) => {
-  await seedState(page, { profile: { ...tenantProfile, householdSize: 3, lookingFor: 'room', applyingAsCouple: false } })
+  await seedState(page, { identity: 'tenantHousehold3Room' })
   await page.goto('/profile')
 
   await page.getByText('Applying as a couple', { exact: true }).click()
@@ -1307,7 +1291,7 @@ test('3 applicants + Couple Yes stays 3, never clamped down to 2', async ({ page
 })
 
 test('numeric fields can be cleared and retyped without snapping back to a fabricated default', async ({ page }) => {
-  await seedState(page, { profile: { ...tenantProfile, householdSize: 4, lookingFor: 'any' } })
+  await seedState(page, { identity: 'tenantHousehold4Any' })
   await page.goto('/profile')
 
   const householdField = page.getByLabel('Household size')
@@ -1321,14 +1305,15 @@ test('numeric fields can be cleared and retyped without snapping back to a fabri
   await budgetMin.fill('0')
   await expect(budgetMin).toHaveValue('0')
   await page.getByRole('button', { name: 'Save tenant profile' }).click()
+  await expect(page).toHaveURL(/\/discover$/)
 
-  const storedProfile = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gafflo.tenant-profile')))
-  expect(storedProfile.householdSize).toBe(5)
-  expect(storedProfile.budgetMin).toBe(0)
+  await page.goto('/profile')
+  await expect(page.getByLabel('Household size')).toHaveValue('5')
+  await expect(page.getByLabel('Budget min (€)')).toHaveValue('0')
 })
 
 test('a literal saved €0 minimum budget displays as "0" on load, not a blank field', async ({ page }) => {
-  await seedState(page, { profile: { ...tenantProfile, budgetMin: 0 } })
+  await seedState(page, { identity: 'tenantBudgetMinZero' })
   await page.goto('/profile')
   // A real, saved value of 0 must render as "0" — the old `value={form.budgetMin || ''}` display
   // logic treated a real €0 the same as "not set" and silently hid it after reload.

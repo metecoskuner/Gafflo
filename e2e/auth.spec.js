@@ -1,4 +1,16 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const identities = JSON.parse(readFileSync(path.join(__dirname, '.auth', 'identities.json'), 'utf8'))
+const baseURL = 'http://127.0.0.1:4173'
+
+function storageStateFor(identityName) {
+  const { storageKey, storageValue } = identities[identityName]
+  return { cookies: [], origins: [{ origin: baseURL, localStorage: [{ name: storageKey, value: storageValue }] }] }
+}
 
 // This file exercises the real Supabase Auth boundary itself (Stage A). It deliberately runs
 // against real gafflo-dev — no mocked network responses, except where noted below — the same
@@ -89,25 +101,32 @@ test.describe('signed out (stubbed Supabase response)', () => {
 })
 
 test.describe('signed in', () => {
-  // No storageState override: inherits the real, throwaway authenticated session global-setup
-  // seeded for this run (playwright.config.js's use.storageState).
+  // Each test below uses its own dedicated, pre-configured real identity (see
+  // e2e/global-setup.js) rather than sharing one session and clicking through RoleSelection —
+  // choosing a role is a real, non-idempotent Supabase write (profiles.last_active_role), and
+  // signOut() really revokes the session's refresh token, so sharing either across concurrent
+  // tests would race. Config-level default storageState is overridden per test on purpose.
 
-  test('a real authenticated session enters the marketplace directly, never the auth screen', async ({ page }) => {
+  test('a real authenticated session enters the marketplace directly, never the auth screen', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: storageStateFor('freshForAuthTest') })
+    const page = await context.newPage()
     await page.goto('/')
     await expect(page.getByRole('heading', { name: /choose how you want to use gafflo/i })).toBeVisible()
     await expect(page.getByLabel('Email')).toHaveCount(0)
+    await context.close()
   })
 
-  test('the signed-in account email is real, from the Supabase session, on the profile screen', async ({ page }) => {
-    await page.goto('/')
-    await page.getByRole('button', { name: /continue as landlord/i }).click()
+  test('the signed-in account email is real, from the Supabase session, on the profile screen', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: storageStateFor('landlordDefault') })
+    const page = await context.newPage()
     await page.goto('/profile')
     await expect(page.getByText(/signed in as .+@.+\..+/i)).toBeVisible()
+    await context.close()
   })
 
-  test('signing out ends the session for real and returns to the auth entry screen', async ({ page }) => {
-    await page.goto('/')
-    await page.getByRole('button', { name: /continue as landlord/i }).click()
+  test('signing out ends the session for real and returns to the auth entry screen', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: storageStateFor('landlordForSignOutTest') })
+    const page = await context.newPage()
     await page.goto('/profile')
 
     await page.getByRole('button', { name: /^sign out$/i }).click()
@@ -119,15 +138,18 @@ test.describe('signed in', () => {
     await expect(page.getByRole('heading', { name: /welcome to gafflo/i })).toBeVisible()
     await page.goto('/dashboard')
     await expect(page.getByRole('heading', { name: /welcome to gafflo/i })).toBeVisible()
+    await context.close()
   })
 
-  test('reloading a signed-in session keeps the user inside the marketplace', async ({ page }) => {
-    await page.goto('/')
-    await page.getByRole('button', { name: /continue as landlord/i }).click()
-    await expect(page).toHaveURL(/\/dashboard$/)
+  test('reloading a signed-in session keeps the user inside the marketplace', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: storageStateFor('landlordDefault') })
+    const page = await context.newPage()
+    await page.goto('/dashboard')
+    await expect(page.getByRole('heading', { name: /welcome to gafflo/i })).toHaveCount(0)
 
     await page.reload()
     await expect(page.getByRole('heading', { name: /welcome to gafflo/i })).toHaveCount(0)
     await expect(page).toHaveURL(/\/dashboard$/)
+    await context.close()
   })
 })
