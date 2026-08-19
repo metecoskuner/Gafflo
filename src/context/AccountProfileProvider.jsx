@@ -8,6 +8,7 @@ import {
   mapTenantProfileRowToFields,
 } from '../config/accountProfile'
 import { supabase } from '../lib/supabase'
+import { DEV_AUTH_BYPASS_ENABLED, createDevBypassProfileState } from '../config/devAuthBypass'
 import useAuth from './useAuth'
 import AccountProfileContext from './AccountProfileContext'
 
@@ -43,7 +44,7 @@ async function fetchProfileState(userId) {
 // one) as defense in depth, not because RLS needs the help.
 export function AccountProfileProvider({ children }) {
   const { user } = useAuth()
-  const [state, setState] = useState(emptyState)
+  const [state, setState] = useState(() => (DEV_AUTH_BYPASS_ENABLED ? createDevBypassProfileState() : emptyState))
 
   // AccountProfileProvider only ever mounts inside AuthGate's authenticated branch — `user` is
   // guaranteed non-null for this component's entire lifetime, since AuthGate itself unmounts
@@ -51,7 +52,12 @@ export function AccountProfileProvider({ children }) {
   // re-rendering it with a null user. That unmount is what guarantees no previous user's
   // profile data can ever flash for whoever signs in next; `state` starts fresh (emptyState) on
   // every new mount.
+  //
+  // Under DEV_AUTH_BYPASS_ENABLED there is no real session, so fetching by user.id would just be
+  // an RLS-rejected anon request — `state` was already seeded locally above, and this effect is a
+  // no-op so that local state is never overwritten with a fetch result.
   useEffect(() => {
+    if (DEV_AUTH_BYPASS_ENABLED) return undefined
     let cancelled = false
     fetchProfileState(user.id).then((next) => {
       if (!cancelled) setState(next)
@@ -62,12 +68,17 @@ export function AccountProfileProvider({ children }) {
   }, [user])
 
   const refreshProfiles = useCallback(async () => {
+    if (DEV_AUTH_BYPASS_ENABLED) return
     setState((current) => ({ ...current, loading: true, error: null }))
     setState(await fetchProfileState(user.id))
   }, [user])
 
   const setActiveRole = useCallback(
     async (role) => {
+      if (DEV_AUTH_BYPASS_ENABLED) {
+        setState((current) => ({ ...current, profile: { ...current.profile, lastActiveRole: role } }))
+        return { error: null }
+      }
       const { data, error } = await supabase
         .from('profiles')
         .update({ last_active_role: role })
@@ -83,6 +94,10 @@ export function AccountProfileProvider({ children }) {
 
   const createTenantProfile = useCallback(
     async (fields) => {
+      if (DEV_AUTH_BYPASS_ENABLED) {
+        setState((current) => ({ ...current, tenantProfile: { ...current.tenantProfile, ...fields } }))
+        return setActiveRole('tenant')
+      }
       const row = mapTenantProfileFieldsToRow(fields)
       const { data, error } = await supabase
         .from('tenant_profiles')
@@ -98,6 +113,10 @@ export function AccountProfileProvider({ children }) {
 
   const updateTenantProfile = useCallback(
     async (fields) => {
+      if (DEV_AUTH_BYPASS_ENABLED) {
+        setState((current) => ({ ...current, tenantProfile: { ...current.tenantProfile, ...fields } }))
+        return { error: null }
+      }
       const row = mapTenantProfileFieldsToRow(fields)
       const { data, error } = await supabase
         .from('tenant_profiles')
@@ -114,6 +133,10 @@ export function AccountProfileProvider({ children }) {
 
   const createLandlordProfile = useCallback(
     async (fields) => {
+      if (DEV_AUTH_BYPASS_ENABLED) {
+        setState((current) => ({ ...current, landlordProfile: { ...current.landlordProfile, ...fields } }))
+        return setActiveRole('landlord')
+      }
       const row = mapLandlordProfileFieldsToRow(fields)
       const { data, error } = await supabase
         .from('landlord_profiles')
@@ -129,6 +152,10 @@ export function AccountProfileProvider({ children }) {
 
   const updateLandlordProfile = useCallback(
     async (fields) => {
+      if (DEV_AUTH_BYPASS_ENABLED) {
+        setState((current) => ({ ...current, landlordProfile: { ...current.landlordProfile, ...fields } }))
+        return { error: null }
+      }
       const row = mapLandlordProfileFieldsToRow(fields)
       const { data, error } = await supabase
         .from('landlord_profiles')
@@ -145,6 +172,10 @@ export function AccountProfileProvider({ children }) {
 
   const updateDisplayName = useCallback(
     async (name) => {
+      if (DEV_AUTH_BYPASS_ENABLED) {
+        setState((current) => ({ ...current, profile: { ...current.profile, displayName: name || null } }))
+        return { error: null }
+      }
       const { data, error } = await supabase
         .from('profiles')
         .update({ display_name: name || null })

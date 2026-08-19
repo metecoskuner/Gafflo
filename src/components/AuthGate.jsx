@@ -5,7 +5,7 @@ import useAuth from '../context/useAuth'
 // never mounts until Supabase has actually reported a session, so there is no frame where an
 // unauthenticated visitor briefly sees marketplace UI while auth is still resolving.
 export default function AuthGate({ children }) {
-  const { loading, user } = useAuth()
+  const { loading, user, devAuthBypassActive } = useAuth()
 
   if (loading) {
     return (
@@ -23,5 +23,24 @@ export default function AuthGate({ children }) {
     return <Auth />
   }
 
-  return children
+  return (
+    <>
+      {devAuthBypassActive ? <DevAuthBypassBanner /> : null}
+      {children}
+    </>
+  )
+}
+
+// Loud on purpose — this only ever renders when VITE_DEV_BYPASS_AUTH bypassed real Supabase
+// auth (see config/devAuthBypass.js), so anyone looking at the screen knows nothing they see is
+// backed by a real session.
+function DevAuthBypassBanner() {
+  return (
+    <div
+      role="status"
+      className="fixed inset-x-0 top-0 z-[999] bg-amber-500 px-3 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-black"
+    >
+      Dev auth bypass active — local inspection only, no real Supabase session
+    </div>
+  )
 }
