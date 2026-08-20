@@ -139,7 +139,10 @@ test.describe('Stage H — real notifications', () => {
     expect(beforeUnread.length).toBeGreaterThanOrEqual(2)
 
     const markAll = await rpc('mark_all_notifications_read', {}, { accessToken })
-    expect(markAll.status).toBe(200)
+    // mark_all_notifications_read() is `returns void` — PostgREST correctly responds 204 No
+    // Content for a void RPC, not 200 (unlike create_application()/create_notification(), which
+    // return a real uuid and get 200 with a JSON body).
+    expect(markAll.status).toBe(204)
 
     const { json: afterUnread } = await rest(`notifications?user_id=eq.${userId}&read_at=is.null&select=id`, { accessToken })
     expect(afterUnread).toHaveLength(0)
