@@ -4,6 +4,7 @@ import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
 import useMessaging from '../context/useMessaging'
+import useViewings from '../context/useViewings'
 import { domainLabel } from '../config/domainOptions'
 import { isTerminalApplicationStatus } from '../config/applicationStatus'
 import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
@@ -34,6 +35,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   } = useAppState()
   const { getTenantApplicationForListing, applyToListing, withdraw } = useApplications()
   const { getConversationForListing, isUserBlocked, blockUser, startConversation } = useMessaging()
+  const { getActiveViewing, acceptSlot, decline: declineViewing, cancel: cancelViewing } = useViewings()
   const { activeRole: role, profile } = useAccountProfile()
   const navigate = useNavigate()
   const routeProperty = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
@@ -80,6 +82,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   const messageDraft = messageState.propertyId === propertyId ? messageState.draft : ''
 
   const application = property && !previewProperty ? getTenantApplicationForListing(property.id) : null
+  const activeViewing = application ? getActiveViewing(application.id) : null
   const existingConversation = property && !previewProperty ? getConversationForListing(property.id) : null
   const hasHistoricalRelationship =
     role === 'tenant' && (Boolean(application) || Boolean(existingConversation) || savedPropertyIds.includes(propertyId))
@@ -339,7 +342,15 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
                 </section>
               ) : null}
 
-              {tenantContext && application ? <ApplicationStatus application={application} /> : null}
+              {tenantContext && application ? (
+                <ApplicationStatus
+                  application={application}
+                  viewing={activeViewing}
+                  onAcceptSlot={(slotId) => acceptSlot(activeViewing.id, slotId)}
+                  onDeclineViewing={() => declineViewing(activeViewing.id)}
+                  onCancelViewing={() => cancelViewing(activeViewing.id)}
+                />
+              ) : null}
               {tenantContext && applyError ? (
                 <p className="rounded-[18px] bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{applyError}</p>
               ) : null}

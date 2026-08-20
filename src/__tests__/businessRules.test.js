@@ -3,6 +3,9 @@ import { mapApplicationRowToApplication } from '../config/applicationAdapter'
 import { describeApplicationError } from '../config/applicationErrors'
 import { filterConversationsByRole, isTenantWaitingForLandlordReply, mapConversationRowToConversation } from '../config/messageAdapter'
 import { describeMessagingError } from '../config/messagingErrors'
+import { combineLocalDateAndTimeToIso, getActiveViewingForApplication, mapViewingProposalRowToProposal } from '../config/viewingAdapter'
+import { describeViewingError } from '../config/viewingErrors'
+import { validateProposedSlots } from '../config/viewingStatus'
 import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
@@ -46,7 +49,6 @@ import { sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotio
 import { getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
-import { validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { directionalDayGap, isPastIsoDate } from '../utils/dateUtils'
 import { sanitizeMessageBody } from '../utils/messagingRules'
@@ -81,20 +83,116 @@ const property = {
   petsAllowed: 'not_allowed',
 }
 
-describe('viewing slots', () => {
-  it('rejects duplicate, past, excessive and invalid proposals', () => {
-    const future = '2030-01-02T11:00:00.000Z'
-    expect(validateViewingProposal([future, future], '2030-01-01T00:00:00.000Z').valid).toBe(false)
-    expect(validateViewingProposal(['2020-01-02T11:00:00.000Z'], '2030-01-01T00:00:00.000Z').valid).toBe(false)
-    expect(validateViewingProposal([future, '2030-01-02T12:00:00.000Z', '2030-01-02T13:00:00.000Z', '2030-01-02T14:00:00.000Z']).valid).toBe(false)
-    expect(validateViewingProposal(['not a date']).valid).toBe(false)
+describe('Stage F — real viewing slot validation (mirrors propose_viewing() exactly)', () => {
+  const now = new Date('2030-01-01T00:00:00.000Z')
+  const future1 = { startsAt: '2030-01-02T11:00:00.000Z', endsAt: '2030-01-02T11:30:00.000Z' }
+  const future2 = { startsAt: '2030-01-02T12:00:00.000Z', endsAt: '2030-01-02T12:30:00.000Z' }
+  const future3 = { startsAt: '2030-01-02T13:00:00.000Z', endsAt: '2030-01-02T13:30:00.000Z' }
+  const future4 = { startsAt: '2030-01-02T14:00:00.000Z', endsAt: '2030-01-02T14:30:00.000Z' }
+
+  it('accepts 1, 2, or 3 valid future slots', () => {
+    expect(validateProposedSlots([future1], now).valid).toBe(true)
+    expect(validateProposedSlots([future1, future2], now).valid).toBe(true)
+    expect(validateProposedSlots([future1, future2, future3], now).valid).toBe(true)
   })
 
-  it('confirms only a current proposed future slot', () => {
-    const proposal = validateViewingProposal(['2030-01-02T11:00:00.000Z'], '2030-01-01T00:00:00.000Z')
-    expect(validateViewingChoice({ status: 'viewing proposed', proposedSlots: proposal.slots }, proposal.slots[0].id, '2030-01-01T00:00:00.000Z').valid).toBe(true)
-    expect(validateViewingChoice({ status: 'viewing proposed', proposedSlots: proposal.slots }, 'other', '2030-01-01T00:00:00.000Z').valid).toBe(false)
-    expect(validateViewingChoice({ status: 'viewing confirmed', proposedSlots: proposal.slots }, proposal.slots[0].id, '2030-01-01T00:00:00.000Z').valid).toBe(false)
+  it('rejects zero slots and more than 3 slots', () => {
+    expect(validateProposedSlots([], now).valid).toBe(false)
+    expect(validateProposedSlots([future1, future2, future3, future4], now).valid).toBe(false)
+  })
+
+  it('rejects a past slot', () => {
+    expect(validateProposedSlots([{ startsAt: '2020-01-02T11:00:00.000Z', endsAt: '2020-01-02T11:30:00.000Z' }], now).valid).toBe(false)
+  })
+
+  it('rejects end time at or before start time', () => {
+    expect(validateProposedSlots([{ startsAt: '2030-01-02T11:00:00.000Z', endsAt: '2030-01-02T11:00:00.000Z' }], now).valid).toBe(false)
+    expect(validateProposedSlots([{ startsAt: '2030-01-02T11:00:00.000Z', endsAt: '2030-01-02T10:30:00.000Z' }], now).valid).toBe(false)
+  })
+
+  it('rejects duplicate start times and blank/invalid slots', () => {
+    expect(validateProposedSlots([future1, future1], now).valid).toBe(false)
+    expect(validateProposedSlots([{ startsAt: null, endsAt: null }], now).valid).toBe(false)
+    expect(validateProposedSlots([{ startsAt: 'not a date', endsAt: 'not a date' }], now).valid).toBe(false)
+  })
+})
+
+describe('Stage F — timezone-safe local date/time combination', () => {
+  it('interprets date+time as local wall-clock time, never as UTC', () => {
+    // A 2030-06-15 18:30 local input must round-trip back to 18:30 when read back with the same
+    // local-timezone formatting utility used for display (formatViewingSlotDateTime) — proving
+    // this never silently shifts by whatever the test runner's local UTC offset happens to be.
+    const iso = combineLocalDateAndTimeToIso('2030-06-15', '18:30')
+    const readBack = new Date(iso)
+    expect(readBack.getHours()).toBe(18)
+    expect(readBack.getMinutes()).toBe(30)
+    expect(readBack.getFullYear()).toBe(2030)
+    expect(readBack.getMonth()).toBe(5) // June, 0-indexed
+    expect(readBack.getDate()).toBe(15)
+  })
+
+  it('returns null for blank or incomplete input rather than fabricating a time', () => {
+    expect(combineLocalDateAndTimeToIso('', '18:30')).toBeNull()
+    expect(combineLocalDateAndTimeToIso('2030-06-15', '')).toBeNull()
+    expect(combineLocalDateAndTimeToIso(null, null)).toBeNull()
+  })
+})
+
+describe('Stage F — real viewing proposal adapter', () => {
+  const row = {
+    id: 'proposal-1',
+    application_id: 'app-1',
+    landlord_id: 'landlord-1',
+    tenant_id: 'tenant-1',
+    status: 'confirmed',
+    confirmed_slot_id: 'slot-2',
+    created_at: '2030-01-01T00:00:00.000Z',
+    updated_at: '2030-01-01T01:00:00.000Z',
+    responded_at: '2030-01-01T01:00:00.000Z',
+    cancelled_at: null,
+    viewing_slots: [
+      { id: 'slot-2', starts_at: '2030-01-03T12:00:00.000Z', ends_at: '2030-01-03T12:30:00.000Z' },
+      { id: 'slot-1', starts_at: '2030-01-02T11:00:00.000Z', ends_at: '2030-01-02T11:30:00.000Z' },
+    ],
+  }
+
+  it('resolves the accepted slot from confirmed_slot_id and sorts slots chronologically', () => {
+    const proposal = mapViewingProposalRowToProposal(row, { userId: 'tenant-1' })
+    expect(proposal.slots.map((slot) => slot.id)).toEqual(['slot-1', 'slot-2'])
+    expect(proposal.acceptedSlot.id).toBe('slot-2')
+  })
+
+  it('derives isTenant from the real participant id, never a passed-in role flag', () => {
+    expect(mapViewingProposalRowToProposal(row, { userId: 'tenant-1' }).isTenant).toBe(true)
+    expect(mapViewingProposalRowToProposal(row, { userId: 'landlord-1' }).isTenant).toBe(false)
+  })
+
+  it('getActiveViewingForApplication only ever returns a pending or confirmed proposal for that application', () => {
+    const pending = mapViewingProposalRowToProposal({ ...row, id: 'proposal-pending', status: 'pending', confirmed_slot_id: null }, { userId: 'tenant-1' })
+    const declined = mapViewingProposalRowToProposal({ ...row, id: 'proposal-declined', application_id: 'app-2', status: 'declined' }, { userId: 'tenant-1' })
+    const confirmed = mapViewingProposalRowToProposal(row, { userId: 'tenant-1' })
+    expect(getActiveViewingForApplication([declined, confirmed], 'app-1')).toEqual(confirmed)
+    expect(getActiveViewingForApplication([declined], 'app-2')).toBeNull()
+    expect(getActiveViewingForApplication([pending], 'app-1').status).toBe('pending')
+  })
+})
+
+describe('Stage F — viewing error normalization', () => {
+  it('maps known 42501/P0001/23505 backend messages to safe, specific user copy', () => {
+    expect(describeViewingError({ code: '23505', message: 'anything' })).toBe('This application already has an open viewing proposal.')
+    expect(describeViewingError({ code: '42501', message: 'This viewing cannot be confirmed right now' })).toBe('This viewing cannot be confirmed right now.')
+    expect(describeViewingError({ code: 'P0001', message: "Each viewing slot's end time must be after its start time" })).toBe('Each end time must be after its start time.')
+  })
+
+  it('handles the one interpolated backend message via prefix match, not exact equality', () => {
+    expect(describeViewingError({ code: 'P0001', message: 'A viewing can only be proposed for a shortlisted application (current status: sent)' })).toBe(
+      'A viewing can only be proposed for a shortlisted application.',
+    )
+  })
+
+  it('never leaks a raw/unknown backend message or missing error as user-facing text', () => {
+    expect(describeViewingError(null)).toBe('Something went wrong. Please try again.')
+    expect(describeViewingError({ code: '42501', message: 'some new unmapped backend string' })).toBe('Something went wrong. Please try again.')
   })
 })
 

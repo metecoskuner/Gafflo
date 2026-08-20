@@ -1,64 +1,8 @@
-export const applicationStatuses = {
-  sent: {
-    label: 'Sent',
-    tenantTitle: 'Interest sent',
-    description: 'Your interest has been sent to the listing owner.',
-  },
-  viewed: {
-    label: 'Viewed',
-    tenantTitle: 'Landlord viewed',
-    description: 'The listing owner has seen your enquiry.',
-  },
-  'landlord interested': {
-    label: 'Landlord interested',
-    tenantTitle: 'Landlord interested',
-    description: 'Good news — the landlord is interested. Messaging is the next step.',
-  },
-  shortlisted: {
-    label: 'Shortlisted',
-    tenantTitle: 'Shortlisted',
-    description: 'You have been shortlisted for this property.',
-  },
-  'viewing proposed': {
-    label: 'Viewing proposed',
-    tenantTitle: 'Viewing proposed',
-    description: 'The listing owner has proposed viewing times.',
-  },
-  'viewing confirmed': {
-    label: 'Viewing confirmed',
-    tenantTitle: 'Viewing confirmed',
-    description: 'Your viewing is confirmed. Keep Messages open for access details.',
-  },
-  'viewing cancelled': {
-    label: 'Viewing cancelled',
-    tenantTitle: 'Viewing cancelled',
-    description: 'This viewing is no longer going ahead.',
-  },
-  rejected: {
-    label: 'Not selected',
-    tenantTitle: 'Not selected',
-    description: 'This property is not progressing, but you can keep browsing other matches.',
-  },
-  closed: {
-    label: 'Closed',
-    tenantTitle: 'Closed',
-    description: 'This enquiry is closed.',
-  },
-  withdrawn: {
-    label: 'Withdrawn',
-    tenantTitle: 'Withdrawn',
-    description: 'You withdrew this enquiry.',
-  },
-}
-
-export function getApplicationStatus(status) {
-  return applicationStatuses[status] || {
-    label: status || 'Sent',
-    tenantTitle: status || 'Sent',
-    description: 'Your enquiry is being reviewed.',
-  }
-}
-
+// Old space-separated mock vocabulary — kept only because config/entitlements.js's dormant,
+// unwired Gafflo+ follow-up helpers (canSendPremiumFollowUp/filterVisibleEnquiryHistory) still
+// import these two. Not real product paths: see the Stage E and Stage F final reports for why
+// that feature remains out of scope and unwired. Every real status check in the app uses
+// config/applicationStatus.js's real application_status_t vocabulary instead.
 export function isClosedStatus(status) {
   return ['rejected', 'closed', 'withdrawn'].includes(status)
 }

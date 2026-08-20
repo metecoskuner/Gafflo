@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
+import FormInput from '../components/FormInput'
 import MatchBadge from '../components/MatchBadge'
 import {
   applicantPipelineTabs,
@@ -11,11 +12,14 @@ import {
 } from '../config/applicationStatus'
 import { filterApplicantsByProperty, getValidApplicantPropertyId } from '../config/applicantFilters'
 import { isRoomListing } from '../config/listingCategories'
+import { combineLocalDateAndTimeToIso } from '../config/viewingAdapter'
+import { MAX_VIEWING_SLOTS, validateProposedSlots } from '../config/viewingStatus'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
 import useMessaging from '../context/useMessaging'
+import useViewings from '../context/useViewings'
 import { formatCurrency } from '../utils/formatCurrency'
-import { formatDate } from '../utils/dateUtils'
+import { formatDate, formatViewingSlotDateTime } from '../utils/dateUtils'
 
 export default function Applicants() {
   const navigate = useNavigate()
@@ -23,6 +27,7 @@ export default function Applicants() {
   const { landlordProperties } = useAppState()
   const { landlordApplications, markViewed, setApplicationStatus } = useApplications()
   const { getConversationForListingAndTenant } = useMessaging()
+  const { getActiveViewing, proposeViewing, cancel: cancelViewing } = useViewings()
   const [activePipeline, setActivePipeline] = useState('new')
   const [confirmRejectId, setConfirmRejectId] = useState(null)
   const activePropertyId = getValidApplicantPropertyId(searchParams.get('property'), landlordProperties)
@@ -142,6 +147,7 @@ export default function Applicants() {
               // caller to have a tenant_profiles row) — so this only ever opens an existing real
               // thread, never creates one on the landlord's behalf.
               const conversation = getConversationForListingAndTenant(application.propertyId, application.tenantId)
+              const activeViewing = getActiveViewing(application.id)
               const handleStatusChange = (status) => {
                 if (status === 'not_selected') {
                   setConfirmRejectId(application.id)
@@ -191,6 +197,13 @@ export default function Applicants() {
                       Open conversation
                     </Button>
                   ) : null}
+
+                  <ApplicantViewingSection
+                    application={application}
+                    activeViewing={activeViewing}
+                    proposeViewing={proposeViewing}
+                    cancelViewing={cancelViewing}
+                  />
 
                   {!actions.length ? (
                     <p className="mt-4 rounded-[18px] bg-slate-50 px-4 py-3 text-sm text-slate-500">
@@ -275,6 +288,159 @@ function ApplicantBio({ bio }) {
           {expanded ? 'Show less' : 'Show more'}
         </button>
       ) : null}
+    </div>
+  )
+}
+
+const emptySlotRow = { date: '', startTime: '', endTime: '' }
+
+// Only ever rendered for a real shortlisted application (Arrange viewing) or a real active
+// (pending/confirmed) proposal — application.status === 'shortlisted' is both necessary and
+// sufficient for "no open proposal exists" per the backend's own invariant (propose_viewing()
+// immediately moves the application to viewing_proposed, and only cancel_viewing()/
+// decline_viewing() ever move it back to shortlisted), so no separate proposal lookup is needed
+// to decide whether to offer a new proposal.
+function ApplicantViewingSection({ application, activeViewing, proposeViewing, cancelViewing }) {
+  const [proposing, setProposing] = useState(false)
+  const [slotRows, setSlotRows] = useState([emptySlotRow])
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const [confirmCancel, setConfirmCancel] = useState(false)
+
+  if (application.status !== 'shortlisted' && application.status !== 'viewing_proposed' && application.status !== 'viewing_confirmed') {
+    return null
+  }
+
+  const updateRow = (index, field, value) => {
+    setSlotRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, [field]: value } : row)))
+  }
+  const addRow = () => setSlotRows((rows) => (rows.length >= MAX_VIEWING_SLOTS ? rows : [...rows, emptySlotRow]))
+  const removeRow = (index) => setSlotRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))
+
+  const handlePropose = async (event) => {
+    event.preventDefault()
+    const slots = slotRows.map((row) => ({
+      startsAt: combineLocalDateAndTimeToIso(row.date, row.startTime),
+      endsAt: combineLocalDateAndTimeToIso(row.date, row.endTime),
+    }))
+    const validation = validateProposedSlots(slots)
+    if (!validation.valid) {
+      setError(validation.reason)
+      return
+    }
+    setPending(true)
+    setError('')
+    const { error: proposeError } = await proposeViewing(application.id, slots)
+    setPending(false)
+    if (proposeError) {
+      setError(proposeError)
+      return
+    }
+    setProposing(false)
+    setSlotRows([emptySlotRow])
+  }
+
+  const handleCancel = async () => {
+    setPending(true)
+    await cancelViewing(activeViewing.id)
+    setPending(false)
+    setConfirmCancel(false)
+  }
+
+  if (application.status === 'shortlisted') {
+    if (!proposing) {
+      return (
+        <Button variant="secondary" className="mt-4 w-full" onClick={() => setProposing(true)}>
+          Arrange viewing
+        </Button>
+      )
+    }
+    return (
+      <form onSubmit={handlePropose} className="mt-4 rounded-[20px] border border-indigo-100 bg-indigo-50/40 p-4">
+        <p className="text-sm font-semibold text-slate-900">Propose up to {MAX_VIEWING_SLOTS} viewing times</p>
+        <div className="mt-3 space-y-3">
+          {slotRows.map((row, index) => (
+            <div key={index} className="rounded-[16px] border border-slate-200 bg-white p-3">
+              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
+                <FormInput label="Date" type="date" value={row.date} onChange={(event) => updateRow(index, 'date', event.target.value)} />
+                <FormInput label="Start time" type="time" value={row.startTime} onChange={(event) => updateRow(index, 'startTime', event.target.value)} />
+                <FormInput label="End time" type="time" value={row.endTime} onChange={(event) => updateRow(index, 'endTime', event.target.value)} />
+              </div>
+              {slotRows.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => removeRow(index)}
+                  className="mt-2 min-h-9 rounded-full px-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-100"
+                >
+                  Remove this time
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        {slotRows.length < MAX_VIEWING_SLOTS ? (
+          <button
+            type="button"
+            onClick={addRow}
+            className="mt-3 min-h-10 rounded-full border border-indigo-200 bg-white px-3 text-sm font-semibold text-indigo-900 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+          >
+            + Add another time
+          </button>
+        ) : null}
+        {error ? <p className="mt-3 text-sm font-medium text-rose-600">{error}</p> : null}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setProposing(false)
+              setSlotRows([emptySlotRow])
+              setError('')
+            }}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" isLoading={pending}>
+            Send proposal
+          </Button>
+        </div>
+      </form>
+    )
+  }
+
+  if (!activeViewing) return null
+
+  return (
+    <div className="mt-4 rounded-[20px] border border-slate-100 bg-slate-50/78 px-4 py-3">
+      <p className="text-sm font-semibold text-slate-900">
+        {application.status === 'viewing_confirmed' ? 'Viewing confirmed' : 'Awaiting tenant response'}
+      </p>
+      {application.status === 'viewing_confirmed' && activeViewing.acceptedSlot ? (
+        <p className="mt-1 text-sm leading-6 text-slate-600">{formatViewingSlotDateTime(activeViewing.acceptedSlot.startsAt)}</p>
+      ) : (
+        <ul className="mt-1 space-y-1 text-sm leading-6 text-slate-600">
+          {activeViewing.slots.map((slot) => (
+            <li key={slot.id}>{formatViewingSlotDateTime(slot.startsAt)}</li>
+          ))}
+        </ul>
+      )}
+      {confirmCancel ? (
+        <div className="mt-3 rounded-[16px] border border-amber-100 bg-amber-50 px-3 py-3">
+          <p className="text-sm font-semibold text-amber-950">Cancel this viewing?</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Button variant="secondary" className="bg-white" onClick={() => setConfirmCancel(false)}>Keep it</Button>
+            <Button variant="dark" isLoading={pending} onClick={handleCancel}>Cancel viewing</Button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirmCancel(true)}
+          className="mt-3 min-h-10 rounded-full px-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-100"
+        >
+          Cancel viewing
+        </button>
+      )}
     </div>
   )
 }

@@ -8,8 +8,9 @@ import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
 import useMessaging from '../context/useMessaging'
+import useViewings from '../context/useViewings'
 import { formatCurrency } from '../utils/formatCurrency'
-import { formatDate } from '../utils/dateUtils'
+import { formatDate, formatViewingSlotDateTime, isFutureTimestamp } from '../utils/dateUtils'
 
 export default function Dashboard() {
   const { activeRole: role } = useAccountProfile()
@@ -18,9 +19,24 @@ export default function Dashboard() {
 
 function TenantDashboard() {
   const navigate = useNavigate()
-  const { activeProperties, savedProperties, tenantProfile } = useAppState()
+  const { activeProperties, properties, savedProperties, tenantProfile } = useAppState()
   const { tenantApplications } = useApplications()
+  const { viewings } = useViewings()
   const topProperty = [...activeProperties].sort((a, b) => b.match.score - a.match.score)[0]
+
+  // Only ever pending/confirmed (see config/viewingAdapter.js's "at most one open proposal per
+  // application" invariant) — a declined/cancelled proposal's application has already reverted to
+  // shortlisted, so there is nothing tenant-actionable left to surface for it here.
+  const upcomingViewings = viewings
+    .filter((viewing) => viewing.isTenant && (viewing.status === 'pending' || viewing.status === 'confirmed'))
+    .map((viewing) => {
+      const application = tenantApplications.find((item) => item.id === viewing.applicationId)
+      const property = application ? properties.find((item) => item.id === application.propertyId) : null
+      const whenIso = viewing.status === 'confirmed' ? viewing.acceptedSlot?.startsAt : viewing.slots[0]?.startsAt
+      return { viewing, property, whenIso }
+    })
+    .filter((item) => item.property && item.whenIso)
+    .sort((a, b) => new Date(a.whenIso).getTime() - new Date(b.whenIso).getTime())
 
   return (
     <div className="space-y-5">
@@ -44,6 +60,31 @@ function TenantDashboard() {
         <Metric label="Saved" value={String(savedProperties.length)} />
         <Metric label="Applications" value={String(tenantApplications.length)} />
       </section>
+
+      {upcomingViewings.length ? (
+        <section className="card-surface card-shadow rounded-[26px] p-5">
+          <h2 className="text-lg font-semibold tracking-tight text-slate-950">Upcoming viewings</h2>
+          <div className="mt-3 grid gap-2">
+            {upcomingViewings.map(({ viewing, property, whenIso }) => (
+              <button
+                key={viewing.id}
+                type="button"
+                onClick={() => navigate(`/properties/${property.id}`)}
+                className="flex min-h-12 items-center justify-between gap-3 rounded-[18px] bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-slate-900">{property.title}</span>
+                  <span className="block text-xs text-slate-500">
+                    {viewing.status === 'confirmed' ? 'Confirmed · ' : 'Choose a time · '}
+                    {formatViewingSlotDateTime(whenIso)}
+                  </span>
+                </span>
+                <span aria-hidden="true" className="shrink-0 text-slate-400">→</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {topProperty ? (
         <section className="card-surface card-shadow overflow-hidden rounded-[30px]">
@@ -87,11 +128,15 @@ function LandlordDashboard() {
   const navigate = useNavigate()
   const { landlordApplications } = useApplications()
   const { conversations } = useMessaging()
+  const { viewings } = useViewings()
   const newInterest = landlordApplications.filter((application) => application.status === 'sent').length
   // Dual-role accounts have tenant-side conversations too (see the Stage E audit's inbox-scoping
   // fix in Messages.jsx) — landlord-side is scoped the same way here so a tenant-side unread
   // thread never inflates the landlord dashboard's count.
   const unreadMessages = filterConversationsByRole(conversations, 'landlord').filter((conversation) => conversation.unread).length
+  const upcomingConfirmedViewings = viewings.filter(
+    (viewing) => !viewing.isTenant && viewing.status === 'confirmed' && isFutureTimestamp(viewing.acceptedSlot?.startsAt),
+  ).length
 
   return (
     <div className="space-y-5">
@@ -113,6 +158,7 @@ function LandlordDashboard() {
       <AttentionSummary
         newInterest={newInterest}
         unreadMessages={unreadMessages}
+        upcomingConfirmedViewings={upcomingConfirmedViewings}
         onReviewApplicants={() => navigate('/applicants')}
         onOpenMessages={() => navigate('/messages')}
       />
@@ -120,17 +166,20 @@ function LandlordDashboard() {
   )
 }
 
-// Viewings deliberately has no entry here: it is not integrated yet (Stage F). Unread messages
-// is real again as of Stage E (context/MessagingProvider), so it's back — see the Stage D
-// pre-merge audit report for why it was removed when it was still mock-conversation-derived, and
-// the Stage E final report for why real messaging data makes it honest to restore.
-function AttentionSummary({ newInterest, unreadMessages, onReviewApplicants, onOpenMessages }) {
+// Applicants and unread messages are real (Stage D/E); upcoming confirmed viewings is real as of
+// Stage F (context/ViewingsProvider) — see the Stage D pre-merge audit report for why mock
+// versions of these were removed first, and the Stage E/F final reports for why real backend data
+// makes each honest to restore.
+function AttentionSummary({ newInterest, unreadMessages, upcomingConfirmedViewings, onReviewApplicants, onOpenMessages }) {
   const items = [
     newInterest > 0
       ? { key: 'applicants', label: `${newInterest} new applicant${newInterest === 1 ? '' : 's'}`, onClick: onReviewApplicants }
       : null,
     unreadMessages > 0
       ? { key: 'messages', label: `${unreadMessages} unread conversation${unreadMessages === 1 ? '' : 's'}`, onClick: onOpenMessages }
+      : null,
+    upcomingConfirmedViewings > 0
+      ? { key: 'viewings', label: `${upcomingConfirmedViewings} upcoming viewing${upcomingConfirmedViewings === 1 ? '' : 's'}`, onClick: onReviewApplicants }
       : null,
   ].filter(Boolean)
 

@@ -23,25 +23,6 @@ export function isPastIsoDate(value, today = getTodayIsoDate()) {
   return comparison === null ? false : comparison < 0
 }
 
-export function getFutureViewingSlots(now = new Date()) {
-  const base = new Date(now)
-  base.setHours(0, 0, 0, 0)
-
-  const build = (daysFromNow, time) => {
-    const date = new Date(base)
-    date.setDate(base.getDate() + daysFromNow)
-    const [hours, minutes] = time.split(':').map(Number)
-    date.setHours(hours, minutes, 0, 0)
-    return {
-      id: `slot-${date.toISOString().replace(/[^0-9a-z]/gi, '')}`,
-      startsAt: date.toISOString(),
-      label: formatViewingSlotDateTime(date.toISOString()),
-    }
-  }
-
-  return [build(2, '11:00'), build(2, '12:30'), build(4, '18:00')]
-}
-
 export function differenceInDaysSafe(dateA, dateB) {
   if (!dateA || !dateB) return 999
 
@@ -63,6 +44,14 @@ export function directionalDayGap(dateA, dateB) {
   const second = new Date(dateB).getTime()
   if (Number.isNaN(first) || Number.isNaN(second)) return null
   return Math.round((second - first) / 86400000)
+}
+
+export function isFutureTimestamp(value, now = new Date()) {
+  if (!value) return false
+  const target = new Date(value).getTime()
+  const current = new Date(now).getTime()
+  if (Number.isNaN(target) || Number.isNaN(current)) return false
+  return target > current
 }
 
 export function formatViewingSlotDateTime(value) {
