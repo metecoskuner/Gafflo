@@ -17,6 +17,12 @@ export function isLandlordPlus(plan) {
 }
 
 // ---- Tenant entitlements ----
+// Stage G retired getEffectiveSmartMatchAllowance()/getEffectiveInterestAllowance() — the old
+// "launch access -> Infinity" client-side bypass — since the real backend (config/
+// engagementAdapter.js's mapUsageRowToSmartMatchUsage, record_smart_match_decision() in the
+// Stage G migration) now enforces and returns the authoritative daily count. No paid-entitlement
+// backend exists yet, so every real caller passes TENANT_PLAN.FREE here explicitly, never a
+// user's own (locally stored, unenforced) plan flag — see the Stage G report.
 
 export function getSmartMatchAllowance(plan) {
   return getTenantPlanConfig(plan).smartMatchCardsPerDay
@@ -65,18 +71,6 @@ export function canUseAdvancedApplicantTools(plan) {
 }
 
 export { canBoostListing }
-
-// ---- Launch access ----
-// Launch access is a temporary promotion, not a paid entitlement. It can make paid-plan-like
-// usage available to everyone for a while, but it never changes what plan someone is on —
-// once launch access ends, entitlements fall back to each account's actual plan.
-export function getEffectiveSmartMatchAllowance(plan, { launchAccessEnabled = false } = {}) {
-  return launchAccessEnabled ? Infinity : getSmartMatchAllowance(plan)
-}
-
-export function getEffectiveInterestAllowance(plan, { launchAccessEnabled = false } = {}) {
-  return launchAccessEnabled ? Infinity : getInterestAllowance(plan)
-}
 
 // ---- Premium follow-up ----
 // A tenant may send exactly one follow-up message per enquiry, and only after the landlord

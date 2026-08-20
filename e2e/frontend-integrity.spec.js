@@ -230,12 +230,8 @@ test('smart match pass updates the visible deck at mobile width', async ({ page 
   await expect(page.getByRole('button', { name: /Interested|Limit reached/ })).toBeVisible()
 })
 
-// Stage D: "Interested" now submits a real create_application() row (see the Stage D report's
-// CTA audit) rather than writing a mock gafflo.enquiries entry — so this asserts the real,
-// durable result through the UI itself (switching to Browse and checking the same listing now
-// shows a real application status pill) instead of inspecting localStorage for a key the app no
-// longer writes to on this path.
 test('smart match interested submits a real application and keeps controls usable at mobile width', async ({ page }) => {
+  test.skip(true, "Stage G skip audit: retired as obsolete by deliberate product decision, replaced by real-backend coverage. This test's core claim — that Smart Match 'Interested' submits a real application — was Stage D's own deliberate interpretation, and Stage G explicitly overrides it (see the Stage G task's canonical rule: Interested is a private, permanent Smart Match decision that never calls create_application(), never notifies the landlord, and never changes Rental Fit). Interested and Apply are now fully decoupled: MarketplaceDiscover.jsx's handleInterest calls only recordSmartMatchInterest() (context/EngagementProvider.jsx -> record_smart_match_decision()), and applying remains its own explicit action on the listing's details page. The real 'Interested records a decision, not an application' claim is covered in e2e/engagement.spec.js. See the Stage G final report.")
   await page.setViewportSize(viewport390)
   await seedState(page, { dismissed: [] })
   await page.goto('/discover')
@@ -252,6 +248,7 @@ test('smart match interested submits a real application and keeps controls usabl
 })
 
 test('save and saved page stay consistent through remove', async ({ page }) => {
+  test.skip(true, "Stage G skip audit: retired as obsolete, replaced by real-backend coverage. Saved state is 100% Supabase-backed as of Stage G (see context/EngagementProvider.jsx / set_listing_saved() in the Stage G migration) — under dev-auth bypass (no real Supabase session, which this whole file runs under) a real save write now fails honestly rather than the old local write succeeding instantly, so clicking Save can no longer be expected to synchronously show 'Saved' here. The real save/unsave/persist-through-reload flow is covered against a real authenticated session in e2e/engagement.spec.js. See the Stage G final report.")
   await page.setViewportSize(viewport390)
   await seedState(page, { saved: [] })
   await page.goto('/discover')
@@ -562,7 +559,7 @@ test('landlord cannot open another landlord\'s hidden listing', async ({ page })
 })
 
 test('tenant can still view a previously saved listing after it becomes inactive, marked as historical', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage G skip audit: still genuinely blocked, for a second reason now too. Original Stage C reason (still true): needs a moderator-approved published/paused/rented real listing, and this environment has no moderator test credential. Additionally as of Stage G: Saved is 100% Supabase-backed (context/EngagementProvider.jsx), and public_listings only ever returns published rows — a saved listing that becomes paused/rented/removed genuinely disappears from the safe read model, so the real behavior is 'the item quietly stops appearing in Saved', not an inline 'Listing no longer active' banner this mock-era test expects (see the Stage G report's Saved+inactive-listing section for the exact, deliberately different real behavior). See the Stage G final report.")
   const pausedSavedListing = buildTestProperty({ id: 'property-saved-paused', listingStatus: 'paused' })
   await seedState(page, { properties: [pausedSavedListing], saved: [pausedSavedListing.id] })
   await page.goto(`/properties/${pausedSavedListing.id}`)
@@ -1042,7 +1039,7 @@ test('reviewing all eligible listings is not treated as a paywall event', async 
 })
 
 test('reviewing all eligible listings still avoids the paywall on the non-launch limit path when the limit itself has not been hit', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage G skip audit: retired as obsolete, not replaced. Was already Stage C moderator-blocked (still true — see the original reason below), and its premise is now doubly obsolete: Stage G retires local smartMatchActivity/launchOverride seeding as authoritative (real Smart Match usage is 100% Supabase-backed — see context/EngagementProvider.jsx), so this test could never pass even with a moderator credential. Original reason: needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage G final report.")
   await seedState(page, {
     dismissed: allPublishedMockPropertyIds,
     launchOverride: false,
@@ -1056,6 +1053,7 @@ test('reviewing all eligible listings still avoids the paywall on the non-launch
 })
 
 test('hitting the daily Smart Match card limit on the non-launch path shows a restrained Gafflo+ upgrade that opens the plan directly', async ({ page }) => {
+  test.skip(true, "Stage G skip audit: retired as obsolete, replaced by real-backend coverage. Real Smart Match usage is 100% Supabase-backed as of Stage G (see context/EngagementProvider.jsx / record_smart_match_decision() in the Stage G migration) — seedState's local smartMatchActivity/launchOverride fixture is now completely inert, and under dev-auth bypass (no real session) the real usage fetch fails honestly rather than faking a result, so smartLimitReached can never become true this way. The real limit-reached UI state (copy, disabled Pass/Interested, the Gafflo+ CTA) is covered deterministically via unit tests on config/engagementAdapter.js's mapUsageRowToSmartMatchUsage (see src/__tests__/businessRules.test.js's 'Stage G' describe blocks) and, where a real quota-exhausted account is reachable, in e2e/engagement.spec.js. See the Stage G final report.")
   await seedState(page, {
     launchOverride: false,
     smartMatchActivity: { [todayDateKey()]: { cards: 30, interests: 0 } },
@@ -1073,6 +1071,7 @@ test('hitting the daily Smart Match card limit on the non-launch path shows a re
 })
 
 test('hitting the daily Interested limit on the non-launch path explains the allowance without promising unlimited use', async ({ page }) => {
+  test.skip(true, "Stage G skip audit: retired as obsolete, replaced by real-backend coverage. Same reason as the Smart Match card limit test immediately above this one: local smartMatchActivity seeding is inert now that usage is 100% Supabase-backed. The 'Interested exhausted while Smart Match still has room, Pass stays enabled' semantic this test protects is covered deterministically by src/__tests__/businessRules.test.js's 'Interested can be exhausted while Smart Match still has room' unit test against the real adapter. See the Stage G final report.")
   await seedState(page, {
     launchOverride: false,
     smartMatchActivity: { [todayDateKey()]: { cards: 5, interests: 10 } },
@@ -1089,6 +1088,7 @@ test('hitting the daily Interested limit on the non-launch path explains the all
 })
 
 test('while launch access is enabled, heavy Smart Match usage never forces a paywall and the actual plan stays Free', async ({ page }) => {
+  test.skip(true, "Stage G skip audit: retired as obsolete by deliberate product decision, not replaced. This test's entire premise — a client-side 'launch access' flag that grants Infinity quota — is exactly the bypass Stage G explicitly retires: config/smartMatch.js (smartMatchAccess.launchAccessEnabled, isLaunchAccessEnabled()) and entitlements.getEffectiveSmartMatchAllowance()/getEffectiveInterestAllowance() have been deleted outright, not just unwired. The real, permanent production rule as of Stage G is that the server-authoritative FREE limit (30 Smart Match / 10 Interested per day) always applies, with no client-controlled override of any kind — see the Stage G final report's Launch Access retirement section.")
   await seedState(page, { smartMatchActivity: { [todayDateKey()]: { cards: 500, interests: 500 } } })
   await page.goto('/discover')
 

@@ -1,20 +1,12 @@
 const KEYS = {
-  saved: 'gafflo.saved-properties',
-  dismissed: 'gafflo.dismissed-properties',
-  smartMatchActivity: 'gafflo.smart-match-activity',
   propertyReports: 'gafflo.property-reports',
   tenantPlan: 'gafflo.tenant-plan',
   landlordPlan: 'gafflo.landlord-plan',
 }
 
-const LEGACY_KEYS = {
-  saved: 'gaffly.saved-rooms',
-  dismissed: 'gaffly.reviewed-rooms',
-}
-
-function getJson(key, fallback, legacyKey) {
+function getJson(key, fallback) {
   try {
-    const raw = window.localStorage.getItem(key) || (legacyKey ? window.localStorage.getItem(legacyKey) : null)
+    const raw = window.localStorage.getItem(key)
     return raw ? JSON.parse(raw) : fallback
   } catch {
     return fallback
@@ -23,30 +15,6 @@ function getJson(key, fallback, legacyKey) {
 
 function setJson(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value))
-}
-
-export function getSavedPropertyIds() {
-  return getJson(KEYS.saved, [], LEGACY_KEYS.saved)
-}
-
-export function setSavedPropertyIds(ids) {
-  setJson(KEYS.saved, ids)
-}
-
-export function getDismissedPropertyIds() {
-  return getJson(KEYS.dismissed, [], LEGACY_KEYS.dismissed)
-}
-
-export function setDismissedPropertyIds(ids) {
-  setJson(KEYS.dismissed, ids)
-}
-
-export function getSmartMatchActivity() {
-  return getJson(KEYS.smartMatchActivity, {})
-}
-
-export function setSmartMatchActivity(activity) {
-  setJson(KEYS.smartMatchActivity, activity)
 }
 
 // Stage C: local-only safety annotations (see MarketplaceState.jsx's reportListing) keyed by

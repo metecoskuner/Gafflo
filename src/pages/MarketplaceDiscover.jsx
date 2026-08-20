@@ -30,7 +30,6 @@ export default function MarketplaceDiscover() {
     saveProperty,
     savedPropertyIds,
     smartMatchUsage,
-    startOver,
   } = useAppState()
   const { getTenantApplicationForListing, applyToListing } = useApplications()
   const [viewMode, setViewMode] = useState('smart')
@@ -42,19 +41,11 @@ export default function MarketplaceDiscover() {
   // Browse may weight a paid boost's exposure; Rental Fit still decides order within each group.
   const browseProperties = useMemo(() => sortForBrowseExposure(discoveryProperties), [discoveryProperties])
 
-  // "Interested" here means Apply (Stage D) — see the Stage D report's CTA audit. If the listing
-  // was already applied to (e.g. resurfaced by "Start over", which resets dismissedPropertyIds),
-  // this only records the local daily-usage/dismiss bookkeeping and never re-submits a duplicate
-  // application; the real backend's unique(listing_id, tenant_id) constraint is never relied on
-  // as the only guard against that from this surface.
-  const handleInterest = async (propertyId) => {
-    if (getTenantApplicationForListing(propertyId)) {
-      recordSmartMatchInterest(propertyId)
-      return
-    }
-    const { error } = await applyToListing(propertyId)
-    if (!error) recordSmartMatchInterest(propertyId)
-  }
+  // Stage G: "Interested" is a real, private, permanent Smart Match decision only — it no longer
+  // applies on the tenant's behalf (that was a Stage D-era shortcut this stage deliberately
+  // retires; see the Stage G report's Application-relationship section). Applying remains its
+  // own separate, explicit action on the listing's details page.
+  const handleInterest = (propertyId) => recordSmartMatchInterest(propertyId)
 
   const handleBrowseCardAction = async (propertyId, hasApplication) => {
     if (hasApplication) {
@@ -110,8 +101,8 @@ export default function MarketplaceDiscover() {
           </div>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <UsageTile label="Cards today" value={smartMatchUsage.isLaunchFree ? 'Free' : `${smartMatchUsage.cardsRemaining} left`} />
-          <UsageTile label="Interest" value={smartMatchUsage.isLaunchFree ? 'Free' : `${smartMatchUsage.interestsRemaining} left`} />
+          <UsageTile label="Cards today" value={smartMatchUsage ? `${smartMatchUsage.cardsRemaining} left` : '…'} />
+          <UsageTile label="Interest" value={smartMatchUsage ? `${smartMatchUsage.interestsRemaining} left` : '…'} />
           <UsageTile label="Browse" value="Open" />
         </div>
       </section>
@@ -134,13 +125,12 @@ export default function MarketplaceDiscover() {
             window.setTimeout(() => setSavedPulseId(null), 280)
           }}
           onBrowse={() => setViewMode('browse')}
-          onReset={startOver}
           noFilterResults={activeFilterCount > 0 && discoveryProperties.length === 0}
           savedPulseId={savedPulseId}
-          smartLimitReached={!smartMatchUsage.isLaunchFree && smartMatchUsage.cardsRemaining <= 0}
-          interestLimitReached={!smartMatchUsage.isLaunchFree && smartMatchUsage.interestsRemaining <= 0}
+          smartLimitReached={Boolean(smartMatchUsage) && smartMatchUsage.cardsRemaining <= 0}
+          interestLimitReached={Boolean(smartMatchUsage) && smartMatchUsage.interestsRemaining <= 0}
           noActiveListings={allActiveProperties.length === 0}
-          freePlanMessage={smartMatchUsage.access.freePlanMessage}
+          freePlanMessage="Today's Smart Match limit has been reached. Continue browsing normally, or check back tomorrow."
           onExploreGafflo={() => setShowGaffloPlus(true)}
         />
       ) : (
@@ -177,7 +167,6 @@ function SmartMatchDeck({
   onInterest,
   onLeaving,
   onPass,
-  onReset,
   onResetFilters,
   onSave,
   noFilterResults,
@@ -299,7 +288,7 @@ function SmartMatchDeck({
         ? 'Check back after landlords publish listings.'
         : noFilterResults
           ? 'Reset filters or update your rental profile to widen the results.'
-          : 'Continue browsing all matching properties, or start over to review the stack again without changing today’s usage.'
+          : 'Continue browsing all matching properties. New listings will appear here as they are published.'
     return (
       <section className="card-surface card-shadow rounded-[30px] p-5 text-center">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-500">Smart Match</p>
@@ -307,9 +296,9 @@ function SmartMatchDeck({
         <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
         <div className="mt-4 grid gap-3">
           <Button onClick={onBrowse}>Continue browsing</Button>
-          <Button variant="secondary" onClick={noFilterResults ? onResetFilters : onReset} disabled={smartLimitReached || noActiveListings}>
-            {noFilterResults ? 'Reset filters' : 'Start over'}
-          </Button>
+          {noFilterResults ? (
+            <Button variant="secondary" onClick={onResetFilters}>Reset filters</Button>
+          ) : null}
         </div>
         {smartLimitReached ? (
           <div className="mt-5 rounded-[20px] border border-indigo-100 bg-indigo-50/50 p-4 text-left">

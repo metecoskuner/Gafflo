@@ -19,6 +19,7 @@ import { AccountProfileProvider } from './context/AccountProfileProvider'
 import { ListingsProvider } from './context/ListingsProvider'
 import { MessagingProvider } from './context/MessagingProvider'
 import { ViewingsProvider } from './context/ViewingsProvider'
+import { EngagementProvider } from './context/EngagementProvider'
 import useAccountProfile from './context/useAccountProfile'
 import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
@@ -221,9 +222,11 @@ export default function App() {
               <ApplicationsProvider>
                 <ViewingsProvider>
                   <MessagingProvider>
-                    <AppStateProvider>
-                      <AppLayout />
-                    </AppStateProvider>
+                    <EngagementProvider>
+                      <AppStateProvider>
+                        <AppLayout />
+                      </AppStateProvider>
+                    </EngagementProvider>
                   </MessagingProvider>
                 </ViewingsProvider>
               </ApplicationsProvider>

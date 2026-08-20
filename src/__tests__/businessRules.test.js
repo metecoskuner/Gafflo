@@ -7,6 +7,13 @@ import { combineLocalDateAndTimeToIso, getActiveViewingForApplication, mapViewin
 import { describeViewingError } from '../config/viewingErrors'
 import { validateProposedSlots } from '../config/viewingStatus'
 import {
+  filterAvailableSmartMatchCandidates,
+  mapDecisionRowsToMap,
+  mapSavedListingRowsToIdSet,
+  mapUsageRowToSmartMatchUsage,
+} from '../config/engagementAdapter'
+import { describeEngagementError } from '../config/engagementErrors'
+import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
   getApplicationStatusInfo,
@@ -38,13 +45,10 @@ import {
   canSendPremiumFollowUp,
   canUseAdvancedFilters,
   getActiveListingAllowance,
-  getEffectiveInterestAllowance,
-  getEffectiveSmartMatchAllowance,
   getInterestAllowance,
   getSmartMatchAllowance,
 } from '../config/entitlements'
 import { LANDLORD_PLAN, pricingPlans, TENANT_PLAN } from '../config/pricingPlans'
-import { isLaunchAccessEnabled, smartMatchAccess } from '../config/smartMatch'
 import { sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
 import { getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
@@ -777,21 +781,6 @@ describe('pricing and entitlements', () => {
     expect(getActiveListingAllowance(LANDLORD_PLAN.LANDLORD_PLUS)).toBeGreaterThan(1)
   })
 
-  it('treats launch access as a temporary promotion, separate from a paid plan', () => {
-    expect(getEffectiveSmartMatchAllowance(TENANT_PLAN.FREE, { launchAccessEnabled: true })).toBe(Infinity)
-    expect(getEffectiveSmartMatchAllowance(TENANT_PLAN.FREE, { launchAccessEnabled: false })).toBe(getSmartMatchAllowance(TENANT_PLAN.FREE))
-    expect(getEffectiveInterestAllowance(TENANT_PLAN.GAFFLO_PLUS, { launchAccessEnabled: false })).toBe(getInterestAllowance(TENANT_PLAN.GAFFLO_PLUS))
-  })
-
-  it('keeps the committed launch-access default outside a browser (no window to read a test override from)', () => {
-    // The override key is a test-only escape hatch read from window.localStorage. Outside a
-    // browser (this Node test environment), isLaunchAccessEnabled() must fall back to exactly
-    // the committed smartMatchAccess.launchAccessEnabled value — the override branch itself is
-    // exercised in e2e/frontend-integrity.spec.js, which runs in a real browser.
-    expect(isLaunchAccessEnabled()).toBe(smartMatchAccess.launchAccessEnabled)
-    expect(smartMatchAccess.launchAccessEnabled).toBe(true)
-  })
-
   it('prices Single Listing Plus as an honest one-off, never disguised as a subscription', () => {
     const singleListingPlus = pricingPlans.listingProducts.single_listing_plus
     expect(singleListingPlus.unit).toBe('listing')
@@ -1164,5 +1153,74 @@ describe('Stage E — messaging error normalization', () => {
     expect(describeMessagingError({ code: '42501', message: 'permission denied for table conversations' })).toBe(fallback)
     expect(describeMessagingError(null)).toBe(fallback)
     expect(describeMessagingError(undefined)).toBe(fallback)
+  })
+})
+
+describe('Stage G — saved listings / Smart Match adapters', () => {
+  it('maps saved_listings rows into a plain Set of listing ids', () => {
+    const set = mapSavedListingRowsToIdSet([{ listing_id: 'a' }, { listing_id: 'b' }])
+    expect(set.has('a')).toBe(true)
+    expect(set.has('b')).toBe(true)
+    expect(set.has('c')).toBe(false)
+  })
+
+  it('maps smart_match_decisions rows into a Map keyed by listing id', () => {
+    const map = mapDecisionRowsToMap([
+      { listing_id: 'a', decision: 'pass', decided_at: '2030-01-01T00:00:00.000Z' },
+      { listing_id: 'b', decision: 'interested', decided_at: '2030-01-02T00:00:00.000Z' },
+    ])
+    expect(map.get('a').decision).toBe('pass')
+    expect(map.get('b').decision).toBe('interested')
+    expect(map.has('c')).toBe(false)
+  })
+
+  it('candidate exclusion drops both already-decisioned listings and the caller\'s own listings, nothing else', () => {
+    const properties = [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }]
+    const decisions = mapDecisionRowsToMap([{ listing_id: 'p1', decision: 'pass' }])
+    const ownListingIds = new Set(['p2'])
+    expect(filterAvailableSmartMatchCandidates(properties, decisions, ownListingIds).map((p) => p.id)).toEqual(['p3', 'p4'])
+  })
+
+  it('usage denominator is always the real Free tier, never a spoofable local plan flag', () => {
+    const usage = mapUsageRowToSmartMatchUsage({ usage_date: '2030-01-01', smart_match_count: 5, interested_count: 2 })
+    expect(usage.cardAllowance).toBe(30)
+    expect(usage.interestAllowance).toBe(10)
+  })
+
+  it('Pass vs Interested consumption: cards used only vs both used, remaining computed correctly', () => {
+    const passOnly = mapUsageRowToSmartMatchUsage({ usage_date: '2030-01-01', smart_match_count: 1, interested_count: 0 })
+    expect(passOnly.cardsRemaining).toBe(29)
+    expect(passOnly.interestsRemaining).toBe(10)
+
+    const interested = mapUsageRowToSmartMatchUsage({ usage_date: '2030-01-01', smart_match_count: 2, interested_count: 1 })
+    expect(interested.cardsRemaining).toBe(28)
+    expect(interested.interestsRemaining).toBe(9)
+  })
+
+  it('Interested can be exhausted while Smart Match still has room — the canonical Stage G example', () => {
+    const usage = mapUsageRowToSmartMatchUsage({ usage_date: '2030-01-01', smart_match_count: 12, interested_count: 10 })
+    expect(usage.cardsRemaining).toBe(18)
+    expect(usage.interestsRemaining).toBe(0)
+  })
+
+  it('Smart Match itself can be fully exhausted', () => {
+    const usage = mapUsageRowToSmartMatchUsage({ usage_date: '2030-01-01', smart_match_count: 30, interested_count: 4 })
+    expect(usage.cardsRemaining).toBe(0)
+    expect(usage.interestsRemaining).toBe(6)
+  })
+})
+
+describe('Stage G — saved/Smart Match error normalization', () => {
+  it('maps known 42501/P0001 backend messages to safe, specific user copy', () => {
+    expect(describeEngagementError({ code: '42501', message: "You have reached today's Smart Match limit" })).toBe("You've reached today's Smart Match limit.")
+    expect(describeEngagementError({ code: '42501', message: "You have reached today's Interested limit" })).toBe("You've reached today's Interested limit.")
+    expect(describeEngagementError({ code: '42501', message: 'You cannot Smart Match your own listing' })).toBe('You cannot Smart Match your own listing.')
+    expect(describeEngagementError({ code: '42501', message: 'You cannot save your own listing' })).toBe('You cannot save your own listing.')
+  })
+
+  it('never leaks a raw/unknown backend message or missing error as user-facing text', () => {
+    const fallback = 'Something went wrong. Please try again.'
+    expect(describeEngagementError({ code: '42501', message: 'permission denied for table saved_listings' })).toBe(fallback)
+    expect(describeEngagementError(null)).toBe(fallback)
   })
 })
