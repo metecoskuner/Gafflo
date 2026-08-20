@@ -314,15 +314,15 @@ function ChatThread({ conversation }) {
         </div>
       </section>
 
-      {waiting ? (
-        <LockedComposerState
-          title="Waiting for the landlord to reply"
-          description="Your message has been sent. You can send another once the landlord replies."
-        />
-      ) : conversation.blockedByMe ? (
+      {conversation.blockedByMe ? (
         <LockedComposerState
           title="You blocked this user"
           description="Conversation history is still available, but new messages are disabled until you unblock them."
+        />
+      ) : waiting ? (
+        <LockedComposerState
+          title="Waiting for the landlord to reply"
+          description="Your message has been sent. You can send another once the landlord replies."
         />
       ) : (
         <div className="-mx-4 shrink-0 md:mx-0">
