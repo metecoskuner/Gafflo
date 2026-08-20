@@ -21,6 +21,7 @@ import { ListingsProvider } from './context/ListingsProvider'
 import { MessagingProvider } from './context/MessagingProvider'
 import { ViewingsProvider } from './context/ViewingsProvider'
 import { EngagementProvider } from './context/EngagementProvider'
+import { ListingAnalyticsProvider } from './context/ListingAnalyticsProvider'
 import { NotificationsProvider } from './context/NotificationsProvider'
 import useAccountProfile from './context/useAccountProfile'
 import useNotifications from './context/useNotifications'
@@ -239,11 +240,13 @@ export default function App() {
                 <ViewingsProvider>
                   <MessagingProvider>
                     <EngagementProvider>
-                      <AppStateProvider>
-                        <NotificationsProvider>
-                          <AppLayout />
-                        </NotificationsProvider>
-                      </AppStateProvider>
+                      <ListingAnalyticsProvider>
+                        <AppStateProvider>
+                          <NotificationsProvider>
+                            <AppLayout />
+                          </NotificationsProvider>
+                        </AppStateProvider>
+                      </ListingAnalyticsProvider>
                     </EngagementProvider>
                   </MessagingProvider>
                 </ViewingsProvider>

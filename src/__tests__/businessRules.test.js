@@ -20,6 +20,11 @@ import {
   mapNotificationRowToNotification,
 } from '../config/notificationAdapter'
 import {
+  emptyListingAnalytics,
+  mapListingAnalyticsRowToAnalytics,
+  mapListingAnalyticsRowsToMap,
+} from '../config/listingAnalyticsAdapter'
+import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
   getApplicationStatusInfo,
@@ -1316,5 +1321,70 @@ describe('Stage H — notification navigation routing', () => {
       read_at: null, created_at: '2030-01-01T00:00:00.000Z',
     })
     expect(getNotificationRoute(notification)).toBeNull()
+  })
+})
+
+describe('Stage I — listing analytics adapter', () => {
+  it('maps aggregate RPC rows into landlord-facing counts', () => {
+    const analytics = mapListingAnalyticsRowToAnalytics({
+      listing_id: 'listing-1',
+      unique_views: 12,
+      saves: 3,
+      applications: 2,
+      enquiries: 1,
+      confirmed_viewings: 1,
+    })
+
+    expect(analytics).toEqual({
+      listingId: 'listing-1',
+      uniqueViews: 12,
+      saves: 3,
+      applications: 2,
+      enquiries: 1,
+      confirmedViewings: 1,
+    })
+  })
+
+  it('zero-fills empty aggregate rows for listings with no performance data', () => {
+    expect(emptyListingAnalytics('listing-empty')).toEqual({
+      listingId: 'listing-empty',
+      uniqueViews: 0,
+      saves: 0,
+      applications: 0,
+      enquiries: 0,
+      confirmedViewings: 0,
+    })
+    expect(mapListingAnalyticsRowToAnalytics({
+      listing_id: 'listing-null',
+      unique_views: null,
+      saves: null,
+      applications: null,
+      enquiries: null,
+      confirmed_viewings: null,
+    })).toEqual(emptyListingAnalytics('listing-null'))
+  })
+
+  it('indexes rows by listing id and never carries viewer identity or Smart Match signals forward', () => {
+    const map = mapListingAnalyticsRowsToMap([
+      {
+        listing_id: 'listing-1',
+        unique_views: 1,
+        saves: 2,
+        applications: 3,
+        enquiries: 4,
+        confirmed_viewings: 5,
+        viewer_id: 'must-not-leak',
+        smart_match_interested: 99,
+      },
+    ])
+
+    expect(map.get('listing-1')).toEqual({
+      listingId: 'listing-1',
+      uniqueViews: 1,
+      saves: 2,
+      applications: 3,
+      enquiries: 4,
+      confirmedViewings: 5,
+    })
   })
 })

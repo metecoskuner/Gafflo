@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
@@ -11,6 +11,7 @@ import { getLandlordPlanConfig, getListingProductConfig, LANDLORD_PLAN, LISTING_
 import { canBoostListing } from '../config/promotion'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
+import useListingAnalytics from '../context/useListingAnalytics'
 import useListings from '../context/useListings'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
@@ -39,6 +40,7 @@ export default function LandlordProperties() {
   const { landlordPlan, landlordProperties } = useAppState()
   const { markRented, pauseListing, requestReview, resumeListing } = useListings()
   const { landlordApplications } = useApplications()
+  const { getAnalyticsForListing, refreshListingAnalytics } = useListingAnalytics()
   const [allowanceBlock, setAllowanceBlock] = useState(null)
   const [boostPreview, setBoostPreview] = useState(null)
   const [actionError, setActionError] = useState('')
@@ -55,6 +57,10 @@ export default function LandlordProperties() {
       }, {}),
     [landlordProperties],
   )
+
+  useEffect(() => {
+    refreshListingAnalytics()
+  }, [refreshListingAnalytics])
 
   if (!landlordProperties.length) {
     return (
@@ -98,6 +104,7 @@ export default function LandlordProperties() {
           const plan = getListingActionPlan(property.listingStatus)
           const transitions = getListingActions(property.listingStatus)
           const isPending = pendingPropertyId === property.id
+          const analytics = getAnalyticsForListing(property.id)
           // Real applications only (Stage D) — a draft/paused/rejected listing can never actually
           // have one (create_application() requires status = 'published'), so this is always 0
           // for those, never a fabricated count.
@@ -203,6 +210,16 @@ export default function LandlordProperties() {
                     ) : (
                       <Info label="Viewing" value={property.viewingType} />
                     )}
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Listing performance</p>
+                    <div className="grid grid-cols-2 gap-2 min-[430px]:grid-cols-3 md:grid-cols-5">
+                      <Info label="Views" value={`${analytics.uniqueViews}`} />
+                      <Info label="Saves" value={`${analytics.saves}`} />
+                      <Info label="Apps" value={`${analytics.applications}`} />
+                      <Info label="Enquiries" value={`${analytics.enquiries}`} />
+                      <Info label="Viewings" value={`${analytics.confirmedViewings}`} />
+                    </div>
                   </div>
                   <div className="grid gap-2 min-[380px]:grid-cols-2 md:grid-cols-3">
                     {renderAction(plan.primaryKey, true)}

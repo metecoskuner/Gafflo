@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
+import useListingAnalytics from '../context/useListingAnalytics'
 import useMessaging from '../context/useMessaging'
 import useViewings from '../context/useViewings'
 import { domainLabel } from '../config/domainOptions'
@@ -34,6 +35,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     removeSavedProperty,
   } = useAppState()
   const { getTenantApplicationForListing, applyToListing, withdraw } = useApplications()
+  const { recordListingView } = useListingAnalytics()
   const { getConversationForListing, isUserBlocked, blockUser, startConversation } = useMessaging()
   const { getActiveViewing, acceptSlot, decline: declineViewing, cancel: cancelViewing } = useViewings()
   const { activeRole: role, profile } = useAccountProfile()
@@ -95,6 +97,14 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   const access = previewProperty
     ? { allowed: true, mode: 'own' }
     : canViewListing({ role, viewerId: profile?.id, property, hasHistoricalRelationship })
+  const recordedViewIds = useRef(new Set())
+
+  useEffect(() => {
+    if (previewProperty || !property?.id || !access.allowed || property.listingStatus !== 'published') return
+    if (recordedViewIds.current.has(property.id)) return
+    recordedViewIds.current.add(property.id)
+    recordListingView(property.id)
+  }, [access.allowed, previewProperty, property?.id, property?.listingStatus, recordListingView])
 
   if (!property || !access.allowed) {
     return (
