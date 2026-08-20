@@ -83,10 +83,8 @@ function TenantDashboard() {
 
 function LandlordDashboard() {
   const navigate = useNavigate()
-  const { conversations } = useAppState()
   const { landlordApplications } = useApplications()
   const newInterest = landlordApplications.filter((application) => application.status === 'sent').length
-  const unreadMessages = conversations.filter((conversation) => conversation.unreadFor === 'landlord').length
 
   return (
     <div className="space-y-5">
@@ -107,27 +105,22 @@ function LandlordDashboard() {
 
       <AttentionSummary
         newInterest={newInterest}
-        unreadMessages={unreadMessages}
         onReviewApplicants={() => navigate('/applicants')}
-        onOpenMessages={() => navigate('/messages')}
       />
     </div>
   )
 }
 
-// Viewings deliberately has no entry here: it is not integrated yet (Stage F), and a landlord
-// applicant count is now real (Stage D) while unread-conversation count is still local/mock
-// (Messaging is not integrated until Stage E) — see the Stage D pre-merge audit report for why
-// that one stays as an explicit, documented, pre-existing exception rather than being hidden or
-// touched here, and why a permanently-zero "upcoming viewings" entry was removed rather than kept
-// as a dead branch that could never legitimately fire.
-function AttentionSummary({ newInterest, unreadMessages, onReviewApplicants, onOpenMessages }) {
+// Viewings and unread-conversation count deliberately have no entry here: neither is integrated
+// yet (Viewings is Stage F, Messaging is Stage E), and a landlord applicant count is now real
+// (Stage D) — showing either alongside it, even correctly computed from real local mock state,
+// would make the dashboard look fully server-backed when it isn't. See the Stage D pre-merge
+// audit report for why both were removed rather than kept as a hidden-until-nonzero branch: that
+// would still be blending a mock count into a real-data surface, just invisibly at zero.
+function AttentionSummary({ newInterest, onReviewApplicants }) {
   const items = [
     newInterest > 0
       ? { key: 'applicants', label: `${newInterest} new applicant${newInterest === 1 ? '' : 's'}`, onClick: onReviewApplicants }
-      : null,
-    unreadMessages > 0
-      ? { key: 'messages', label: `${unreadMessages} unread conversation${unreadMessages === 1 ? '' : 's'}`, onClick: onOpenMessages }
       : null,
   ].filter(Boolean)
 

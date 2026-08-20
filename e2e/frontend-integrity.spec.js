@@ -945,32 +945,15 @@ test('landlord dashboard surfaces a "what needs your attention" summary instead 
   await expect(page.getByText('New interested tenants', { exact: true })).toHaveCount(0)
 })
 
+// Stage D pre-merge audit: this used to also seed an unrelated mock enquiry/conversation to prove
+// cross-identity isolation of the unread-messages attention item — that item was removed from the
+// Dashboard entirely (Stage D made applicant counts real; unread-conversation count is still
+// local mock, so it was hidden rather than shown blended beside real data — see the Stage D
+// pre-merge audit report). "All caught up" is now driven solely by real landlordApplications
+// being empty, so the mock fixture no longer tests anything and was dropped rather than kept as
+// dead weight implying a check that no longer happens.
 test('landlord dashboard shows a calm empty state when nothing needs attention — no fake urgency', async ({ page }) => {
-  const now = new Date().toISOString()
-  const unrelatedEnquiry = {
-    id: 'enquiry-unrelated',
-    propertyId: 'property-smithfield-studio',
-    tenantId: 'tenant-someone-else',
-    ownerId: 'owner-agent-1',
-    status: 'sent',
-    createdAt: now,
-    updatedAt: now,
-    message: 'Hi',
-    viewing: { status: 'none', proposedSlots: [], selectedSlot: '' },
-  }
-  const unrelatedConversation = {
-    id: 'conversation-unrelated',
-    propertyId: 'property-smithfield-studio',
-    enquiryId: 'enquiry-unrelated',
-    tenantId: 'tenant-someone-else',
-    ownerId: 'owner-agent-1',
-    archived: false,
-    unreadFor: null,
-    createdAt: now,
-    updatedAt: now,
-    messages: [{ id: 'm-unrelated', sender: 'tenant', body: 'Hi', createdAt: now }],
-  }
-  await seedState(page, { identity: 'landlordDefault', enquiries: [unrelatedEnquiry], conversations: [unrelatedConversation] })
+  await seedState(page, { identity: 'landlordDefault' })
   await page.goto('/dashboard')
 
   await expect(page.getByRole('heading', { name: 'What needs your attention' })).toBeVisible()
