@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import MatchBadge from '../components/MatchBadge'
+import { filterConversationsByRole } from '../config/messageAdapter'
 import { hasCoreMatchFacts } from '../config/rentalJourney'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
@@ -87,7 +88,10 @@ function LandlordDashboard() {
   const { landlordApplications } = useApplications()
   const { conversations } = useMessaging()
   const newInterest = landlordApplications.filter((application) => application.status === 'sent').length
-  const unreadMessages = conversations.filter((conversation) => conversation.unread).length
+  // Dual-role accounts have tenant-side conversations too (see the Stage E audit's inbox-scoping
+  // fix in Messages.jsx) — landlord-side is scoped the same way here so a tenant-side unread
+  // thread never inflates the landlord dashboard's count.
+  const unreadMessages = filterConversationsByRole(conversations, 'landlord').filter((conversation) => conversation.unread).length
 
   return (
     <div className="space-y-5">

@@ -3,7 +3,6 @@ const KEYS = {
   dismissed: 'gafflo.dismissed-properties',
   smartMatchActivity: 'gafflo.smart-match-activity',
   propertyReports: 'gafflo.property-reports',
-  conversationReports: 'gafflo.conversation-reports',
   tenantPlan: 'gafflo.tenant-plan',
   landlordPlan: 'gafflo.landlord-plan',
 }
@@ -61,19 +60,6 @@ export function getPropertyReports() {
 
 export function setPropertyReports(reports) {
   setJson(KEYS.propertyReports, reports)
-}
-
-// Stage E: same pattern as property reports above, but for conversations — a local-only safety
-// annotation keyed by real conversation id, never conversation/message data itself (which is
-// 100% Supabase-backed — see MessagingProvider). Report is not part of the real messaging
-// backend contract; this stays honestly device-local, matching the existing "Report saved
-// locally on this device" copy already established for property reports.
-export function getConversationReports() {
-  return getJson(KEYS.conversationReports, {})
-}
-
-export function setConversationReports(reports) {
-  setJson(KEYS.conversationReports, reports)
 }
 
 // Local-only plan state for this prototype. No purchase flow sets these yet — they exist so

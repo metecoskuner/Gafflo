@@ -2,12 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
-import { isTenantWaitingForLandlordReply } from '../config/messageAdapter'
+import { filterConversationsByRole, isTenantWaitingForLandlordReply } from '../config/messageAdapter'
 import useAccountProfile from '../context/useAccountProfile'
 import useMessaging from '../context/useMessaging'
 import { formatCurrency } from '../utils/formatCurrency'
 import { sanitizeMessageBody } from '../utils/messagingRules'
-import { getConversationReports, setConversationReports } from '../utils/storage'
 
 // Local, frontend-only starter set — free for every landlord (see pricingPlans.js). Tapping one
 // replaces the composer draft so it's always reviewed and edited before sending; nothing here
@@ -25,15 +24,24 @@ export default function Messages() {
   const { activeRole: role } = useAccountProfile()
   const [undoToast, setUndoToast] = useState(null)
 
+  // Inbox list is scoped to the currently active role — a dual-role account's tenant-side and
+  // landlord-side threads are the same real conversations table, never duplicated per role, so
+  // this is presentation-only filtering by which side of each real conversation this account is
+  // on (see config/messageAdapter.js's filterConversationsByRole).
   const sortedConversations = useMemo(
     () =>
-      conversations
+      filterConversationsByRole(conversations, role)
         .filter((conversation) => !conversation.archived)
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [conversations],
+    [conversations, role],
   )
 
   if (conversationId) {
+    // Deliberately searched in the full, unscoped `conversations` list, not sortedConversations:
+    // a direct link to a conversation this account legitimately participates in (proven by RLS)
+    // must still open even if it belongs to the account's other role. ChatThread itself renders
+    // correctly either way since it derives its own role context from the conversation
+    // (conversation.isTenant), never from the activeRole toggle — no cross-role mix-up results.
     const conversation = conversations.find((item) => item.id === conversationId)
     if (!conversation) {
       return (
@@ -52,7 +60,7 @@ export default function Messages() {
         </div>
       )
     }
-    return <ChatThread key={conversation.id} conversation={conversation} role={role} />
+    return <ChatThread key={conversation.id} conversation={conversation} />
   }
 
   const archiveToast = undoToast ? (
@@ -88,7 +96,6 @@ export default function Messages() {
           <ConversationListRow
             key={conversation.id}
             conversation={conversation}
-            role={role}
             onOpen={() => navigate(`/messages/${conversation.id}`)}
             onArchived={() => setUndoToast({ conversationId: conversation.id })}
           />
@@ -120,7 +127,7 @@ function ArchiveUndoToast({ conversationId, onDismiss, onUndo }) {
   )
 }
 
-function ConversationListRow({ conversation, onOpen, role, onArchived }) {
+function ConversationListRow({ conversation, onOpen, onArchived }) {
   const { setArchived } = useMessaging()
   const [offset, setOffset] = useState(0)
   const start = useRef(null)
@@ -194,7 +201,7 @@ function ConversationListRow({ conversation, onOpen, role, onArchived }) {
                   {listing?.title || 'Listing no longer available'}
                 </h2>
                 <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                  {conversation.counterpart.displayName || (role === 'landlord' ? 'Tenant' : 'Landlord')}
+                  {conversation.counterpart.displayName || (conversation.isTenant ? 'Landlord' : 'Tenant')}
                   {listing ? ` · ${listing.area} · ${formatCurrency(listing.rent)}/mo` : ''}
                 </p>
               </div>
@@ -220,7 +227,7 @@ function ConversationListRow({ conversation, onOpen, role, onArchived }) {
   )
 }
 
-function ChatThread({ conversation, role }) {
+function ChatThread({ conversation }) {
   const navigate = useNavigate()
   const { blockUser, markRead, setArchived, setMuted, sendMessage, unblockUser } = useMessaging()
   const [draftMessage, setDraftMessage] = useState('')
@@ -319,7 +326,7 @@ function ChatThread({ conversation, role }) {
         />
       ) : (
         <div className="-mx-4 shrink-0 md:mx-0">
-          {role === 'landlord' ? (
+          {!conversation.isTenant ? (
             <div className="flex gap-2 overflow-x-auto px-4 pb-2 md:px-0" aria-label="Quick replies">
               {landlordQuickReplies.map((reply) => (
                 <button
@@ -431,18 +438,13 @@ function MessageBubble({ message }) {
   )
 }
 
+// Report is deliberately not offered here: there is no real Reports backend in Stage E (no
+// schema, no moderation review), and a local-only write that merely persists to this device would
+// look like a submitted safety report without actually reaching Gafflo — see the Stage E
+// pre-merge audit. Block/unblock is real (backed by block_user()/unblock_user()) and stays as
+// the only safety action on a real conversation.
 function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onUnblock }) {
   const [confirmBlock, setConfirmBlock] = useState(false)
-  const [reportReason, setReportReason] = useState('')
-  const [reports, setReports] = useState(() => getConversationReports())
-  const reported = Boolean(reports[conversation.id])
-
-  const saveReport = () => {
-    if (!reportReason) return
-    const next = { ...reports, [conversation.id]: { reason: reportReason, reportedAt: new Date().toISOString() } }
-    setConversationReports(next)
-    setReports(next)
-  }
 
   return (
     <details className="group relative shrink-0">
@@ -458,23 +460,6 @@ function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onUn
           {conversation.muted ? 'Unmute conversation' : 'Mute conversation'}
         </Button>
         <Button variant="secondary" className="justify-start text-slate-600" onClick={onArchive}>Archive conversation</Button>
-        <label className="px-2 py-1">
-          <span className="mb-2 block text-xs font-semibold text-slate-500">Report reason</span>
-          <select
-            value={reportReason}
-            disabled={reported}
-            onChange={(event) => setReportReason(event.target.value)}
-            className="min-h-11 w-full rounded-[16px] border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:ring-4 focus:ring-indigo-100"
-          >
-            <option value="">Choose reason</option>
-            <option value="Suspicious listing or user">Suspicious listing or user</option>
-            <option value="Harassment or pressure">Harassment or pressure</option>
-            <option value="Payment request outside Gafflo">Payment request outside Gafflo</option>
-          </select>
-        </label>
-        <Button variant="secondary" className="justify-start text-slate-600" disabled={reported || !reportReason} onClick={saveReport}>
-          {reported ? 'Saved locally' : 'Save local report'}
-        </Button>
         {confirmBlock ? (
           <div className="rounded-[18px] border border-amber-100 bg-amber-50 px-3 py-3">
             <p className="text-sm font-semibold text-amber-950">Block this user?</p>

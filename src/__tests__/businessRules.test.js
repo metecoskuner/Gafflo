@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mapApplicationRowToApplication } from '../config/applicationAdapter'
 import { describeApplicationError } from '../config/applicationErrors'
-import { isTenantWaitingForLandlordReply, mapConversationRowToConversation } from '../config/messageAdapter'
+import { filterConversationsByRole, isTenantWaitingForLandlordReply, mapConversationRowToConversation } from '../config/messageAdapter'
 import { describeMessagingError } from '../config/messagingErrors'
 import {
   applicantPipelineTabs,
@@ -1017,6 +1017,37 @@ describe('Stage E — real conversation row adapter', () => {
   it('leaves listing null rather than fabricating one when it fell out of the caller\'s real listing set', () => {
     const noListingCtx = { ...ctx, listingsById: {} }
     expect(mapConversationRowToConversation(row, noListingCtx).listing).toBeNull()
+  })
+})
+
+describe('Stage E audit — dual-role inbox scoping (presentation-only, single real identity)', () => {
+  // One real account, tenant on one conversation and landlord on another — exactly the dual-role
+  // shape the audit flagged: the backend never duplicates a conversation per role, so scoping must
+  // be purely by which side of each real conversation this account is on (isTenant).
+  const tenantSideConvo = { id: 'convo-as-tenant', isTenant: true, unread: true }
+  const landlordSideConvo = { id: 'convo-as-landlord', isTenant: false, unread: true }
+  const conversations = [tenantSideConvo, landlordSideConvo]
+
+  it('shows only tenant-side conversations when activeRole is tenant', () => {
+    expect(filterConversationsByRole(conversations, 'tenant')).toEqual([tenantSideConvo])
+  })
+
+  it('shows only landlord-side conversations when activeRole is landlord', () => {
+    expect(filterConversationsByRole(conversations, 'landlord')).toEqual([landlordSideConvo])
+  })
+
+  it('never mixes both sides into one role view', () => {
+    const tenantView = filterConversationsByRole(conversations, 'tenant')
+    const landlordView = filterConversationsByRole(conversations, 'landlord')
+    expect(tenantView).not.toContainEqual(landlordSideConvo)
+    expect(landlordView).not.toContainEqual(tenantSideConvo)
+  })
+
+  it('an unread landlord-side thread is not counted in a tenant-scoped unread total, and vice versa', () => {
+    const tenantUnread = filterConversationsByRole(conversations, 'tenant').filter((c) => c.unread).length
+    const landlordUnread = filterConversationsByRole(conversations, 'landlord').filter((c) => c.unread).length
+    expect(tenantUnread).toBe(1)
+    expect(landlordUnread).toBe(1)
   })
 })
 

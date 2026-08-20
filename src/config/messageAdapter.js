@@ -46,6 +46,16 @@ export function mapConversationRowToConversation(row, ctx) {
   }
 }
 
+// Presentation-only scoping for a dual-role account (tenant_profile + landlord_profile): the
+// backend has one real identity (auth.uid()) and never duplicates a conversation per role, so a
+// user's tenant-side and landlord-side threads must be separated here, by which side of the real
+// conversation they're actually on (isTenant), not by any second identity. Matches the
+// role === 'landlord' ? ... : ... convention already used throughout Messages.jsx/Dashboard.jsx.
+export function filterConversationsByRole(conversations, activeRole) {
+  const wantsTenantSide = activeRole !== 'landlord'
+  return conversations.filter((conversation) => conversation.isTenant === wantsTenantSide)
+}
+
 // The one and only anti-spam signal Stage E is allowed to use (see the Stage E task's canonical
 // rule): a real landlord-authored message existing in THIS conversation — never application
 // status, never a mock enquiry field. Mirrors send_message()'s own SQL exactly: `not
