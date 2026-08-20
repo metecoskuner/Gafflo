@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { mapApplicationRowToApplication } from '../config/applicationAdapter'
+import { describeApplicationError } from '../config/applicationErrors'
 import { getApplicationStatusInfo } from '../config/applicationStatus'
 import {
   createApplication as createApplicationRequest,
@@ -50,7 +51,7 @@ export function ApplicationsProvider({ children }) {
       const next = await loadApplicationsState(user.id)
       setState(next)
     } catch (error) {
-      setState((current) => ({ ...current, loading: false, error: error.message }))
+      setState((current) => ({ ...current, loading: false, error: describeApplicationError(error) }))
     }
   }, [user])
 
@@ -68,7 +69,7 @@ export function ApplicationsProvider({ children }) {
         if (!cancelled) setState(next)
       })
       .catch((error) => {
-        if (!cancelled) setState((current) => ({ ...current, loading: false, error: error.message }))
+        if (!cancelled) setState((current) => ({ ...current, loading: false, error: describeApplicationError(error) }))
       })
     return () => {
       cancelled = true
@@ -94,7 +95,7 @@ export function ApplicationsProvider({ children }) {
           await refreshApplications()
           return { error: null, alreadyApplied: true }
         }
-        return { error: error.message, alreadyApplied: false }
+        return { error: describeApplicationError(error), alreadyApplied: false }
       }
     },
     [refreshApplications],
@@ -107,7 +108,7 @@ export function ApplicationsProvider({ children }) {
         await refreshApplications()
         return { error: null }
       } catch (error) {
-        return { error: error.message }
+        return { error: describeApplicationError(error) }
       }
     },
     [refreshApplications],
@@ -120,7 +121,7 @@ export function ApplicationsProvider({ children }) {
         await refreshApplications()
         return { error: null }
       } catch (error) {
-        return { error: error.message }
+        return { error: describeApplicationError(error) }
       }
     },
     [refreshApplications],
@@ -133,7 +134,7 @@ export function ApplicationsProvider({ children }) {
         await refreshApplications()
         return { error: null }
       } catch (error) {
-        return { error: error.message }
+        return { error: describeApplicationError(error) }
       }
     },
     [refreshApplications],

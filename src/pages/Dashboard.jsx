@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import MatchBadge from '../components/MatchBadge'
-import { getViewingRows, hasCoreMatchFacts } from '../config/rentalJourney'
+import { hasCoreMatchFacts } from '../config/rentalJourney'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
@@ -19,10 +19,6 @@ function TenantDashboard() {
   const { activeProperties, savedProperties, tenantProfile } = useAppState()
   const { tenantApplications } = useApplications()
   const topProperty = [...activeProperties].sort((a, b) => b.match.score - a.match.score)[0]
-  // Real applications never carry a `.viewing` sub-object (Stage D deliberately never fabricates
-  // one — see the Stage D report) so this always and honestly renders the empty state until
-  // Stage F wires real viewings; no mock data or extra branching needed here for that.
-  const viewings = getViewingRows(tenantApplications, 'tenant')
 
   return (
     <div className="space-y-5">
@@ -46,8 +42,6 @@ function TenantDashboard() {
         <Metric label="Saved" value={String(savedProperties.length)} />
         <Metric label="Applications" value={String(tenantApplications.length)} />
       </section>
-
-      <UpcomingViewings rows={viewings} role="tenant" onOpenMessages={() => navigate('/messages')} />
 
       {topProperty ? (
         <section className="card-surface card-shadow overflow-hidden rounded-[30px]">
@@ -93,11 +87,6 @@ function LandlordDashboard() {
   const { landlordApplications } = useApplications()
   const newInterest = landlordApplications.filter((application) => application.status === 'sent').length
   const unreadMessages = conversations.filter((conversation) => conversation.unreadFor === 'landlord').length
-  // Real applications never carry a `.viewing` sub-object (Stage D deliberately never fabricates
-  // one), so both of these always and honestly resolve to zero/empty until Stage F wires real
-  // viewings — see the matching comment on TenantDashboard above.
-  const viewings = landlordApplications.filter((application) => ['viewing_proposed', 'viewing_confirmed'].includes(application.viewing?.status)).length
-  const viewingRows = getViewingRows(landlordApplications, 'landlord')
 
   return (
     <div className="space-y-5">
@@ -118,28 +107,24 @@ function LandlordDashboard() {
 
       <AttentionSummary
         newInterest={newInterest}
-        viewings={viewings}
         unreadMessages={unreadMessages}
         onReviewApplicants={() => navigate('/applicants')}
         onOpenMessages={() => navigate('/messages')}
       />
-
-      <UpcomingViewings rows={viewingRows} role="landlord" onOpenMessages={() => navigate('/messages')} />
     </div>
   )
 }
 
-// Priority order matches what a private landlord actually needs to act on: new applicants
-// first, then confirmed/proposed viewings, then unread messages. Each item is real and only
-// shown when there's actually something to do — no manufactured urgency, and a calm empty
-// state when the landlord is genuinely caught up.
-function AttentionSummary({ newInterest, viewings, unreadMessages, onReviewApplicants, onOpenMessages }) {
+// Viewings deliberately has no entry here: it is not integrated yet (Stage F), and a landlord
+// applicant count is now real (Stage D) while unread-conversation count is still local/mock
+// (Messaging is not integrated until Stage E) — see the Stage D pre-merge audit report for why
+// that one stays as an explicit, documented, pre-existing exception rather than being hidden or
+// touched here, and why a permanently-zero "upcoming viewings" entry was removed rather than kept
+// as a dead branch that could never legitimately fire.
+function AttentionSummary({ newInterest, unreadMessages, onReviewApplicants, onOpenMessages }) {
   const items = [
     newInterest > 0
       ? { key: 'applicants', label: `${newInterest} new applicant${newInterest === 1 ? '' : 's'}`, onClick: onReviewApplicants }
-      : null,
-    viewings > 0
-      ? { key: 'viewings', label: `${viewings} upcoming viewing${viewings === 1 ? '' : 's'}`, onClick: onOpenMessages }
       : null,
     unreadMessages > 0
       ? { key: 'messages', label: `${unreadMessages} unread conversation${unreadMessages === 1 ? '' : 's'}`, onClick: onOpenMessages }
@@ -176,50 +161,5 @@ function Metric({ label, value, className = '' }) {
       <div className="break-words text-sm font-medium leading-5 text-slate-500">{label}</div>
       <div className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
     </div>
-  )
-}
-
-function UpcomingViewings({ rows, role, onOpenMessages }) {
-  if (!rows.length) {
-    return (
-      <section className="card-surface card-shadow rounded-[24px] p-4">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-950">Upcoming viewings</h2>
-        <p className="mt-1 text-sm leading-6 text-slate-600">Confirmed and proposed viewing times will appear here.</p>
-      </section>
-    )
-  }
-
-  return (
-    <section className="card-surface card-shadow rounded-[24px] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-950">Upcoming viewings</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-600">
-            {role === 'tenant' ? 'Your proposed and confirmed viewing times.' : 'Viewing activity across your properties.'}
-          </p>
-        </div>
-        <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">{rows.length}</span>
-      </div>
-      <div className="mt-4 grid gap-3">
-        {rows.slice(0, 3).map((row) => (
-          <article key={row.id} className="min-w-0 overflow-hidden rounded-[20px] border border-slate-100 bg-slate-50/78 px-3 py-3">
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="truncate text-sm font-semibold text-slate-950">{row.property.title}</h3>
-                <p className="mt-1 truncate text-sm text-slate-600">
-                  {role === 'landlord' ? `${row.tenant.name || 'Tenant'} · ` : ''}
-                  {row.property.area}
-                </p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{row.slot}</p>
-              </div>
-              <span className="max-w-[45%] shrink break-words rounded-full bg-white px-3 py-1.5 text-center text-xs font-semibold leading-4 text-slate-700 shadow-soft">
-                {row.status}
-              </span>
-            </div>
-          </article>
-        ))}
-      </div>
-      <Button variant="secondary" className="mt-4 w-full" onClick={onOpenMessages}>Open messages</Button>
-    </section>
   )
 }

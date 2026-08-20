@@ -69,19 +69,6 @@ export function isLandlordEngagedStatus(status) {
 
 export { canListingReceiveEnquiry }
 
-export function getViewingRows(enquiries, role) {
-  return enquiries
-    .filter((enquiry) => ['viewing proposed', 'viewing confirmed'].includes(enquiry.viewing?.status))
-    .map((enquiry) => ({
-      id: enquiry.id,
-      property: enquiry.property,
-      tenant: enquiry.tenant,
-      status: getApplicationStatus(enquiry.viewing.status).label,
-      slot: enquiry.viewing.selectedSlot?.label || enquiry.viewing.proposedSlots?.[0]?.label || 'Time to be agreed',
-      role,
-    }))
-}
-
 export function getPrimaryTrustSignal(property) {
   const trust = property?.trust || {}
   if (trust.internalDemoState) return ''

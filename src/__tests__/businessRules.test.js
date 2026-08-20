@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mapApplicationRowToApplication } from '../config/applicationAdapter'
+import { describeApplicationError } from '../config/applicationErrors'
 import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
@@ -830,6 +831,12 @@ describe('Stage D — real application status/pipeline mapping', () => {
     expect(allTargets.has('withdrawn')).toBe(false)
   })
 
+  it('marks exactly one landlord action (not_selected) destructive — Applicants.jsx gates its confirm dialog on this flag alone', () => {
+    const actions = getLandlordApplicationActions('sent')
+    const destructive = actions.filter((action) => action.destructive)
+    expect(destructive.map((action) => action.status)).toEqual(['not_selected'])
+  })
+
   it('groups every real status into exactly one of the five pipeline tabs', () => {
     expect(getApplicationPipelineGroup('sent')).toBe('new')
     expect(getApplicationPipelineGroup('viewed')).toBe('new')
@@ -910,5 +917,39 @@ describe('Stage D — real application row adapter', () => {
 
   it('returns null for a null row rather than throwing', () => {
     expect(mapApplicationRowToApplication(null)).toBeNull()
+  })
+})
+
+describe('Stage D — application error normalization', () => {
+  it('maps a real 23505 duplicate to a clear, specific message regardless of the raw text', () => {
+    expect(describeApplicationError({ code: '23505', message: 'duplicate key value violates unique constraint "applications_one_per_tenant_listing"' }))
+      .toBe('You have already applied to this listing.')
+  })
+
+  it('maps known 42501/P0001 backend messages to safe, specific user copy', () => {
+    expect(describeApplicationError({ code: '42501', message: 'Account is not active' }))
+      .toBe('Your account cannot currently do this. Contact support if this seems wrong.')
+    expect(describeApplicationError({ code: '42501', message: 'You cannot apply to your own listing' }))
+      .toBe('You cannot apply to your own listing.')
+    expect(describeApplicationError({ code: '42501', message: 'Not authorized' }))
+      .toBe('You are not able to do this.')
+    expect(describeApplicationError({ code: 'P0001', message: 'This listing is not currently open for applications' }))
+      .toBe('This listing is not currently accepting applications.')
+    expect(describeApplicationError({ code: 'P0001', message: 'This application has already reached a terminal state' }))
+      .toBe('This application has already reached a final state and can no longer be changed.')
+  })
+
+  it('never leaks a raw/unknown backend message, network error, or missing error as user-facing text', () => {
+    const fallback = 'Something went wrong. Please try again.'
+    expect(describeApplicationError({ code: '42501', message: 'permission denied for table applications' })).toBe(fallback)
+    expect(describeApplicationError({ code: undefined, message: 'Failed to fetch' })).toBe(fallback)
+    expect(describeApplicationError({ code: '08006', message: 'connection to server was lost' })).toBe(fallback)
+    expect(describeApplicationError(null)).toBe(fallback)
+    expect(describeApplicationError(undefined)).toBe(fallback)
+  })
+
+  it('never depends on substring matching — a similar-but-not-exact message falls through to the safe fallback', () => {
+    expect(describeApplicationError({ code: 'P0001', message: 'This listing is not currently open for applications right now, sorry' }))
+      .toBe('Something went wrong. Please try again.')
   })
 })
