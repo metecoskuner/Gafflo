@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
+import useMessaging from '../context/useMessaging'
 import { domainLabel } from '../config/domainOptions'
 import { isTerminalApplicationStatus } from '../config/applicationStatus'
 import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
@@ -11,6 +12,7 @@ import { canListingReceiveEnquiry } from '../config/rentalJourney'
 import { canViewListing, listingStatusLabels } from '../config/listingLifecycle'
 import { formatDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatCurrency'
+import { sanitizeMessageBody } from '../utils/messagingRules'
 import ApplicationStatus from './ApplicationStatus'
 import Button from './Button'
 import EmptyState from './EmptyState'
@@ -19,12 +21,11 @@ import TrustSummary from './TrustSummary'
 
 // previewProperty + onClose let a landlord preview an in-progress, unsaved listing draft exactly
 // as CreateListing will pass it: real tenant-facing layout, no route, no persistence. Everything
-// else (route-based lookup, access rules, application actions) is untouched for the normal case.
+// else (route-based lookup, access rules, application/messaging actions) is untouched for the
+// normal case.
 export default function PropertyDetailsModal({ standalone = false, previewProperty = null, onClose }) {
   const { propertyId } = useParams()
   const {
-    blockPropertyOwner,
-    currentTenantId,
     properties,
     reportListing,
     savedPropertyIds,
@@ -32,6 +33,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     removeSavedProperty,
   } = useAppState()
   const { getTenantApplicationForListing, applyToListing, withdraw } = useApplications()
+  const { getConversationForListing, isUserBlocked, blockUser, startConversation } = useMessaging()
   const { activeRole: role, profile } = useAccountProfile()
   const navigate = useNavigate()
   const routeProperty = useMemo(() => properties.find((item) => item.id === propertyId), [propertyId, properties])
@@ -69,14 +71,27 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   const applyPending = applyState.propertyId === propertyId && applyState.pending
   const applyError = applyState.propertyId === propertyId ? applyState.error : ''
 
+  // Same propertyId-keyed derivation as applyState above, for the same reason — this instance
+  // is reused (not remounted) across a route param change.
+  const [messageState, setMessageState] = useState({ propertyId: null, open: false, draft: '', pending: false, error: '' })
+  const messageComposerOpen = messageState.propertyId === propertyId && messageState.open
+  const messagePending = messageState.propertyId === propertyId && messageState.pending
+  const messageError = messageState.propertyId === propertyId ? messageState.error : ''
+  const messageDraft = messageState.propertyId === propertyId ? messageState.draft : ''
+
   const application = property && !previewProperty ? getTenantApplicationForListing(property.id) : null
-  const hasHistoricalRelationship = role === 'tenant' && (Boolean(application) || savedPropertyIds.includes(propertyId))
+  const existingConversation = property && !previewProperty ? getConversationForListing(property.id) : null
+  const hasHistoricalRelationship =
+    role === 'tenant' && (Boolean(application) || Boolean(existingConversation) || savedPropertyIds.includes(propertyId))
   // Real listing ownership (property.ownerId) is the real auth uuid (Stage C) — profile.id is
   // that same uuid (profiles.id = auth.users.id). canViewListing only ever reads viewerId for the
-  // landlord/'own' branch below; the fixture currentTenantId here is inert for a tenant viewer.
-  const viewerId = role === 'landlord' ? profile?.id : currentTenantId
-  // A preview is always the landlord's own in-progress draft — no route-based access check applies.
-  const access = previewProperty ? { allowed: true, mode: 'own' } : canViewListing({ role, viewerId, property, hasHistoricalRelationship })
+  // landlord/'own' branch below, so it's fine to pass it through unconditionally rather than
+  // stamping in any fixture identity for the tenant case, which was never actually compared
+  // against anything (Stage E retired the last of those fixture ids from real listing/messaging
+  // surfaces — see the Stage E report).
+  const access = previewProperty
+    ? { allowed: true, mode: 'own' }
+    : canViewListing({ role, viewerId: profile?.id, property, hasHistoricalRelationship })
 
   if (!property || !access.allowed) {
     return (
@@ -122,6 +137,24 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     setApplyState({ propertyId, pending: true, error: '' })
     const { error } = await withdraw(application.id)
     setApplyState({ propertyId, pending: false, error: error || '' })
+  }
+
+  // Opening the composer never creates anything — start_conversation() only fires once the
+  // tenant actually submits a real first message below, matching "a real user action must
+  // initiate it."
+  const openMessageComposer = () => setMessageState({ propertyId, open: true, draft: '', pending: false, error: '' })
+  const closeMessageComposer = () => setMessageState({ propertyId, open: false, draft: '', pending: false, error: '' })
+
+  const handleSendInitialMessage = async () => {
+    const body = sanitizeMessageBody(messageDraft)
+    if (!body || messagePending) return
+    setMessageState({ propertyId, open: true, draft: messageDraft, pending: true, error: '' })
+    const { conversationId, error } = await startConversation(property.id, body)
+    if (error) {
+      setMessageState({ propertyId, open: true, draft: messageDraft, pending: false, error })
+      return
+    }
+    navigate(`/messages/${conversationId}`)
   }
 
   return (
@@ -315,8 +348,9 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
 
               <SafetyActions
                 disabled={role === 'landlord'}
+                alreadyBlocked={isUserBlocked(property.ownerId)}
                 locallyReported={Boolean(property.localReport)}
-                onBlock={() => blockPropertyOwner(property.id)}
+                onBlock={() => blockUser(property.ownerId)}
                 onReport={(reason) => reportListing(property.id, reason)}
               />
             </div>
@@ -331,30 +365,70 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
                 <Button variant="dark" onClick={() => navigate(`/applicants?property=${encodeURIComponent(property.id)}`)}>View applicants</Button>
               </div>
             ) : (
-              <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
-                <Button
-                  variant={isSaved ? 'secondary' : 'primary'}
-                  data-account-action="save-property"
-                  onClick={() => (isSaved ? removeSavedProperty(property.id) : saveProperty(property.id))}
-                >
-                  {isSaved ? 'Saved' : 'Save'}
-                </Button>
-                <Button
-                  variant="dark"
-                  data-account-action={application ? 'withdraw-application' : 'send-interest'}
-                  disabled={(!application && !canEnquire) || applyPending || applicationTerminal}
-                  onClick={application ? handleWithdraw : handleApply}
-                >
-                  {applyPending
-                    ? 'Please wait…'
-                    : application
-                      ? applicationTerminal
-                        ? application.statusLabel
-                        : 'Withdraw application'
-                      : canEnquire
-                        ? 'Apply'
-                        : 'Closed'}
-                </Button>
+              <div className="space-y-2">
+                {messageComposerOpen ? (
+                  <div className="rounded-[20px] border border-slate-200 bg-white p-3">
+                    <textarea
+                      autoFocus
+                      rows={3}
+                      value={messageDraft}
+                      onChange={(event) => setMessageState({ propertyId, open: true, draft: event.target.value, pending: false, error: '' })}
+                      maxLength={1200}
+                      placeholder="Write a message to the landlord"
+                      className="w-full resize-none rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-200 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                    />
+                    {messageError ? <p className="mt-2 text-sm font-medium text-rose-600">{messageError}</p> : null}
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <Button variant="secondary" onClick={closeMessageComposer} disabled={messagePending}>Cancel</Button>
+                      <Button variant="dark" onClick={handleSendInitialMessage} disabled={!messageDraft.trim() || messagePending}>
+                        {messagePending ? 'Sending…' : 'Send'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
+                    <Button
+                      variant={isSaved ? 'secondary' : 'primary'}
+                      data-account-action="save-property"
+                      onClick={() => (isSaved ? removeSavedProperty(property.id) : saveProperty(property.id))}
+                    >
+                      {isSaved ? 'Saved' : 'Save'}
+                    </Button>
+                    <Button
+                      variant="dark"
+                      data-account-action={application ? 'withdraw-application' : 'send-interest'}
+                      disabled={(!application && !canEnquire) || applyPending || applicationTerminal}
+                      onClick={application ? handleWithdraw : handleApply}
+                    >
+                      {applyPending
+                        ? 'Please wait…'
+                        : application
+                          ? applicationTerminal
+                            ? application.statusLabel
+                            : 'Withdraw application'
+                          : canEnquire
+                            ? 'Apply'
+                            : 'Closed'}
+                    </Button>
+                  </div>
+                )}
+                {!messageComposerOpen ? (
+                  existingConversation ? (
+                    <Button variant="secondary" className="w-full" data-account-action="open-message" onClick={() => navigate(`/messages/${existingConversation.id}`)}>
+                      Open conversation
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      data-account-action="message-landlord"
+                      disabled={!canEnquire}
+                      onClick={openMessageComposer}
+                    >
+                      Message landlord
+                    </Button>
+                  )
+                ) : null}
               </div>
             )}
           </div>
@@ -492,7 +566,7 @@ function PropertyImageGallery({ property, isSaved, isPreview, onClose }) {
   )
 }
 
-function SafetyActions({ disabled, locallyReported, onBlock, onReport }) {
+function SafetyActions({ disabled, alreadyBlocked, locallyReported, onBlock, onReport }) {
   const [reason, setReason] = useState('')
   const [confirmBlock, setConfirmBlock] = useState(false)
 
@@ -503,7 +577,7 @@ function SafetyActions({ disabled, locallyReported, onBlock, onReport }) {
       </summary>
       <div className="mt-3 grid min-w-0 gap-3">
         <p className="text-sm leading-6 text-slate-600">
-          Reports and blocks are saved on this device.
+          Reports are saved on this device. Blocking applies to your real account and stops messaging both ways.
         </p>
         <select
           value={reason}
@@ -520,8 +594,10 @@ function SafetyActions({ disabled, locallyReported, onBlock, onReport }) {
           <Button variant="secondary" disabled={disabled || locallyReported || !reason} onClick={() => onReport(reason)}>
             {locallyReported ? 'Report saved locally' : 'Save local report'}
           </Button>
-          {confirmBlock ? (
-            <Button variant="dark" disabled={disabled} onClick={onBlock}>
+          {alreadyBlocked ? (
+            <Button variant="secondary" disabled>Blocked</Button>
+          ) : confirmBlock ? (
+            <Button variant="dark" disabled={disabled} onClick={() => { onBlock(); setConfirmBlock(false) }}>
               Confirm block
             </Button>
           ) : (

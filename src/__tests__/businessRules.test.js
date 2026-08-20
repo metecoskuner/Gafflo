@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { mapApplicationRowToApplication } from '../config/applicationAdapter'
 import { describeApplicationError } from '../config/applicationErrors'
+import { isTenantWaitingForLandlordReply, mapConversationRowToConversation } from '../config/messageAdapter'
+import { describeMessagingError } from '../config/messagingErrors'
 import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
@@ -9,7 +11,6 @@ import {
   isLandlordEngagedApplicationStatus,
   isTerminalApplicationStatus,
 } from '../config/applicationStatus'
-import { canTransitionApplication, terminalApplicationStatuses } from '../config/applicationTransitions'
 import { normalizePetPolicy, normalizePropertyType, normalizeLeaseMonths, normalizeSmoking } from '../config/domainOptions'
 import { filterApplicantsByProperty, getValidApplicantPropertyId } from '../config/applicantFilters'
 import { cityOptions, normalizePreferredAreas, resetAreasForCityChange } from '../config/locationOptions'
@@ -48,8 +49,7 @@ import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { validateViewingChoice, validateViewingProposal } from '../config/viewingSlots'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
 import { directionalDayGap, isPastIsoDate } from '../utils/dateUtils'
-import { hasDuplicateEnquiry, hasDuplicateRecentMessage, sanitizeMessageBody } from '../utils/messagingRules'
-import { belongsToViewer } from '../utils/ownership'
+import { sanitizeMessageBody } from '../utils/messagingRules'
 
 const tenant = {
   targetCity: 'Dublin',
@@ -81,22 +81,6 @@ const property = {
   petsAllowed: 'not_allowed',
 }
 
-describe('application transitions', () => {
-  it('prevents normal regressions and terminal reopen', () => {
-    expect(canTransitionApplication('shortlisted', 'landlord interested')).toBe(false)
-    expect(canTransitionApplication('viewing proposed', 'landlord interested')).toBe(false)
-    expect(canTransitionApplication('viewing confirmed', 'shortlisted')).toBe(false)
-    for (const status of terminalApplicationStatuses) {
-      expect(canTransitionApplication(status, 'viewing proposed')).toBe(false)
-    }
-  })
-
-  it('allows cancelling a viewing without closing the application forever', () => {
-    expect(canTransitionApplication('viewing confirmed', 'viewing cancelled')).toBe(true)
-    expect(canTransitionApplication('viewing cancelled', 'viewing proposed')).toBe(true)
-  })
-})
-
 describe('viewing slots', () => {
   it('rejects duplicate, past, excessive and invalid proposals', () => {
     const future = '2030-01-02T11:00:00.000Z'
@@ -115,15 +99,10 @@ describe('viewing slots', () => {
 })
 
 describe('messaging rules', () => {
-  it('sanitizes and detects repeated messages', () => {
-    const body = sanitizeMessageBody('  Hi\n\nthere  ')
-    expect(body).toBe('Hi there')
-    expect(hasDuplicateRecentMessage({ messages: [{ sender: 'tenant', body, createdAt: '2030-01-01T00:00:00.000Z' }] }, 'tenant', body, new Date('2030-01-01T00:00:04.000Z').getTime())).toBe(true)
-  })
-
-  it('detects duplicate enquiries by tenant and property', () => {
-    expect(hasDuplicateEnquiry([{ propertyId: 'p1', tenantId: 't1' }], 'p1', 't1')).toBe(true)
-    expect(hasDuplicateEnquiry([{ propertyId: 'p1', tenantId: 't1' }], 'p1', 't2')).toBe(false)
+  it('sanitizes whitespace and enforces the real backend length ceiling', () => {
+    expect(sanitizeMessageBody('  Hi\n\nthere  ')).toBe('Hi there')
+    expect(sanitizeMessageBody('x'.repeat(2000)).length).toBe(1200)
+    expect(sanitizeMessageBody('   ')).toBe('')
   })
 })
 
@@ -467,15 +446,6 @@ describe('listing and conversation access control', () => {
 
   it('reports no access for a missing property', () => {
     expect(canViewListing({ role: 'tenant', viewerId: 'tenant-1', property: null })).toEqual({ allowed: false, mode: 'none' })
-  })
-
-  it('scopes conversations and enquiries to the current role identity', () => {
-    const record = { ownerId: 'owner-a', tenantId: 'tenant-a' }
-    expect(belongsToViewer(record, 'landlord', 'tenant-a', 'owner-a')).toBe(true)
-    expect(belongsToViewer(record, 'landlord', 'tenant-a', 'owner-b')).toBe(false)
-    expect(belongsToViewer(record, 'tenant', 'tenant-a', 'owner-a')).toBe(true)
-    expect(belongsToViewer(record, 'tenant', 'tenant-b', 'owner-a')).toBe(false)
-    expect(belongsToViewer(null, 'tenant', 'tenant-a', 'owner-a')).toBe(false)
   })
 })
 
@@ -951,5 +921,119 @@ describe('Stage D — application error normalization', () => {
   it('never depends on substring matching — a similar-but-not-exact message falls through to the safe fallback', () => {
     expect(describeApplicationError({ code: 'P0001', message: 'This listing is not currently open for applications right now, sorry' }))
       .toBe('Something went wrong. Please try again.')
+  })
+})
+
+describe('Stage E — canonical tenant anti-spam rule: real landlord message only, application status never unlocks', () => {
+  const TENANT = 'tenant-1'
+  const LANDLORD = 'landlord-1'
+
+  function conversation(messages) {
+    return { isTenant: true, tenantId: TENANT, landlordId: LANDLORD, messages }
+  }
+
+  it('blocks a second tenant message before any landlord reply exists', () => {
+    const convo = conversation([{ senderId: TENANT, body: 'Hi, is this available?' }])
+    expect(isTenantWaitingForLandlordReply(convo)).toBe(true)
+  })
+
+  it('unlocks only once a real message authored by the landlord exists', () => {
+    const convo = conversation([
+      { senderId: TENANT, body: 'Hi, is this available?' },
+      { senderId: LANDLORD, body: 'Yes, still available.' },
+    ])
+    expect(isTenantWaitingForLandlordReply(convo)).toBe(false)
+  })
+
+  it('never unlocks from a landlord decision status — application state and messaging are fully decoupled', () => {
+    // A real application object exists alongside this conversation, in each of the exact
+    // statuses the Stage E task calls out by name — isTenantWaitingForLandlordReply's signature
+    // takes only the conversation; there is no code path by which it could read `application` at
+    // all, which is the actual guarantee, not just an incidental test outcome.
+    const convoWithNoLandlordMessage = conversation([{ senderId: TENANT, body: 'Hi, is this available?' }])
+    for (const status of ['landlord_interested', 'shortlisted', 'viewing_confirmed']) {
+      const application = { status } // constructed, never passed to isTenantWaitingForLandlordReply
+      expect(isTenantWaitingForLandlordReply(convoWithNoLandlordMessage)).toBe(true)
+      expect(application.status).toBe(status) // sanity: the application really is in that status
+    }
+  })
+
+  it('a landlord viewing their own conversation is never gated by this rule at all', () => {
+    expect(isTenantWaitingForLandlordReply({ isTenant: false, tenantId: TENANT, landlordId: LANDLORD, messages: [] })).toBe(false)
+  })
+})
+
+describe('Stage E — real conversation row adapter', () => {
+  const row = {
+    id: 'conv-1',
+    listing_id: 'listing-1',
+    tenant_id: 'tenant-1',
+    landlord_id: 'landlord-1',
+    last_message_at: '2027-01-02T10:00:00.000Z',
+    updated_at: '2027-01-02T10:00:00.000Z',
+    conversation_participant_state: [
+      { user_id: 'tenant-1', archived_at: null, muted: false, last_read_at: '2027-01-01T09:00:00.000Z' },
+      { user_id: 'landlord-1', archived_at: '2027-01-01T00:00:00.000Z', muted: true, last_read_at: null },
+    ],
+  }
+  const messages = [
+    { id: 'm1', conversation_id: 'conv-1', sender_id: 'tenant-1', body: 'Hi', created_at: '2027-01-01T08:00:00.000Z' },
+    { id: 'm2', conversation_id: 'conv-1', sender_id: 'landlord-1', body: 'Hello', created_at: '2027-01-02T10:00:00.000Z' },
+  ]
+  const ctx = {
+    userId: 'tenant-1',
+    listingsById: { 'listing-1': { id: 'listing-1', title: 'Test listing' } },
+    messagesByConversationId: { 'conv-1': messages },
+    profileSummaries: { 'landlord-1': { displayName: 'Landlord Co', avatarUrl: null } },
+    blockedUserIds: new Set(),
+  }
+
+  it('only ever exposes the caller\'s own participant state, never the counterpart\'s', () => {
+    const result = mapConversationRowToConversation(row, ctx)
+    expect(result.archived).toBe(false)
+    expect(result.muted).toBe(false)
+  })
+
+  it('resolves counterpart identity and listing context from what the provider already batched, never re-fetching', () => {
+    const result = mapConversationRowToConversation(row, ctx)
+    expect(result.counterpart).toEqual({ displayName: 'Landlord Co', avatarUrl: null })
+    expect(result.listing).toEqual({ id: 'listing-1', title: 'Test listing' })
+  })
+
+  it('is unread only when a message exists after the caller\'s own last_read_at', () => {
+    const result = mapConversationRowToConversation(row, ctx)
+    expect(result.unread).toBe(true) // landlord's reply (10:00) is after tenant's last_read_at (09:00)
+
+    const readCtx = { ...ctx, messagesByConversationId: { 'conv-1': [messages[0]] } } // only the pre-read tenant message
+    expect(mapConversationRowToConversation(row, readCtx).unread).toBe(false)
+  })
+
+  it('marks blockedByMe from the batched blocks set, keyed by counterpart id', () => {
+    const blockedCtx = { ...ctx, blockedUserIds: new Set(['landlord-1']) }
+    expect(mapConversationRowToConversation(row, blockedCtx).blockedByMe).toBe(true)
+    expect(mapConversationRowToConversation(row, ctx).blockedByMe).toBe(false)
+  })
+
+  it('leaves listing null rather than fabricating one when it fell out of the caller\'s real listing set', () => {
+    const noListingCtx = { ...ctx, listingsById: {} }
+    expect(mapConversationRowToConversation(row, noListingCtx).listing).toBeNull()
+  })
+})
+
+describe('Stage E — messaging error normalization', () => {
+  it('maps known 42501/P0001 backend messages to safe, specific user copy', () => {
+    expect(describeMessagingError({ code: '42501', message: 'You have already sent a message — wait for the landlord to reply before sending another' }))
+      .toBe('You already sent a message — wait for the landlord to reply before sending another.')
+    expect(describeMessagingError({ code: '42501', message: 'Messaging is not currently available in this conversation' }))
+      .toBe('Messaging is not currently available in this conversation.')
+    expect(describeMessagingError({ code: 'P0001', message: 'Message is too long (maximum 1200 characters)' }))
+      .toBe('Message is too long (maximum 1200 characters).')
+  })
+
+  it('never leaks a raw/unknown backend message or missing error as user-facing text', () => {
+    const fallback = 'Something went wrong. Please try again.'
+    expect(describeMessagingError({ code: '42501', message: 'permission denied for table conversations' })).toBe(fallback)
+    expect(describeMessagingError(null)).toBe(fallback)
+    expect(describeMessagingError(undefined)).toBe(fallback)
   })
 })

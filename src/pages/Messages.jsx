@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import ApplicationStatus from '../components/ApplicationStatus'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
-import MatchBadge from '../components/MatchBadge'
-import { filterVisibleEnquiryHistory } from '../config/entitlements'
-import { isClosedStatus, isLandlordEngagedStatus } from '../config/rentalJourney'
+import { isTenantWaitingForLandlordReply } from '../config/messageAdapter'
 import useAccountProfile from '../context/useAccountProfile'
-import useAppState from '../context/useAppState'
+import useMessaging from '../context/useMessaging'
 import { formatCurrency } from '../utils/formatCurrency'
-import { getFutureViewingSlots } from '../utils/dateUtils'
+import { sanitizeMessageBody } from '../utils/messagingRules'
+import { getConversationReports, setConversationReports } from '../utils/storage'
 
 // Local, frontend-only starter set — free for every landlord (see pricingPlans.js). Tapping one
 // replaces the composer draft so it's always reviewed and edited before sending; nothing here
@@ -23,17 +21,17 @@ const landlordQuickReplies = [
 export default function Messages() {
   const navigate = useNavigate()
   const { conversationId } = useParams()
-  const { conversations, dismissToast, tenantPlan, toast, unarchiveConversation } = useAppState()
+  const { conversations } = useMessaging()
   const { activeRole: role } = useAccountProfile()
-  const sortedConversations = useMemo(() => {
-    const sorted = [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    if (role !== 'tenant') return sorted
-    // Gafflo+ tenants see everything; Free tenants keep every active conversation and lose
-    // only closed enquiries older than 30 days — see entitlements.filterVisibleEnquiryHistory.
-    const enquiriesInView = sorted.map((conversation) => conversation.enquiry).filter(Boolean)
-    const visibleEnquiryIds = new Set(filterVisibleEnquiryHistory(enquiriesInView, tenantPlan).map((enquiry) => enquiry.id))
-    return sorted.filter((conversation) => !conversation.enquiry || visibleEnquiryIds.has(conversation.enquiry.id))
-  }, [conversations, role, tenantPlan])
+  const [undoToast, setUndoToast] = useState(null)
+
+  const sortedConversations = useMemo(
+    () =>
+      conversations
+        .filter((conversation) => !conversation.archived)
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [conversations],
+  )
 
   if (conversationId) {
     const conversation = conversations.find((item) => item.id === conversationId)
@@ -54,16 +52,11 @@ export default function Messages() {
         </div>
       )
     }
-    return <ChatThread conversation={conversation} role={role} />
+    return <ChatThread key={conversation.id} conversation={conversation} role={role} />
   }
 
-  const archiveToast = toast?.action === 'undo-archive' ? (
-    <ArchiveUndoToast
-      conversationId={toast.conversationId}
-      message={toast.message}
-      onDismiss={dismissToast}
-      onUndo={unarchiveConversation}
-    />
+  const archiveToast = undoToast ? (
+    <ArchiveUndoToast conversationId={undoToast.conversationId} onDismiss={() => setUndoToast(null)} onUndo={() => setUndoToast(null)} />
   ) : null
 
   if (!sortedConversations.length) {
@@ -87,57 +80,53 @@ export default function Messages() {
       <section className="card-surface card-shadow rounded-[28px] p-5">
         <p className="text-sm font-semibold text-emerald-600">Messages</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Conversations</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Enquiries, landlord replies and viewing updates in one place.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Enquiries and landlord replies in one place.</p>
       </section>
 
       <section className="space-y-3">
-        {sortedConversations.map((conversation) => {
-          return (
-            <ConversationListRow
-              key={conversation.id}
-              conversation={conversation}
-              role={role}
-              onOpen={() => navigate(`/messages/${conversation.id}`)}
-            />
-          )
-        })}
+        {sortedConversations.map((conversation) => (
+          <ConversationListRow
+            key={conversation.id}
+            conversation={conversation}
+            role={role}
+            onOpen={() => navigate(`/messages/${conversation.id}`)}
+            onArchived={() => setUndoToast({ conversationId: conversation.id })}
+          />
+        ))}
       </section>
     </div>
   )
 }
 
-function ArchiveUndoToast({ conversationId, message, onDismiss, onUndo }) {
+function ArchiveUndoToast({ conversationId, onDismiss, onUndo }) {
+  const { setArchived } = useMessaging()
   return (
     <div className="toast-enter rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm shadow-soft">
       <div className="flex items-center justify-between gap-3">
-        <span className="font-medium text-slate-700">{message}</span>
+        <span className="font-medium text-slate-700">Conversation archived.</span>
         <button
           type="button"
           className="min-h-10 rounded-full px-3 text-sm font-semibold text-indigo-900 hover:bg-indigo-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
-          onClick={() => {
-            onUndo(conversationId)
-            onDismiss()
+          onClick={async () => {
+            await setArchived(conversationId, false)
+            onUndo()
           }}
         >
           Undo
         </button>
+        <button type="button" className="sr-only" onClick={onDismiss}>Dismiss</button>
       </div>
     </div>
   )
 }
 
-function ConversationListRow({ conversation, onOpen, role }) {
-  const { archiveConversation } = useAppState()
+function ConversationListRow({ conversation, onOpen, role, onArchived }) {
+  const { setArchived } = useMessaging()
   const [offset, setOffset] = useState(0)
   const start = useRef(null)
-  const property = conversation.property
-  const lastMessage = conversation.messages[conversation.messages.length - 1] || {
-    sender: '',
-    body: 'No messages yet.',
-    createdAt: conversation.updatedAt || conversation.createdAt,
-  }
-  const hasUnread = conversation.unreadFor === role
-  const statusChip = getConversationStatusChip(conversation)
+  const listing = conversation.listing
+  const lastMessage = conversation.lastMessage
+  const waiting = isTenantWaitingForLandlordReply(conversation)
   const revealed = offset < -64
 
   const handlePointerDown = (event) => {
@@ -162,16 +151,21 @@ function ConversationListRow({ conversation, onOpen, role }) {
     start.current = null
   }
 
+  const archive = () => {
+    setArchived(conversation.id, true)
+    onArchived()
+  }
+
   return (
     <div className="relative overflow-hidden rounded-[24px]">
       <div className={`absolute inset-y-0 right-0 z-10 flex items-center pr-2 transition-opacity md:hidden ${revealed ? 'opacity-100' : 'opacity-0'}`}>
-        <Button variant="secondary" className="min-h-10 bg-white text-rose-700" onClick={() => archiveConversation(conversation.id)}>
+        <Button variant="secondary" className="min-h-10 bg-white text-rose-700" onClick={archive}>
           Archive
         </Button>
       </div>
       <article
         className={`card-surface card-shadow flex w-full items-center gap-3 rounded-[24px] p-3 text-left transition duration-200 hover:-translate-y-0.5 ${
-          hasUnread ? 'border-indigo-200 bg-white' : ''
+          conversation.unread ? 'border-indigo-200 bg-white' : ''
         }`}
         style={{ transform: `translateX(${offset}px)` }}
         onPointerDown={handlePointerDown}
@@ -191,33 +185,36 @@ function ConversationListRow({ conversation, onOpen, role }) {
           className="flex min-w-0 flex-1 items-center gap-3 text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
         >
           <div className="h-18 w-18 shrink-0 overflow-hidden rounded-[18px] bg-slate-100">
-            <ThumbnailImage src={property.images[0]} />
+            <ThumbnailImage src={listing?.images?.[0]} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <h2 className={`truncate text-base text-slate-950 ${hasUnread ? 'font-bold' : 'font-semibold'}`}>{property.title}</h2>
+                <h2 className={`truncate text-base text-slate-950 ${conversation.unread ? 'font-bold' : 'font-semibold'}`}>
+                  {listing?.title || 'Listing no longer available'}
+                </h2>
                 <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                  {property.area} · {formatCurrency(property.rent)}/mo
+                  {conversation.counterpart.displayName || (role === 'landlord' ? 'Tenant' : 'Landlord')}
+                  {listing ? ` · ${listing.area} · ${formatCurrency(listing.rent)}/mo` : ''}
                 </p>
               </div>
-              <span className="shrink-0 text-xs font-medium text-slate-400">{formatMessageTime(lastMessage.createdAt)}</span>
+              <span className="shrink-0 text-xs font-medium text-slate-400">{formatMessageTime(lastMessage?.createdAt)}</span>
             </div>
             <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-600">
-              {lastMessage.sender === role ? 'You: ' : ''}
-              {lastMessage.body}
+              {lastMessage?.isOutgoing ? 'You: ' : ''}
+              {lastMessage?.body || 'No messages yet.'}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {hasUnread ? <span className="h-2 w-2 rounded-full bg-indigo-950" aria-label="Unread conversation" /> : null}
-              {statusChip ? (
-                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                  {statusChip}
-                </span>
+              {conversation.unread ? <span className="h-2 w-2 rounded-full bg-indigo-950" aria-label="Unread conversation" /> : null}
+              {conversation.blockedByMe ? (
+                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">Blocked</span>
+              ) : waiting ? (
+                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">Awaiting reply</span>
               ) : null}
             </div>
           </div>
         </button>
-        <ConversationRowMenu conversation={conversation} />
+        <ConversationRowMenu conversation={conversation} onArchive={archive} />
       </article>
     </div>
   )
@@ -225,34 +222,27 @@ function ConversationListRow({ conversation, onOpen, role }) {
 
 function ChatThread({ conversation, role }) {
   const navigate = useNavigate()
-  const {
-    archiveConversation,
-    blockConversation,
-    chooseViewing,
-    markConversationRead,
-    muteConversation,
-    proposeViewing,
-    reportConversation,
-    sendMessage,
-  } = useAppState()
+  const { blockUser, markRead, setArchived, setMuted, sendMessage, unblockUser } = useMessaging()
   const [draftMessage, setDraftMessage] = useState('')
+  const [sendPending, setSendPending] = useState(false)
+  const [sendError, setSendError] = useState('')
   const bodyRef = useRef(null)
   const textareaRef = useRef(null)
-  const property = conversation.property
-  const enquiry = conversation.enquiry
-  const viewingStatus = enquiry?.viewing?.status
-  const messagingBlocked = Boolean(conversation.blockedBy)
-  const conversationClosed = isClosedStatus(enquiry?.status)
-  const tenantWaitingForLandlord = role === 'tenant' && !messagingBlocked && !conversationClosed && !canCurrentRoleMessage(conversation, role)
-  const composerDisabled = tenantWaitingForLandlord || messagingBlocked || conversationClosed
+  const waiting = isTenantWaitingForLandlordReply(conversation)
+  const composerDisabled = waiting || conversation.blockedByMe || sendPending
 
   useEffect(() => {
     resizeComposer(textareaRef.current)
   }, [draftMessage])
 
   useEffect(() => {
-    markConversationRead(conversation.id)
-  }, [conversation.id, markConversationRead])
+    if (!conversation.unread) return
+    markRead(conversation.id)
+    // conversation.unread is intentionally excluded: it flips to false as soon as this fires and
+    // refreshMessaging() completes, which must not immediately re-trigger this same effect — the
+    // dependency on conversation.id alone is what makes this fire once per thread visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id, markRead])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -260,17 +250,25 @@ function ChatThread({ conversation, role }) {
     window.requestAnimationFrame(() => {
       body.scrollTop = body.scrollHeight
     })
-  }, [conversation.id, conversation.messages.length, viewingStatus])
+  }, [conversation.id, conversation.messages.length])
 
-  const archiveAndReturn = () => {
-    archiveConversation(conversation.id)
+  const archiveAndReturn = async () => {
+    await setArchived(conversation.id, true)
     navigate('/messages', { replace: true })
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
-    if (!draftMessage.trim() || composerDisabled) return
-    sendMessage(conversation.id, draftMessage)
+    const body = sanitizeMessageBody(draftMessage)
+    if (!body || composerDisabled) return
+    setSendPending(true)
+    setSendError('')
+    const { error } = await sendMessage(conversation.id, body)
+    setSendPending(false)
+    if (error) {
+      setSendError(error)
+      return
+    }
     setDraftMessage('')
     window.requestAnimationFrame(() => resizeComposer(textareaRef.current))
   }
@@ -296,54 +294,28 @@ function ChatThread({ conversation, role }) {
         conversation={conversation}
         onArchive={archiveAndReturn}
         onBack={() => navigate('/messages')}
-        onBlock={() => blockConversation(conversation.id)}
-        onMute={() => muteConversation(conversation.id)}
-        onReport={(reason) => reportConversation(conversation.id, reason)}
+        onBlock={() => blockUser(conversation.counterpartId)}
+        onUnblock={() => unblockUser(conversation.counterpartId)}
+        onMute={() => setMuted(conversation.id, !conversation.muted)}
       />
 
       <section ref={bodyRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-1 pb-4 pt-3">
-        {enquiry ? <ApplicationStatus enquiry={enquiry} compact /> : null}
-
-        {viewingStatus === 'viewing proposed' ? (
-          <ViewingProposedCard
-            enquiry={enquiry}
-            canChoose={role === 'tenant'}
-            onChoose={(slotId) => chooseViewing(enquiry.id, slotId)}
-          />
-        ) : null}
-
-        {viewingStatus === 'viewing confirmed' ? (
-          <ViewingConfirmedCard property={property} selectedSlot={enquiry.viewing.selectedSlot} />
-        ) : null}
-
-        {role === 'landlord' && enquiry ? (
-          <LandlordViewingCard
-            onArchive={archiveAndReturn}
-            onPropose={(slots) => proposeViewing(enquiry.id, slots)}
-          />
-        ) : null}
-
         <div className="space-y-2.5">
           {conversation.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} isOutgoing={message.sender === role} />
+            <MessageBubble key={message.id} message={message} />
           ))}
         </div>
       </section>
 
-      {tenantWaitingForLandlord ? (
+      {waiting ? (
         <LockedComposerState
           title="Waiting for the landlord to reply"
-          description="Your enquiry has been sent. You can continue once the landlord replies or engages with your application."
+          description="Your message has been sent. You can send another once the landlord replies."
         />
-      ) : messagingBlocked ? (
+      ) : conversation.blockedByMe ? (
         <LockedComposerState
-          title="Messaging blocked"
-          description="Conversation history is still available, but new messages are disabled."
-        />
-      ) : conversationClosed ? (
-        <LockedComposerState
-          title="Conversation closed"
-          description="This application is closed. The message history remains available."
+          title="You blocked this user"
+          description="Conversation history is still available, but new messages are disabled until you unblock them."
         />
       ) : (
         <div className="-mx-4 shrink-0 md:mx-0">
@@ -361,6 +333,7 @@ function ChatThread({ conversation, role }) {
               ))}
             </div>
           ) : null}
+          {sendError ? <p className="px-4 pb-1 text-sm font-medium text-rose-600 md:px-0">{sendError}</p> : null}
           <form
             id="message-composer"
             onSubmit={handleSubmit}
@@ -373,6 +346,7 @@ function ChatThread({ conversation, role }) {
                 value={draftMessage}
                 onChange={(event) => {
                   setDraftMessage(event.target.value)
+                  setSendError('')
                   resizeComposer(event.target)
                 }}
                 onKeyDown={handleComposerKeyDown}
@@ -396,9 +370,8 @@ function ChatThread({ conversation, role }) {
   )
 }
 
-function CompactPropertyHeader({ conversation, onArchive, onBack, onBlock, onMute, onReport }) {
-  const property = conversation.property
-  const enquiry = conversation.enquiry
+function CompactPropertyHeader({ conversation, onArchive, onBack, onBlock, onMute, onUnblock }) {
+  const listing = conversation.listing
 
   return (
     <section className="card-surface card-shadow z-30 shrink-0 overflow-visible rounded-[22px]">
@@ -412,30 +385,17 @@ function CompactPropertyHeader({ conversation, onArchive, onBack, onBlock, onMut
           ‹
         </button>
         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-[16px] bg-slate-100">
-          <ThumbnailImage src={property.images[0]} />
+          <ThumbnailImage src={listing?.images?.[0]} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="truncate text-sm font-semibold text-slate-950">{property.title}</h1>
-            <MatchBadge score={property.match.score} compact />
-          </div>
+          <h1 className="truncate text-sm font-semibold text-slate-950">{listing?.title || 'Listing no longer available'}</h1>
           <p className="mt-1 truncate text-xs font-medium text-slate-500">
-            {property.area} · {formatCurrency(property.rent)}/mo
+            {conversation.counterpart.displayName || 'Gafflo user'}
+            {listing ? ` · ${listing.area} · ${formatCurrency(listing.rent)}/mo` : ''}
           </p>
         </div>
-        <ConversationSafetyMenu
-          conversation={conversation}
-          onArchive={onArchive}
-          onBlock={onBlock}
-          onMute={onMute}
-          onReport={onReport}
-        />
+        <ConversationSafetyMenu conversation={conversation} onArchive={onArchive} onBlock={onBlock} onMute={onMute} onUnblock={onUnblock} />
       </div>
-      {enquiry ? (
-        <div className="border-t border-slate-100 px-4 py-2.5">
-          <span className="text-xs font-semibold text-slate-500">{enquiry.statusLabel}</span>
-        </div>
-      ) : null}
     </section>
   )
 }
@@ -451,123 +411,47 @@ function LockedComposerState({ description, title }) {
   )
 }
 
-function MessageBubble({ message, isOutgoing }) {
+function MessageBubble({ message }) {
   return (
-    <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex ${message.isOutgoing ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[82%] rounded-[22px] px-4 py-3 ${
-          isOutgoing
+          message.isOutgoing
             ? 'rounded-br-md bg-indigo-950 text-white'
             : 'rounded-bl-md border border-slate-100 bg-white text-slate-700 shadow-soft'
         }`}
       >
         <p className="whitespace-pre-wrap break-words text-sm leading-6 [overflow-wrap:anywhere]">{message.body}</p>
-        <p className={`mt-1 text-[11px] font-medium ${isOutgoing ? 'text-indigo-100' : 'text-slate-400'}`}>
+        <p className={`mt-1 text-[11px] font-medium ${message.isOutgoing ? 'text-indigo-100' : 'text-slate-400'}`}>
           {formatMessageTime(message.createdAt)}
-          {isOutgoing ? ' · Sent' : ''}
+          {message.isOutgoing ? ' · Sent' : ''}
         </p>
       </div>
     </div>
   )
 }
 
-function ViewingProposedCard({ enquiry, canChoose, onChoose }) {
-  const [isConfirming, setIsConfirming] = useState(false)
+function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onUnblock }) {
+  const [confirmBlock, setConfirmBlock] = useState(false)
+  const [reportReason, setReportReason] = useState('')
+  const [reports, setReports] = useState(() => getConversationReports())
+  const reported = Boolean(reports[conversation.id])
 
-  return (
-    <StatusCard tone="neutral" title="Viewing proposed">
-      <p className="text-sm leading-6 text-slate-600">
-        Choose a time that works. The viewing will be confirmed in this conversation.
-      </p>
-      {canChoose ? (
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {enquiry.viewing.proposedSlots.map((slot) => (
-            <Button
-              key={slot.id}
-              variant="secondary"
-              className="bg-white"
-              disabled={isConfirming}
-              onClick={() => {
-                setIsConfirming(true)
-                onChoose(slot.id)
-              }}
-            >
-              {slot.label}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {enquiry.viewing.proposedSlots.map((slot) => (
-            <span key={slot.id} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-soft">
-              {slot.label}
-            </span>
-          ))}
-        </div>
-      )}
-    </StatusCard>
-  )
-}
-
-function ViewingConfirmedCard({ property, selectedSlot }) {
-  return (
-    <StatusCard tone="success" title="Viewing confirmed">
-      <p className="text-sm leading-6 text-emerald-900">
-        {selectedSlot?.label || 'Time to confirm'} · {property.area}
-      </p>
-      <p className="mt-1 text-sm leading-6 text-emerald-800">Keep this conversation open for any access details or timing changes.</p>
-    </StatusCard>
-  )
-}
-
-function LandlordViewingCard({ onArchive, onPropose }) {
-  const [confirmArchive, setConfirmArchive] = useState(false)
-  const [isProposing, setIsProposing] = useState(false)
-
-  const proposeOnce = (slots) => {
-    if (isProposing) return
-    setIsProposing(true)
-    onPropose(slots)
-    window.setTimeout(() => setIsProposing(false), 250)
+  const saveReport = () => {
+    if (!reportReason) return
+    const next = { ...reports, [conversation.id]: { reason: reportReason, reportedAt: new Date().toISOString() } }
+    setConversationReports(next)
+    setReports(next)
   }
 
   return (
-    <StatusCard tone="plain" title="Arrange viewing">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Button variant="secondary" className="bg-white" disabled={isProposing} onClick={() => proposeOnce(getFutureViewingSlots())}>
-          Next available
-        </Button>
-        <Button variant="secondary" className="bg-white" disabled={isProposing} onClick={() => proposeOnce(getFutureViewingSlots(new Date(Date.now() + 2 * 86400000)))}>
-          Later times
-        </Button>
-      </div>
-      {confirmArchive ? (
-        <div className="mt-3 rounded-[18px] border border-amber-100 bg-amber-50 px-3 py-3">
-          <p className="text-sm font-semibold text-amber-950">Archive this conversation?</p>
-          <p className="mt-1 text-sm leading-6 text-amber-800">It will leave the active message list.</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Button variant="secondary" className="bg-white" onClick={() => setConfirmArchive(false)}>Keep</Button>
-            <Button variant="dark" onClick={onArchive}>Archive</Button>
-          </div>
-        </div>
-      ) : (
-        <Button variant="secondary" className="mt-3 min-h-11 bg-white text-slate-600" onClick={() => setConfirmArchive(true)}>
-          Archive conversation
-        </Button>
-      )}
-    </StatusCard>
-  )
-}
-
-function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onReport }) {
-  const [confirmBlock, setConfirmBlock] = useState(false)
-  const [reportReason, setReportReason] = useState('')
-  const reported = Boolean(conversation.reported)
-
-  return (
     <details className="group relative shrink-0">
-      <summary className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-xl font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
-        <span aria-label="Conversation actions">•••</span>
+      <summary
+        role="button"
+        aria-label="Conversation actions"
+        className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-xl font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+      >
+        <span aria-hidden="true">•••</span>
       </summary>
       <div className="absolute right-0 top-12 z-40 grid min-w-[16rem] gap-2 rounded-[22px] border border-slate-200 bg-white p-2 shadow-soft">
         <Button variant="secondary" className="justify-start text-slate-600" onClick={onMute}>
@@ -588,7 +472,7 @@ function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onRe
             <option value="Payment request outside Gafflo">Payment request outside Gafflo</option>
           </select>
         </label>
-        <Button variant="secondary" className="justify-start text-slate-600" disabled={reported || !reportReason} onClick={() => onReport(reportReason)}>
+        <Button variant="secondary" className="justify-start text-slate-600" disabled={reported || !reportReason} onClick={saveReport}>
           {reported ? 'Saved locally' : 'Save local report'}
         </Button>
         {confirmBlock ? (
@@ -597,12 +481,16 @@ function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onRe
             <p className="mt-1 text-sm leading-6 text-amber-800">Messaging will stop, but the conversation history stays visible.</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Button variant="secondary" className="bg-white" onClick={() => setConfirmBlock(false)}>Cancel</Button>
-              <Button variant="dark" disabled={Boolean(conversation.blockedBy)} onClick={onBlock}>Block</Button>
+              <Button variant="dark" onClick={() => { onBlock(); setConfirmBlock(false) }}>Block</Button>
             </div>
           </div>
         ) : (
-          <Button variant="secondary" className="justify-start text-slate-600" disabled={Boolean(conversation.blockedBy)} onClick={() => setConfirmBlock(true)}>
-            {conversation.blockedBy ? 'Blocked' : 'Block user'}
+          <Button
+            variant="secondary"
+            className="justify-start text-slate-600"
+            onClick={() => (conversation.blockedByMe ? onUnblock() : setConfirmBlock(true))}
+          >
+            {conversation.blockedByMe ? 'Unblock user' : 'Block user'}
           </Button>
         )}
       </div>
@@ -610,67 +498,24 @@ function ConversationSafetyMenu({ conversation, onArchive, onBlock, onMute, onRe
   )
 }
 
-function ConversationRowMenu({ conversation }) {
-  const { archiveConversation } = useAppState()
-
+function ConversationRowMenu({ onArchive }) {
   return (
     <div className="relative hidden shrink-0 md:block">
       <details className="relative">
-        <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full text-lg font-semibold text-slate-500 hover:bg-slate-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100">
-          <span aria-label="Conversation actions">•••</span>
+        <summary
+          role="button"
+          aria-label="Conversation actions"
+          className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full text-lg font-semibold text-slate-500 hover:bg-slate-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+        >
+          <span aria-hidden="true">•••</span>
         </summary>
         <div className="absolute right-0 top-11 z-10 w-36 rounded-[18px] border border-slate-200 bg-white p-2 shadow-soft">
-          <Button variant="secondary" className="min-h-10 w-full justify-start text-slate-600" onClick={() => archiveConversation(conversation.id)}>
+          <Button variant="secondary" className="min-h-10 w-full justify-start text-slate-600" onClick={onArchive}>
             Archive
           </Button>
         </div>
       </details>
     </div>
-  )
-}
-
-function canCurrentRoleMessage(conversation, role) {
-  if (conversation.blockedBy) return false
-  if (role === 'landlord') return true
-  const enquiry = conversation.enquiry
-  if (!enquiry) return true
-  if (isClosedStatus(enquiry.status)) return false
-  const landlordReplied = conversation.messages.some((message) => message.sender === 'landlord')
-  return landlordReplied || isLandlordEngagedStatus(enquiry.status)
-}
-
-function getConversationStatusChip(conversation) {
-  if (conversation.blockedBy) return 'Blocked'
-  if (conversation.enquiry?.viewing?.status === 'viewing confirmed') return `Viewing ${conversation.enquiry.viewing.selectedSlot?.label || 'confirmed'}`
-  if (conversation.enquiry?.viewing?.status === 'viewing proposed') return 'Viewing proposed'
-  if (!canCurrentRoleMessage(conversation, 'tenant')) return 'Awaiting reply'
-  return conversation.enquiry?.statusLabel || ''
-}
-
-function StatusCard({ children, title, tone }) {
-  const tones = {
-    success: 'border-emerald-100 bg-emerald-50/85 text-emerald-950',
-    neutral: 'border-indigo-100 bg-indigo-50/65 text-slate-950',
-    plain: 'border-slate-200 bg-white text-slate-950',
-  }
-
-  return (
-    <article className={`rounded-[22px] border px-4 py-3 ${tones[tone]}`}>
-      <div className="flex items-start gap-3">
-        <span
-          className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-            tone === 'success' ? 'bg-emerald-600 text-white' : 'bg-indigo-950 text-white'
-          }`}
-          aria-hidden="true"
-        >
-          {tone === 'success' ? '✓' : '•'}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <div className="mt-1">{children}</div>
-        </div>
-      </div>
-    </article>
   )
 }
 
@@ -684,6 +529,7 @@ function resizeComposer(textarea) {
 }
 
 function formatMessageTime(value) {
+  if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
 
@@ -697,7 +543,7 @@ function ThumbnailImage({ src }) {
   const [isLoaded, setIsLoaded] = useState(false)
   const [hasFailed, setHasFailed] = useState(false)
 
-  if (hasFailed) {
+  if (hasFailed || !src) {
     return <div className="h-full w-full bg-slate-200" />
   }
 

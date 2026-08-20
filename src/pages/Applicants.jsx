@@ -13,6 +13,7 @@ import { filterApplicantsByProperty, getValidApplicantPropertyId } from '../conf
 import { isRoomListing } from '../config/listingCategories'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
+import useMessaging from '../context/useMessaging'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
@@ -21,6 +22,7 @@ export default function Applicants() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { landlordProperties } = useAppState()
   const { landlordApplications, markViewed, setApplicationStatus } = useApplications()
+  const { getConversationForListingAndTenant } = useMessaging()
   const [activePipeline, setActivePipeline] = useState('new')
   const [confirmRejectId, setConfirmRejectId] = useState(null)
   const activePropertyId = getValidApplicantPropertyId(searchParams.get('property'), landlordProperties)
@@ -136,6 +138,10 @@ export default function Applicants() {
               const docsReady = [tenant.referencesReady, tenant.incomeReady, tenant.idReady].filter(Boolean).length
               const isMutual = isLandlordEngagedApplicationStatus(application.status)
               const actions = getLandlordApplicationActions(application.status)
+              // Only a tenant can start a conversation (start_conversation() requires the
+              // caller to have a tenant_profiles row) — so this only ever opens an existing real
+              // thread, never creates one on the landlord's behalf.
+              const conversation = getConversationForListingAndTenant(application.propertyId, application.tenantId)
               const handleStatusChange = (status) => {
                 if (status === 'not_selected') {
                   setConfirmRejectId(application.id)
@@ -179,6 +185,12 @@ export default function Applicants() {
                       ))}
                     </ul>
                   </div>
+
+                  {conversation ? (
+                    <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate(`/messages/${conversation.id}`)}>
+                      Open conversation
+                    </Button>
+                  ) : null}
 
                   {!actions.length ? (
                     <p className="mt-4 rounded-[18px] bg-slate-50 px-4 py-3 text-sm text-slate-500">

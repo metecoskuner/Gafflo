@@ -2,9 +2,8 @@ const KEYS = {
   saved: 'gafflo.saved-properties',
   dismissed: 'gafflo.dismissed-properties',
   smartMatchActivity: 'gafflo.smart-match-activity',
-  enquiries: 'gafflo.enquiries',
-  conversations: 'gafflo.conversations',
   propertyReports: 'gafflo.property-reports',
+  conversationReports: 'gafflo.conversation-reports',
   tenantPlan: 'gafflo.tenant-plan',
   landlordPlan: 'gafflo.landlord-plan',
 }
@@ -12,7 +11,6 @@ const KEYS = {
 const LEGACY_KEYS = {
   saved: 'gaffly.saved-rooms',
   dismissed: 'gaffly.reviewed-rooms',
-  conversations: 'gaffly.conversations',
 }
 
 function getJson(key, fallback, legacyKey) {
@@ -52,22 +50,6 @@ export function setSmartMatchActivity(activity) {
   setJson(KEYS.smartMatchActivity, activity)
 }
 
-export function getEnquiries() {
-  return getJson(KEYS.enquiries, [])
-}
-
-export function setEnquiries(enquiries) {
-  setJson(KEYS.enquiries, enquiries)
-}
-
-export function getConversations() {
-  return getJson(KEYS.conversations, [], LEGACY_KEYS.conversations)
-}
-
-export function setConversations(conversations) {
-  setJson(KEYS.conversations, conversations)
-}
-
 // Stage C: local-only safety annotations (see MarketplaceState.jsx's reportListing) keyed by
 // listing id — never the listing data itself, which now lives in real Supabase (see
 // ListingsProvider). Deliberately never reads the retired gafflo.properties/gaffly.created-
@@ -79,6 +61,19 @@ export function getPropertyReports() {
 
 export function setPropertyReports(reports) {
   setJson(KEYS.propertyReports, reports)
+}
+
+// Stage E: same pattern as property reports above, but for conversations — a local-only safety
+// annotation keyed by real conversation id, never conversation/message data itself (which is
+// 100% Supabase-backed — see MessagingProvider). Report is not part of the real messaging
+// backend contract; this stays honestly device-local, matching the existing "Report saved
+// locally on this device" copy already established for property reports.
+export function getConversationReports() {
+  return getJson(KEYS.conversationReports, {})
+}
+
+export function setConversationReports(reports) {
+  setJson(KEYS.conversationReports, reports)
 }
 
 // Local-only plan state for this prototype. No purchase flow sets these yet — they exist so

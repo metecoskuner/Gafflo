@@ -343,7 +343,7 @@ test('property details open, scroll, close, and keep 390px geometry stable', asy
 })
 
 test('tenant enquiry opens messages with waiting composer and blocks second unsolicited message', async ({ page }) => {
-  test.skip(true, "Stage D skip audit: this is Stage E Messaging (composer/duplicate-message-guard), not Stage D Applications — deliberately not re-enabled. Still moderator-blocked as originally noted, but now doubly so: Stage D removed the 'click Interested -> auto-navigate to /messages/conversation-...' mechanic this test depends on entirely (PropertyDetailsModal's Apply button no longer creates or opens a conversation — see the Stage D report's application/messaging decoupling section), so even a moderator credential would not make this exact test valid again as written. It will need a real Stage E rewrite, not a moderator credential.")
+  test.skip(true, "Stage E skip audit: retired as obsolete, replaced by real-backend coverage. This test's exact mechanic ('Interested' auto-navigating into a mock conversation) no longer exists — PropertyDetailsModal's real 'Message landlord' CTA (added in Stage E) is a separate, explicit action, and the canonical claim this test protects (tenant sends one message, composer locks to 'Waiting for the landlord to reply', a forced second send is rejected by the real backend) is now covered for real against a real published listing in e2e/messaging.spec.js's 'tenant starts a real conversation through the UI' test. See the Stage E final report.")
   await seedState(page, { enquiries: [], conversations: [] })
   await page.goto('/discover')
   await page.getByRole('button', { name: /^Open (?!filters)/ }).first().click()
@@ -611,7 +611,7 @@ test('availability confirmation timestamp only refreshes when availableFrom actu
 })
 
 test('legacy sender labels do not bypass the duplicate message guard', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage E skip audit: retired as obsolete, not replaced. This tested messagingRules.js's hasDuplicateRecentMessage — a client-side text/time duplicate-send heuristic for the mock conversation domain, deleted in Stage E along with the mock domain itself. Real messaging deliberately does not reimplement this: the Stage E task explicitly requires using the backend's own client_message_id idempotency mechanism instead of 'a custom duplicate-message heuristic based on text/time' (see send_message()'s client_message_id handling in the Stage E migration and context/MessagingProvider.jsx). There is nothing equivalent left in the app for this specific test to exercise. See the Stage E final report.")
   const now = new Date().toISOString()
   const legacyConversation = {
     id: 'conversation-legacy-duplicate',
@@ -651,7 +651,7 @@ test('legacy sender labels do not bypass the duplicate message guard', async ({ 
 })
 
 test('messages inbox only shows conversations for the current role and identity', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage E skip audit: retired as obsolete, replaced by real-backend coverage. Messages.jsx no longer reads gafflo.conversations at all (Stage E made real Supabase the sole source — see the Stage E report's localStorage retirement section), so seedState's mock conversations fixture here is now completely inert. The real underlying claim (a conversation is only ever visible to its two real participants) is covered for real by e2e/messaging.spec.js's 'a tenant cannot read another tenant's conversation' and 'an unrelated landlord cannot read or reply' tests, which exercise real cross-user RLS instead of a mock seed.")
   const now = new Date().toISOString()
   const ownConversation = {
     id: 'conversation-own',
@@ -685,7 +685,7 @@ test('messages inbox only shows conversations for the current role and identity'
 })
 
 test('Free tenants lose old closed enquiry history after 30 days, Gafflo+ tenants keep it', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage E skip audit: retired as obsolete by deliberate product decision, not replaced. Stage E does not wire entitlements.filterVisibleEnquiryHistory into the real inbox: real conversations have no 'closed' concept at the conversation level (that was derived from the retired mock enquiry.status), and extending application-style status into what's even visible in the inbox would reintroduce exactly the application/messaging coupling the Stage E task prohibits. filterVisibleEnquiryHistory/canSendPremiumFollowUp remain defined in config/entitlements.js (dormant, not called from any real path — Gafflo+ follow-up after 48h is explicitly out of scope for Stage E) but the real Messages.jsx now shows every real conversation regardless of tenantPlan. See the Stage E final report.")
   const oldTimestamp = '2020-01-01T00:00:00.000Z'
   const oldClosedConversation = {
     id: 'conversation-old-closed',
@@ -1099,7 +1099,7 @@ test('while launch access is enabled, heavy Smart Match usage never forces a pay
 })
 
 test('landlord quick replies insert text into the composer but never send automatically', async ({ page }) => {
-  test.skip(true, "Stage C: blocked — needs a moderator-approved published/paused/rented real listing. This environment has no moderator test credential (by design: the listings.status column grant excludes authenticated entirely, and moderator_* RPCs require platform_role='moderator', which no test identity has or can self-assign). See the Stage C final report.")
+  test.skip(true, "Stage E skip audit: confirmed Stage E Messaging territory, still genuinely blocked. The mock conversation fixture this test seeds is now inert (Messages.jsx is 100% real-backed), and the real replacement needs a landlord identity this suite controls to both own a published listing AND have a real applicant conversation on it — live investigation during Stage D already confirmed no such identity/listing combination exists in gafflo-dev (see e2e/applications.spec.js's file header for the same underlying constraint). The behavior itself (quick-reply chips only ever populate the composer draft via insertQuickReply(), Send stays an explicit separate action) is preserved verbatim in the real src/pages/Messages.jsx implementation, verified by direct code inspection — see the Stage E final report.")
   await page.setViewportSize(viewport390)
   const now = new Date().toISOString()
   const conversation = {

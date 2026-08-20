@@ -17,6 +17,7 @@ import { ApplicationsProvider } from './context/ApplicationsProvider'
 import { AuthProvider } from './context/AuthProvider'
 import { AccountProfileProvider } from './context/AccountProfileProvider'
 import { ListingsProvider } from './context/ListingsProvider'
+import { MessagingProvider } from './context/MessagingProvider'
 import useAccountProfile from './context/useAccountProfile'
 import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
@@ -217,9 +218,11 @@ export default function App() {
           <ProfileGate>
             <ListingsProvider>
               <ApplicationsProvider>
-                <AppStateProvider>
-                  <AppLayout />
-                </AppStateProvider>
+                <MessagingProvider>
+                  <AppStateProvider>
+                    <AppLayout />
+                  </AppStateProvider>
+                </MessagingProvider>
               </ApplicationsProvider>
             </ListingsProvider>
           </ProfileGate>

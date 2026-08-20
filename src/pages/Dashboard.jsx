@@ -6,6 +6,7 @@ import { hasCoreMatchFacts } from '../config/rentalJourney'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
+import useMessaging from '../context/useMessaging'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/dateUtils'
 
@@ -84,7 +85,9 @@ function TenantDashboard() {
 function LandlordDashboard() {
   const navigate = useNavigate()
   const { landlordApplications } = useApplications()
+  const { conversations } = useMessaging()
   const newInterest = landlordApplications.filter((application) => application.status === 'sent').length
+  const unreadMessages = conversations.filter((conversation) => conversation.unread).length
 
   return (
     <div className="space-y-5">
@@ -105,22 +108,25 @@ function LandlordDashboard() {
 
       <AttentionSummary
         newInterest={newInterest}
+        unreadMessages={unreadMessages}
         onReviewApplicants={() => navigate('/applicants')}
+        onOpenMessages={() => navigate('/messages')}
       />
     </div>
   )
 }
 
-// Viewings and unread-conversation count deliberately have no entry here: neither is integrated
-// yet (Viewings is Stage F, Messaging is Stage E), and a landlord applicant count is now real
-// (Stage D) — showing either alongside it, even correctly computed from real local mock state,
-// would make the dashboard look fully server-backed when it isn't. See the Stage D pre-merge
-// audit report for why both were removed rather than kept as a hidden-until-nonzero branch: that
-// would still be blending a mock count into a real-data surface, just invisibly at zero.
-function AttentionSummary({ newInterest, onReviewApplicants }) {
+// Viewings deliberately has no entry here: it is not integrated yet (Stage F). Unread messages
+// is real again as of Stage E (context/MessagingProvider), so it's back — see the Stage D
+// pre-merge audit report for why it was removed when it was still mock-conversation-derived, and
+// the Stage E final report for why real messaging data makes it honest to restore.
+function AttentionSummary({ newInterest, unreadMessages, onReviewApplicants, onOpenMessages }) {
   const items = [
     newInterest > 0
       ? { key: 'applicants', label: `${newInterest} new applicant${newInterest === 1 ? '' : 's'}`, onClick: onReviewApplicants }
+      : null,
+    unreadMessages > 0
+      ? { key: 'messages', label: `${unreadMessages} unread conversation${unreadMessages === 1 ? '' : 's'}`, onClick: onOpenMessages }
       : null,
   ].filter(Boolean)
 
