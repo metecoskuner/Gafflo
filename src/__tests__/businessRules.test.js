@@ -14,6 +14,12 @@ import {
 } from '../config/engagementAdapter'
 import { describeEngagementError } from '../config/engagementErrors'
 import {
+  filterUnreadNotifications,
+  getNotificationRoute,
+  getUnreadCount,
+  mapNotificationRowToNotification,
+} from '../config/notificationAdapter'
+import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
   getApplicationStatusInfo,
@@ -1222,5 +1228,93 @@ describe('Stage G — saved/Smart Match error normalization', () => {
     const fallback = 'Something went wrong. Please try again.'
     expect(describeEngagementError({ code: '42501', message: 'permission denied for table saved_listings' })).toBe(fallback)
     expect(describeEngagementError(null)).toBe(fallback)
+  })
+})
+
+describe('Stage H — notification adapter mapping', () => {
+  const unreadRow = {
+    id: 'notif-1',
+    type: 'new_application',
+    title: 'New application received',
+    body: null,
+    listing_id: 'listing-1',
+    application_id: 'app-1',
+    conversation_id: null,
+    viewing_proposal_id: null,
+    read_at: null,
+    created_at: '2030-01-01T00:00:00.000Z',
+  }
+  const readRow = {
+    ...unreadRow,
+    id: 'notif-2',
+    type: 'landlord_replied',
+    application_id: null,
+    conversation_id: 'conv-1',
+    read_at: '2030-01-02T00:00:00.000Z',
+  }
+
+  it('maps a real row into the presentation shape, deriving read from read_at', () => {
+    const unread = mapNotificationRowToNotification(unreadRow)
+    expect(unread.read).toBe(false)
+    expect(unread.applicationId).toBe('app-1')
+    expect(unread.listingId).toBe('listing-1')
+
+    const read = mapNotificationRowToNotification(readRow)
+    expect(read.read).toBe(true)
+    expect(read.readAt).toBe('2030-01-02T00:00:00.000Z')
+    expect(read.conversationId).toBe('conv-1')
+  })
+
+  it('never fabricates a related id the row does not actually carry', () => {
+    const mapped = mapNotificationRowToNotification(unreadRow)
+    expect(mapped.conversationId).toBeNull()
+    expect(mapped.viewingProposalId).toBeNull()
+  })
+})
+
+describe('Stage H — unread calculation and filtering', () => {
+  const notifications = [
+    mapNotificationRowToNotification({ id: 'a', type: 'new_application', title: 'A', body: null, listing_id: null, application_id: null, conversation_id: null, viewing_proposal_id: null, read_at: null, created_at: '2030-01-01T00:00:00.000Z' }),
+    mapNotificationRowToNotification({ id: 'b', type: 'landlord_replied', title: 'B', body: null, listing_id: null, application_id: null, conversation_id: null, viewing_proposal_id: null, read_at: '2030-01-02T00:00:00.000Z', created_at: '2030-01-01T00:00:00.000Z' }),
+    mapNotificationRowToNotification({ id: 'c', type: 'viewing_proposed', title: 'C', body: null, listing_id: null, application_id: null, conversation_id: null, viewing_proposal_id: null, read_at: null, created_at: '2030-01-01T00:00:00.000Z' }),
+  ]
+
+  it('counts only real unread notifications', () => {
+    expect(getUnreadCount(notifications)).toBe(2)
+    expect(getUnreadCount([])).toBe(0)
+  })
+
+  it('filters down to exactly the unread set, preserving the rest untouched', () => {
+    const unread = filterUnreadNotifications(notifications)
+    expect(unread.map((n) => n.id)).toEqual(['a', 'c'])
+  })
+})
+
+describe('Stage H — notification navigation routing', () => {
+  it('prefers the conversation route when a conversation id is present', () => {
+    const notification = mapNotificationRowToNotification({
+      id: 'n', type: 'landlord_replied', title: 'T', body: null,
+      listing_id: 'listing-1', application_id: null, conversation_id: 'conv-1', viewing_proposal_id: null,
+      read_at: null, created_at: '2030-01-01T00:00:00.000Z',
+    })
+    expect(getNotificationRoute(notification)).toBe('/messages/conv-1')
+  })
+
+  it('falls back to the listing route when there is no conversation', () => {
+    const notification = mapNotificationRowToNotification({
+      id: 'n', type: 'new_application', title: 'T', body: null,
+      listing_id: 'listing-1', application_id: 'app-1', conversation_id: null, viewing_proposal_id: null,
+      read_at: null, created_at: '2030-01-01T00:00:00.000Z',
+    })
+    expect(getNotificationRoute(notification)).toBe('/properties/listing-1')
+  })
+
+  it('returns null rather than guessing when neither id is present', () => {
+    const notification = mapNotificationRowToNotification({
+      id: 'n', type: 'listing_approved', title: 'T', body: null,
+      listing_id: null, application_id: null, conversation_id: null, viewing_proposal_id: null,
+      read_at: null, created_at: '2030-01-01T00:00:00.000Z',
+    })
+    expect(getNotificationRoute(notification)).toBeNull()
   })
 })

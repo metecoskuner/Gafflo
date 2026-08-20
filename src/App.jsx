@@ -5,6 +5,7 @@ import { BrandLockup } from './components/BrandLogo'
 import Footer from './components/Footer'
 import GaffloSelect from './components/GaffloSelect'
 import Navbar from './components/Navbar'
+import NotificationsPanel from './components/NotificationsPanel'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
 import Button from './components/Button'
 import AuthGate from './components/AuthGate'
@@ -20,7 +21,9 @@ import { ListingsProvider } from './context/ListingsProvider'
 import { MessagingProvider } from './context/MessagingProvider'
 import { ViewingsProvider } from './context/ViewingsProvider'
 import { EngagementProvider } from './context/EngagementProvider'
+import { NotificationsProvider } from './context/NotificationsProvider'
 import useAccountProfile from './context/useAccountProfile'
+import useNotifications from './context/useNotifications'
 import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from './utils/dateUtils'
@@ -96,6 +99,8 @@ function AppLayout() {
   // RoleSelection instead of falling through to TenantOnboarding below.
   const hasSelectedRole = Boolean(role)
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const { unreadCount: unreadNotificationCount } = useNotifications()
   const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
 
   useEffect(() => {
@@ -132,6 +137,8 @@ function AppLayout() {
             showCreateAction={role === 'landlord'}
             onCreateListing={() => navigate('/listings/new')}
             onFilterOpen={role === 'tenant' ? () => setIsFilterOpen(true) : null}
+            unreadNotificationCount={unreadNotificationCount}
+            onNotificationsOpen={() => setIsNotificationsOpen(true)}
           />
           <main
             id="app-shell-scroll"
@@ -163,6 +170,15 @@ function AppLayout() {
               onUpdateProfile={() => {
                 setIsFilterOpen(false)
                 navigate('/profile')
+              }}
+            />
+          ) : null}
+          {isNotificationsOpen ? (
+            <NotificationsPanel
+              onClose={() => setIsNotificationsOpen(false)}
+              onNavigate={(path) => {
+                setIsNotificationsOpen(false)
+                navigate(path)
               }}
             />
           ) : null}
@@ -224,7 +240,9 @@ export default function App() {
                   <MessagingProvider>
                     <EngagementProvider>
                       <AppStateProvider>
-                        <AppLayout />
+                        <NotificationsProvider>
+                          <AppLayout />
+                        </NotificationsProvider>
                       </AppStateProvider>
                     </EngagementProvider>
                   </MessagingProvider>
@@ -238,7 +256,7 @@ export default function App() {
   )
 }
 
-function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateListing, onFilterOpen }) {
+function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateListing, onFilterOpen, unreadNotificationCount, onNotificationsOpen }) {
   const navigate = useNavigate()
 
   return (
@@ -256,6 +274,7 @@ function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateLis
         <div className="flex items-center gap-2">
           {showCreateAction ? <HeaderIconButton ariaLabel="Create listing" icon="+" onClick={onCreateListing} /> : null}
           {onFilterOpen ? <HeaderIconButton ariaLabel="Open filters" badge={activeFilterCount} icon="☷" onClick={onFilterOpen} /> : null}
+          <HeaderIconButton ariaLabel="Notifications" badge={unreadNotificationCount} icon="🔔" onClick={onNotificationsOpen} />
         </div>
       </div>
     </header>
