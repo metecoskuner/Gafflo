@@ -107,6 +107,25 @@ async function signUp(url, anonKey, email, password) {
   return body
 }
 
+// Stage K — signs into one fixed, pre-existing, real account rather than creating a fresh one.
+// Still only ever the public anon key, exactly like signUp() above — this file's own long-
+// standing rule ("never service_role") is unchanged by this addition. platform_role has no
+// client write grant at all, so no throwaway-per-run identity built via signUp() above could
+// ever become a moderator through this file; a real moderator account had to be created and
+// promoted once, out-of-band, by a human/direct-DB step, and this only ever signs into it.
+async function signIn(url, anonKey, email, password) {
+  const response = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  const body = await response.json()
+  if (!response.ok || !body.access_token) {
+    throw new Error(`sign-in failed (HTTP ${response.status}): ${JSON.stringify(body)}`)
+  }
+  return body
+}
+
 async function restInsert(url, anonKey, accessToken, table, row) {
   const response = await fetch(`${url}/rest/v1/${table}`, {
     method: 'POST',
@@ -119,6 +138,28 @@ async function restInsert(url, anonKey, accessToken, table, row) {
     body: JSON.stringify(row),
   })
   if (!response.ok) {
+    throw new Error(`insert into ${table} failed (HTTP ${response.status}): ${await response.text()}`)
+  }
+}
+
+// Stage K — same as restInsert, but tolerant of the row already existing, since moderatorStable
+// persists across runs instead of being recreated fresh each time. A real PostgREST upsert
+// (Prefer: resolution=merge-duplicates) was tried first and rejected with 403: it requires
+// table-level UPDATE, which landlord_profiles deliberately only grants at the column level (see
+// the Stage J1 migration) — a plain insert that tolerates a 409 duplicate-key conflict fits the
+// real grants instead of needing a broader one just for this one test identity.
+async function restInsertIfMissing(url, anonKey, accessToken, table, row) {
+  const response = await fetch(`${url}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(row),
+  })
+  if (!response.ok && response.status !== 409) {
     throw new Error(`insert into ${table} failed (HTTP ${response.status}): ${await response.text()}`)
   }
 }
@@ -237,5 +278,28 @@ export default async function globalSetup(config) {
   for (const [name, spec] of Object.entries(IDENTITIES)) {
     identities[name] = await buildIdentity(url, anonKey, runId, name, spec)
   }
+
+  // Stage K — one fixed, real, persistent moderator account (created once, promoted once via
+  // direct DB access, never through this file). Signed into, not signed up, every run. Still
+  // needs a real landlord_profiles row + last_active_role like every other identity — ProfileGate
+  // gates every route on having one, including /moderator, regardless of platform_role — so an
+  // upsert (not insert) is used since this identity, unlike every throwaway one above, persists
+  // across runs and would otherwise hit a duplicate-key conflict on the second run onward.
+  const moderatorSignIn = await signIn(
+    url, anonKey, 'gafflo-e2e-stable-moderator@example.com', 'E2e-Stable-Moderator-Pass-9f3a2c!',
+  )
+  const moderatorUserId = moderatorSignIn.user.id
+  const moderatorAccessToken = moderatorSignIn.access_token
+  await restInsertIfMissing(url, anonKey, moderatorAccessToken, 'landlord_profiles', {
+    profile_id: moderatorUserId, display_name: 'Stable Moderator',
+  })
+  await restSetActiveRole(url, anonKey, moderatorAccessToken, moderatorUserId, 'landlord')
+  identities.moderatorStable = await (async () => {
+    const [storageKey, storageValue] = await captureSessionStorage(
+      url, anonKey, moderatorAccessToken, moderatorSignIn.refresh_token,
+    )
+    return { storageKey, storageValue }
+  })()
+
   writeFileSync(identitiesPath, JSON.stringify(identities))
 }

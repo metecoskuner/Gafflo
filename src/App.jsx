@@ -23,8 +23,10 @@ import { ViewingsProvider } from './context/ViewingsProvider'
 import { EngagementProvider } from './context/EngagementProvider'
 import { ListingAnalyticsProvider } from './context/ListingAnalyticsProvider'
 import { NotificationsProvider } from './context/NotificationsProvider'
+import { ModeratorProvider } from './context/ModeratorProvider'
 import useAccountProfile from './context/useAccountProfile'
 import useNotifications from './context/useNotifications'
+import useIsModerator from './context/useIsModerator'
 import { canUseAdvancedFilters } from './config/entitlements'
 import useAppState from './context/useAppState'
 import { getTodayIsoDate, isPastIsoDate } from './utils/dateUtils'
@@ -39,6 +41,7 @@ import TenantOnboarding from './pages/TenantOnboarding'
 import LandlordOnboarding from './pages/LandlordOnboarding'
 import LandlordProperties from './pages/LandlordProperties'
 import Applicants from './pages/Applicants'
+import ModeratorWorkspace from './pages/ModeratorWorkspace'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import FairHousingPolicy from './pages/FairHousingPolicy'
@@ -106,6 +109,7 @@ function AppLayout() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const { unreadCount: unreadNotificationCount } = useNotifications()
+  const { isModerator, loading: moderatorLoading } = useIsModerator()
   const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
 
   useEffect(() => {
@@ -159,6 +163,10 @@ function AppLayout() {
               <Route path="/rooms" element={<Navigate to="/properties" replace />} />
               <Route path="/rooms/:propertyId" element={<NavigateToPropertyDetails />} />
               <Route path="/applicants" element={role === 'landlord' ? <Applicants /> : <Navigate to="/discover" replace />} />
+              <Route
+                path="/moderator"
+                element={moderatorLoading ? null : isModerator ? <ModeratorWorkspace /> : <Navigate to={homeRoute} replace />}
+              />
               <Route path="/listings/new" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/listings/:propertyId/edit" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/create" element={<Navigate to="/listings/new" replace />} />
@@ -203,6 +211,10 @@ function AppLayout() {
               <Route path="/rooms" element={<Navigate to="/properties" replace />} />
               <Route path="/rooms/:propertyId" element={<NavigateToPropertyDetails />} />
               <Route path="/applicants" element={role === 'landlord' ? <Applicants /> : <Navigate to="/discover" replace />} />
+              <Route
+                path="/moderator"
+                element={moderatorLoading ? null : isModerator ? <ModeratorWorkspace /> : <Navigate to={homeRoute} replace />}
+              />
               <Route path="/listings/new" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/listings/:propertyId/edit" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/create" element={<Navigate to="/listings/new" replace />} />
@@ -245,11 +257,13 @@ function AuthenticatedApp() {
                   <MessagingProvider>
                     <EngagementProvider>
                       <ListingAnalyticsProvider>
-                        <AppStateProvider>
-                          <NotificationsProvider>
-                            <AppLayout />
-                          </NotificationsProvider>
-                        </AppStateProvider>
+                        <ModeratorProvider>
+                          <AppStateProvider>
+                            <NotificationsProvider>
+                              <AppLayout />
+                            </NotificationsProvider>
+                          </AppStateProvider>
+                        </ModeratorProvider>
                       </ListingAnalyticsProvider>
                     </EngagementProvider>
                   </MessagingProvider>

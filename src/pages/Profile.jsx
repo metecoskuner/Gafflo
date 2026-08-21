@@ -30,6 +30,7 @@ import { LISTING_CATEGORIES } from '../config/listingCategories'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useAuth from '../context/useAuth'
+import useIsModerator from '../context/useIsModerator'
 import { getTodayIsoDate, isPastIsoDate } from '../utils/dateUtils'
 
 const lookingForChoices = [
@@ -286,6 +287,8 @@ function TenantProfile() {
 
           <RoleSwitch />
           <AccountSection />
+          <LegalLinksSection />
+          <ModeratorLinkSection />
 
           {saveError ? (
             <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
@@ -395,6 +398,7 @@ function LandlordProfile() {
         <RoleSwitch />
         <AccountSection />
         <LegalLinksSection />
+        <ModeratorLinkSection />
 
         {saveError ? (
           <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
@@ -542,6 +546,26 @@ function LegalLinksSection() {
           </Link>
         ))}
       </div>
+    </section>
+  )
+}
+
+// Stage K — only ever visible to a real moderator/admin account (am_i_moderator(), never a
+// broad profiles.platform_role read). Renders nothing for every other account, including while
+// the check is still loading, so it never flashes for a non-moderator.
+function ModeratorLinkSection() {
+  const { isModerator } = useIsModerator()
+  if (!isModerator) return null
+
+  return (
+    <section className="surface-line rounded-[24px] bg-white p-4">
+      <div className="text-sm font-semibold text-slate-950">Moderator</div>
+      <Link
+        to="/moderator"
+        className="mt-3 block rounded-[14px] px-1 py-1.5 text-sm font-medium text-indigo-700 hover:underline"
+      >
+        Review workspace
+      </Link>
     </section>
   )
 }

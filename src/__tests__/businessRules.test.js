@@ -26,6 +26,11 @@ import {
 } from '../config/listingAnalyticsAdapter'
 import { LISTING_REPORT_REASONS, listingReportReasonLabel } from '../config/listingReportsAdapter'
 import {
+  listingSummaryLabel,
+  mapListingRowToPendingListing,
+  mapReportRowToReport,
+} from '../config/moderationAdapter'
+import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
   getApplicationStatusInfo,
@@ -1409,5 +1414,63 @@ describe('Stage J1 — listing report reason labels', () => {
     expect(LISTING_REPORT_REASONS).toHaveLength(6)
     const values = LISTING_REPORT_REASONS.map((entry) => entry.value)
     expect(new Set(values).size).toBe(6)
+  })
+})
+
+describe('Stage K — moderator workspace adapter', () => {
+  it('maps a real report row without ever carrying reporter_id forward', () => {
+    const report = mapReportRowToReport({
+      id: 'report-1',
+      listing_id: 'listing-1',
+      reporter_id: 'must-not-leak',
+      reason: 'scam_or_fraud',
+      description: 'Looks off',
+      status: 'open',
+      created_at: '2026-08-21T00:00:00Z',
+      reviewed_at: null,
+    })
+    expect(report).toEqual({
+      id: 'report-1',
+      listingId: 'listing-1',
+      reason: 'scam_or_fraud',
+      description: 'Looks off',
+      status: 'open',
+      createdAt: '2026-08-21T00:00:00Z',
+      reviewedAt: null,
+    })
+    expect(report.reporterId).toBeUndefined()
+  })
+
+  it('treats a null description as an empty string, never null', () => {
+    expect(mapReportRowToReport({
+      id: 'report-2',
+      listing_id: 'listing-1',
+      reporter_id: 'x',
+      reason: 'other',
+      description: null,
+      status: 'open',
+      created_at: '2026-08-21T00:00:00Z',
+      reviewed_at: null,
+    }).description).toBe('')
+  })
+
+  it('maps a real pending listing row and falls back to a safe title', () => {
+    expect(mapListingRowToPendingListing({
+      id: 'listing-1', title: 'Bright room', city: 'Dublin', area: 'Rathmines',
+      rent: 1200, listing_category: 'private_room', created_at: '2026-08-21T00:00:00Z',
+    })).toEqual({
+      id: 'listing-1', title: 'Bright room', city: 'Dublin', area: 'Rathmines',
+      rent: 1200, listingCategory: 'private_room', createdAt: '2026-08-21T00:00:00Z',
+    })
+    expect(mapListingRowToPendingListing({
+      id: 'listing-2', title: null, city: null, area: null,
+      rent: null, listing_category: 'entire_property', created_at: '2026-08-21T00:00:00Z',
+    }).title).toBe('Untitled listing')
+  })
+
+  it('builds a real listing summary label, and a safe fallback when the listing could not be loaded', () => {
+    expect(listingSummaryLabel({ title: 'Bright room', city: 'Dublin', area: 'Rathmines' })).toBe('Bright room — Rathmines, Dublin')
+    expect(listingSummaryLabel({ title: 'Bright room', city: '', area: '' })).toBe('Bright room')
+    expect(listingSummaryLabel(null)).toBe('Listing')
   })
 })
