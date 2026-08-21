@@ -123,6 +123,13 @@ insert into public.listings (
 -- =========================================================================================
 
 select has_table('public', 'listing_views', '1. listing_views table exists');
+
+-- information_schema.table_constraints is privilege-filtered per role (SQL-standard behavior),
+-- and at this point the active role is still 'authenticated' from the landlord fixture setup
+-- above, which has zero grants on listing_views by design (see part 2 of the migration) — so
+-- this check must run as test_runner/superuser to actually see the row, exactly like every
+-- check below it.
+select pg_temp.authenticate_as_test_runner();
 select is(
   (select count(*)::int from information_schema.table_constraints
    where table_schema = 'public' and table_name = 'listing_views' and constraint_name = 'listing_views_unique_listing_viewer'),
@@ -130,7 +137,6 @@ select is(
   '2. listing_views has the lifetime unique listing+viewer constraint'
 );
 
-select pg_temp.authenticate_as_test_runner();
 select is(
   (select count(*)::int from information_schema.role_table_grants
    where table_schema = 'public' and table_name = 'listing_views' and grantee = 'authenticated'
