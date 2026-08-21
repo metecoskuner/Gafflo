@@ -57,8 +57,8 @@ function TenantDashboard() {
 
       <section className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-3">
         <Metric label="Active" value={String(activeProperties.length)} />
-        <Metric label="Saved" value={String(savedProperties.length)} />
-        <Metric label="Applications" value={String(tenantApplications.length)} />
+        <Metric label="Saved" value={String(savedProperties.length)} onClick={() => navigate('/saved')} />
+        <Metric label="Applications" value={String(tenantApplications.length)} onClick={() => navigate('/applications')} />
       </section>
 
       {upcomingViewings.length ? (
@@ -207,11 +207,25 @@ function AttentionSummary({ newInterest, unreadMessages, upcomingConfirmedViewin
   )
 }
 
-function Metric({ label, value, className = '' }) {
-  return (
-    <div className={`card-surface card-shadow min-w-0 rounded-[22px] px-4 py-4 ${className}`}>
+function Metric({ label, value, onClick, className = '' }) {
+  const content = (
+    <>
       <div className="break-words text-sm font-medium leading-5 text-slate-500">{label}</div>
       <div className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
-    </div>
+    </>
+  )
+
+  if (!onClick) {
+    return <div className={`card-surface card-shadow min-w-0 rounded-[22px] px-4 py-4 ${className}`}>{content}</div>
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`card-surface card-shadow min-w-0 rounded-[22px] px-4 py-4 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100 ${className}`}
+    >
+      {content}
+    </button>
   )
 }

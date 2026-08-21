@@ -68,6 +68,7 @@ export function mapListingRowToProperty(row) {
     // rows are visible there at all) — so its absence unambiguously means "published".
     listingStatus: row.status || 'published',
     rejectionReason: row.rejection_reason ?? null,
+    removedReason: row.removed_reason ?? null,
     listingCategory: row.listing_category,
 
     city: row.city || '',

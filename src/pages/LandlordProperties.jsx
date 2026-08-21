@@ -202,6 +202,18 @@ export default function LandlordProperties() {
                       </p>
                     </div>
                   </div>
+                  {property.listingStatus === 'rejected' && property.rejectionReason ? (
+                    <div className="rounded-[18px] border border-rose-100 bg-rose-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-600">Rejected — reason given</p>
+                      <p className="mt-1 text-sm leading-6 text-rose-800">{property.rejectionReason}</p>
+                    </div>
+                  ) : null}
+                  {property.listingStatus === 'removed_by_platform' && property.removedReason ? (
+                    <div className="rounded-[18px] border border-rose-100 bg-rose-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-600">Removed — reason given</p>
+                      <p className="mt-1 text-sm leading-6 text-rose-800">{property.removedReason}</p>
+                    </div>
+                  ) : null}
                   <div className="grid grid-cols-2 gap-2 min-[430px]:grid-cols-3">
                     <Info label="Category" value={listingCategoryLabel(property.listingCategory)} />
                     <Info label={roomListing ? 'Room' : 'Home'} value={roomListing ? domainLabel('roomType', property.roomType) : `${property.bedrooms ? `${property.bedrooms} bed` : 'Studio'} ${domainLabel('propertyType', property.propertyType)}`} />

@@ -34,6 +34,7 @@ import Dashboard from './pages/Dashboard'
 import CreateListing from './pages/CreateListing'
 import Messages from './pages/Messages'
 import SavedProperties from './pages/SavedProperties'
+import MyApplications from './pages/MyApplications'
 import DiscoverProperties from './pages/DiscoverProperties'
 import TenantProfile from './pages/Profile'
 import RoleSelection from './pages/RoleSelection'
@@ -171,6 +172,7 @@ function AppLayout() {
               <Route path="/listings/:propertyId/edit" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/create" element={<Navigate to="/listings/new" replace />} />
               <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
+              <Route path="/applications" element={role === 'tenant' ? <MyApplications /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
               <Route path="*" element={<Navigate to={homeRoute} replace />} />
@@ -219,6 +221,7 @@ function AppLayout() {
               <Route path="/listings/:propertyId/edit" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/create" element={<Navigate to="/listings/new" replace />} />
               <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
+              <Route path="/applications" element={role === 'tenant' ? <MyApplications /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
               <Route path="*" element={<Navigate to={homeRoute} replace />} />

@@ -175,6 +175,7 @@ export default function Applicants() {
                   <ApplicantBio bio={tenant.bio} />
 
                   <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3">
+                    <Info label="Applied" value={formatDate(application.createdAt)} />
                     <Info label="Budget" value={`${formatCurrency(tenant.budgetMin)}-${formatCurrency(tenant.budgetMax)}`} />
                     <Info label="Move-in" value={formatDate(tenant.moveInDate)} />
                     <Info label="Household" value={`${tenant.householdSize}`} />

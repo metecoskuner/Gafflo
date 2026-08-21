@@ -388,6 +388,14 @@ export default function CreateListing() {
         </div>
       </section>
 
+      {editingProperty?.listingStatus === 'rejected' && editingProperty?.rejectionReason ? (
+        <div className="rounded-[22px] border border-rose-100 bg-rose-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-600">Why this was rejected</p>
+          <p className="mt-1 text-sm leading-6 text-rose-800">{editingProperty.rejectionReason}</p>
+          <p className="mt-2 text-sm leading-6 text-rose-700">Update the listing below, then request review again.</p>
+        </div>
+      ) : null}
+
       <form noValidate onSubmit={(event) => handleSubmit(event, 'pending_verification')} className="space-y-4 pb-24">
         <FormSection title="What are you listing?" description="Choose the listing category before entering the details.">
           <div className="grid gap-2 min-[390px]:gap-3 md:grid-cols-3">

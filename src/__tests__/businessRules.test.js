@@ -1328,6 +1328,33 @@ describe('Stage H — notification navigation routing', () => {
     })
     expect(getNotificationRoute(notification)).toBeNull()
   })
+
+  it('routes a rejected-listing notification to the edit flow, not the read-only detail page', () => {
+    const notification = mapNotificationRowToNotification({
+      id: 'n', type: 'listing_rejected', title: 'T', body: 'Photos are unclear',
+      listing_id: 'listing-1', application_id: null, conversation_id: null, viewing_proposal_id: null,
+      read_at: null, created_at: '2030-01-01T00:00:00.000Z',
+    })
+    expect(getNotificationRoute(notification)).toBe('/listings/listing-1/edit')
+  })
+
+  it('routes a removed-listing notification to the properties list, where the reason is shown, not the dead detail page', () => {
+    const notification = mapNotificationRowToNotification({
+      id: 'n', type: 'listing_removed', title: 'T', body: 'Reported as inaccurate',
+      listing_id: 'listing-1', application_id: null, conversation_id: null, viewing_proposal_id: null,
+      read_at: null, created_at: '2030-01-01T00:00:00.000Z',
+    })
+    expect(getNotificationRoute(notification)).toBe('/properties')
+  })
+
+  it('leaves an approved-listing notification routed to the real listing detail page', () => {
+    const notification = mapNotificationRowToNotification({
+      id: 'n', type: 'listing_approved', title: 'T', body: null,
+      listing_id: 'listing-1', application_id: null, conversation_id: null, viewing_proposal_id: null,
+      read_at: null, created_at: '2030-01-01T00:00:00.000Z',
+    })
+    expect(getNotificationRoute(notification)).toBe('/properties/listing-1')
+  })
 })
 
 describe('Stage I — listing analytics adapter', () => {
