@@ -152,6 +152,7 @@ export function mapLandlordProfileRowToFields(row) {
     landlordType: row.landlord_type,
     bio: row.bio || '',
     preferredContactMethod: contactMethodToLabel(row.preferred_contact_method),
+    fairHousingAcknowledgedAt: row.fair_housing_acknowledged_at || null,
   }
 }
 

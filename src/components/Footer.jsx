@@ -1,4 +1,12 @@
+import { Link } from 'react-router-dom'
 import BrandLogo from './BrandLogo'
+
+const legalLinks = [
+  { to: '/legal/terms', label: 'Terms of Service' },
+  { to: '/legal/privacy', label: 'Privacy Policy' },
+  { to: '/legal/fair-housing', label: 'Fair Housing Policy' },
+  { to: '/legal/acceptable-use', label: 'Acceptable Use' },
+]
 
 export default function Footer() {
   return (
@@ -9,6 +17,13 @@ export default function Footer() {
           <p className="mt-1">Property matching for renters in Ireland</p>
         </div>
         <p className="max-w-md text-sm leading-6">Property matching, applicant review and viewing coordination for Ireland.</p>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-medium text-slate-500">
+        {legalLinks.map((link) => (
+          <Link key={link.to} to={link.to} className="hover:text-slate-800 hover:underline">
+            {link.label}
+          </Link>
+        ))}
       </div>
     </footer>
   )

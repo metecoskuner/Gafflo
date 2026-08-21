@@ -39,6 +39,10 @@ import TenantOnboarding from './pages/TenantOnboarding'
 import LandlordOnboarding from './pages/LandlordOnboarding'
 import LandlordProperties from './pages/LandlordProperties'
 import Applicants from './pages/Applicants'
+import TermsOfService from './pages/TermsOfService'
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import FairHousingPolicy from './pages/FairHousingPolicy'
+import AcceptableUsePolicy from './pages/AcceptableUsePolicy'
 
 const emptyPropertyFilters = {
   priceMin: '',
@@ -161,6 +165,10 @@ function AppLayout() {
               <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
+              <Route path="/legal/terms" element={<TermsOfService />} />
+              <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+              <Route path="/legal/fair-housing" element={<FairHousingPolicy />} />
+              <Route path="/legal/acceptable-use" element={<AcceptableUsePolicy />} />
               <Route path="*" element={<Navigate to={homeRoute} replace />} />
             </Routes>
           </main>
@@ -205,6 +213,10 @@ function AppLayout() {
               <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
+              <Route path="/legal/terms" element={<TermsOfService />} />
+              <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+              <Route path="/legal/fair-housing" element={<FairHousingPolicy />} />
+              <Route path="/legal/acceptable-use" element={<AcceptableUsePolicy />} />
               <Route path="*" element={<Navigate to={homeRoute} replace />} />
             </Routes>
           </main>

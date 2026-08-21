@@ -12,9 +12,11 @@ import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../conf
 import { formatFreshness, shouldShowTenantMatch } from '../config/listingPresentation'
 import { canListingReceiveEnquiry } from '../config/rentalJourney'
 import { canViewListing, listingStatusLabels } from '../config/listingLifecycle'
+import { LISTING_REPORT_REASONS } from '../config/listingReportsAdapter'
 import { formatDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatCurrency'
 import { sanitizeMessageBody } from '../utils/messagingRules'
+import { reportListing as reportListingRequest } from '../services/listingReportsService'
 import ApplicationStatus from './ApplicationStatus'
 import Button from './Button'
 import EmptyState from './EmptyState'
@@ -29,7 +31,6 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   const { propertyId } = useParams()
   const {
     properties,
-    reportListing,
     savedPropertyIds,
     saveProperty,
     removeSavedProperty,
@@ -368,11 +369,10 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
               <TrustSummary property={property} />
 
               <SafetyActions
-                disabled={role === 'landlord'}
+                disabled={property.ownerId === profile?.id}
                 alreadyBlocked={isUserBlocked(property.ownerId)}
-                locallyReported={Boolean(property.localReport)}
+                listingId={property.id}
                 onBlock={() => blockUser(property.ownerId)}
-                onReport={(reason) => reportListing(property.id, reason)}
               />
             </div>
           </div>
@@ -587,9 +587,29 @@ function PropertyImageGallery({ property, isSaved, isPreview, onClose }) {
   )
 }
 
-function SafetyActions({ disabled, alreadyBlocked, locallyReported, onBlock, onReport }) {
+function SafetyActions({ disabled, alreadyBlocked, listingId, onBlock }) {
   const [reason, setReason] = useState('')
+  const [description, setDescription] = useState('')
   const [confirmBlock, setConfirmBlock] = useState(false)
+  const [reportPending, setReportPending] = useState(false)
+  const [reportSubmitted, setReportSubmitted] = useState(false)
+  const [reportError, setReportError] = useState('')
+
+  const submitReport = async () => {
+    if (!reason) return
+    setReportPending(true)
+    setReportError('')
+    try {
+      await reportListingRequest(listingId, reason, description)
+      // Whether this created a new report or the caller already had one open, the outcome the
+      // user should see is the same real, honest confirmation — no public drama either way.
+      setReportSubmitted(true)
+    } catch {
+      setReportError('Could not submit this report. Please try again.')
+    } finally {
+      setReportPending(false)
+    }
+  }
 
   return (
     <details className="rounded-[22px] border border-slate-200 bg-white px-4 py-3">
@@ -598,23 +618,46 @@ function SafetyActions({ disabled, alreadyBlocked, locallyReported, onBlock, onR
       </summary>
       <div className="mt-3 grid min-w-0 gap-3">
         <p className="text-sm leading-6 text-slate-600">
-          Reports are saved on this device. Blocking applies to your real account and stops messaging both ways.
+          Reports go only to Gafflo — the landlord is never notified and never sees who reported a listing.
+          Blocking applies to your real account and stops messaging both ways.
         </p>
-        <select
-          value={reason}
-          disabled={disabled || locallyReported}
-          onChange={(event) => setReason(event.target.value)}
-          className="min-h-11 w-full min-w-0 rounded-[16px] border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:ring-4 focus:ring-indigo-100"
-        >
-          <option value="">Choose a report reason</option>
-          <option value="Listing details look suspicious">Listing details look suspicious</option>
-          <option value="Landlord behaviour concern">Landlord behaviour concern</option>
-          <option value="Payment or deposit concern">Payment or deposit concern</option>
-        </select>
+        {reportSubmitted ? (
+          <p className="rounded-[16px] bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+            Thanks — this listing has been reported.
+          </p>
+        ) : (
+          <>
+            <select
+              value={reason}
+              disabled={disabled || reportPending}
+              onChange={(event) => setReason(event.target.value)}
+              className="min-h-11 w-full min-w-0 rounded-[16px] border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:ring-4 focus:ring-indigo-100"
+            >
+              <option value="">Choose a report reason</option>
+              {LISTING_REPORT_REASONS.map((entry) => (
+                <option key={entry.value} value={entry.value}>{entry.label}</option>
+              ))}
+            </select>
+            <textarea
+              rows={2}
+              value={description}
+              disabled={disabled || reportPending}
+              onChange={(event) => setDescription(event.target.value)}
+              maxLength={500}
+              placeholder="Optional details"
+              className="w-full min-w-0 resize-none rounded-[16px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:ring-4 focus:ring-indigo-100"
+            />
+            {reportError ? <p className="text-xs font-medium text-rose-500">{reportError}</p> : null}
+          </>
+        )}
         <div className="grid min-w-0 gap-2 min-[380px]:grid-cols-2">
-          <Button variant="secondary" disabled={disabled || locallyReported || !reason} onClick={() => onReport(reason)}>
-            {locallyReported ? 'Report saved locally' : 'Save local report'}
-          </Button>
+          {!reportSubmitted ? (
+            <Button variant="secondary" disabled={disabled || reportPending || !reason} isLoading={reportPending} onClick={submitReport}>
+              Submit report
+            </Button>
+          ) : (
+            <Button variant="secondary" disabled>Reported</Button>
+          )}
           {alreadyBlocked ? (
             <Button variant="secondary" disabled>Blocked</Button>
           ) : confirmBlock ? (

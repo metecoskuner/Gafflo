@@ -24,6 +24,7 @@ import {
   mapListingAnalyticsRowToAnalytics,
   mapListingAnalyticsRowsToMap,
 } from '../config/listingAnalyticsAdapter'
+import { LISTING_REPORT_REASONS, listingReportReasonLabel } from '../config/listingReportsAdapter'
 import {
   applicantPipelineTabs,
   getApplicationPipelineGroup,
@@ -1386,5 +1387,27 @@ describe('Stage I — listing analytics adapter', () => {
       enquiries: 4,
       confirmedViewings: 5,
     })
+  })
+})
+
+describe('Stage J1 — listing report reason labels', () => {
+  it('maps every known reason value to a real, human-readable label', () => {
+    expect(listingReportReasonLabel('discriminatory_language')).toBe('Discriminatory or exclusionary language')
+    expect(listingReportReasonLabel('scam_or_fraud')).toBe('Scam or fraud concern')
+    expect(listingReportReasonLabel('inaccurate_listing')).toBe('Listing looks inaccurate or misleading')
+    expect(listingReportReasonLabel('inappropriate_content')).toBe('Inappropriate content or photos')
+    expect(listingReportReasonLabel('harassment')).toBe('Harassment or abusive behaviour')
+    expect(listingReportReasonLabel('other')).toBe('Something else')
+  })
+
+  it('falls back to a safe default label for an unrecognized or missing value', () => {
+    expect(listingReportReasonLabel('not_a_real_reason')).toBe('Other')
+    expect(listingReportReasonLabel(undefined)).toBe('Other')
+  })
+
+  it('exposes exactly the six reasons the backend enum defines, each with a distinct value', () => {
+    expect(LISTING_REPORT_REASONS).toHaveLength(6)
+    const values = LISTING_REPORT_REASONS.map((entry) => entry.value)
+    expect(new Set(values).size).toBe(6)
   })
 })

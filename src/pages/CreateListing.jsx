@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
 import PropertyDetailsModal from '../components/PropertyDetailsModal'
@@ -94,7 +94,19 @@ export default function CreateListing() {
   const navigate = useNavigate()
   const { propertyId } = useParams()
   const { landlordProperties } = useAppState()
-  const { landlordProfile, profile } = useAccountProfile()
+  const { acknowledgeFairHousingPolicy, landlordProfile, profile } = useAccountProfile()
+  const fairHousingAcknowledged = Boolean(landlordProfile?.fairHousingAcknowledgedAt)
+  const [fairHousingPending, setFairHousingPending] = useState(false)
+  const [fairHousingError, setFairHousingError] = useState('')
+
+  const handleAcknowledgeFairHousing = async (checked) => {
+    if (!checked || fairHousingAcknowledged) return
+    setFairHousingPending(true)
+    setFairHousingError('')
+    const { error } = await acknowledgeFairHousingPolicy()
+    setFairHousingPending(false)
+    if (error) setFairHousingError('Could not save your acknowledgement. Please try again.')
+  }
   const { createListing, deleteImage, loading: listingsLoading, reorderImages, requestReview, setCoverImage, updateListing, uploadImage } = useListings()
 
   const isEditing = Boolean(propertyId)
@@ -436,6 +448,20 @@ export default function CreateListing() {
           <div className="rounded-[22px] border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{saveError}</div>
         ) : null}
 
+        {canRequestReview && !fairHousingAcknowledged ? (
+          <div className="rounded-[22px] border border-indigo-100 bg-slate-50 px-4 py-3">
+            <Toggle
+              label="I have read and agree to Gafflo's Fair Housing Policy"
+              checked={fairHousingAcknowledged}
+              onChange={handleAcknowledgeFairHousing}
+            />
+            <Link to="/legal/fair-housing" className="mt-2 inline-block text-xs font-semibold text-indigo-700 underline">
+              Read the policy
+            </Link>
+            {fairHousingError ? <p className="mt-2 text-xs font-medium text-rose-500">{fairHousingError}</p> : null}
+          </div>
+        ) : null}
+
         <Button type="button" variant="secondary" className="w-full" onClick={() => setShowPreview(true)}>
           Preview listing
         </Button>
@@ -446,7 +472,11 @@ export default function CreateListing() {
               Save draft
             </Button>
           ) : null}
-          <Button type="submit" disabled={isSaving} isLoading={isSaving}>
+          <Button
+            type="submit"
+            disabled={isSaving || fairHousingPending || (canRequestReview && !fairHousingAcknowledged)}
+            isLoading={isSaving}
+          >
             {isSaving ? 'Saving' : canRequestReview ? 'Request review' : 'Save changes'}
           </Button>
         </div>
@@ -654,6 +684,11 @@ function TermsSection({ form, errors, roomListing, updateField }) {
   return (
     <FormSection title="Description" description="Describe the listing without adding demographic or personality matching requirements.">
       <div className="grid gap-4">
+        <div className="rounded-[18px] border border-indigo-100 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600">
+          Keep listing text about the property itself. Under Ireland's Equal Status Acts, avoid language that
+          excludes people by family status, disability, race, religion, age, gender, sexual orientation, civil
+          status, membership of the Traveller community, or receipt of housing assistance (e.g. HAP).
+        </div>
         <FormInput textarea rows={4} label={roomListing ? 'Room description' : 'Property description'} value={form.description} maxLength={900} error={errors.description} onChange={(event) => updateField('description', event.target.value)} />
         {roomListing ? (
           <FormInput textarea rows={3} label="Household summary" value={form.householdSummary} maxLength={500} error={errors.householdSummary} onChange={(event) => updateField('householdSummary', event.target.value)} />

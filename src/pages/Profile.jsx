@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
 import GaffloPlusPreview from '../components/GaffloPlusPreview'
@@ -394,6 +394,7 @@ function LandlordProfile() {
         ) : null}
         <RoleSwitch />
         <AccountSection />
+        <LegalLinksSection />
 
         {saveError ? (
           <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
@@ -515,6 +516,32 @@ function AccountSection() {
       >
         Sign out
       </Button>
+    </section>
+  )
+}
+
+const legalProfileLinks = [
+  { to: '/legal/terms', label: 'Terms of Service' },
+  { to: '/legal/privacy', label: 'Privacy Policy' },
+  { to: '/legal/fair-housing', label: 'Fair Housing Policy' },
+  { to: '/legal/acceptable-use', label: 'Acceptable Use' },
+]
+
+function LegalLinksSection() {
+  return (
+    <section className="surface-line rounded-[24px] bg-white p-4">
+      <div className="text-sm font-semibold text-slate-950">Legal</div>
+      <div className="mt-3 grid gap-1">
+        {legalProfileLinks.map((link) => (
+          <Link
+            key={link.to}
+            to={link.to}
+            className="rounded-[14px] px-1 py-1.5 text-sm font-medium text-indigo-700 hover:underline"
+          >
+            {link.label}
+          </Link>
+        ))}
+      </div>
     </section>
   )
 }

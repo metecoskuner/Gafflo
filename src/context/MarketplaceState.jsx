@@ -3,7 +3,7 @@ import { ANY_VALUE } from '../config/domainOptions'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import { filterAvailableSmartMatchCandidates } from '../config/engagementAdapter'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
-import { getLandlordPlan, getPropertyReports, getTenantPlan, setPropertyReports } from '../utils/storage'
+import { getLandlordPlan, getTenantPlan } from '../utils/storage'
 import AppStateContext from './AppStateContext'
 import useAccountProfile from './useAccountProfile'
 import useEngagement from './useEngagement'
@@ -30,13 +30,13 @@ const defaultPropertyFilters = {
 
 // Stage E retired the mock enquiries/conversations domain this provider used to own; Stage G
 // retires the mock saved/Smart Match domain the same way (see the Stage G report's local-storage
-// retirement section) — real saved listings and Smart Match decisions/usage
-// (context/EngagementProvider) are now the authoritative source, backed by real Supabase. This
-// component stays a read-composition layer: real listings (context/ListingsProvider) + real
-// engagement (context/EngagementProvider) + local filters, producing the candidate lists and
-// action wrappers the UI consumes. Only genuinely local-only, no-backend-yet concerns remain
-// directly in local state here: property filters (a view preference, not saved data) and local
-// property-report annotations (Stage C, no moderation-report backend exists yet).
+// retirement section); Stage J1 retires the local-only property-report annotations the same way
+// again — see services/listingReportsService.js and the report_listing() RPC. Real saved
+// listings and Smart Match decisions/usage (context/EngagementProvider) are now the authoritative
+// source, backed by real Supabase. This component stays a read-composition layer: real listings
+// (context/ListingsProvider) + real engagement (context/EngagementProvider) + local filters,
+// producing the candidate lists and action wrappers the UI consumes. The only genuinely
+// local-only concern left here is property filters (a view preference, not saved data).
 export function AppStateProvider({ children }) {
   // The real account/role/profile layer (AccountProfileProvider, a parent of this provider in
   // App.jsx) is the only source of truth for WHO the user is and WHAT roles they've set up.
@@ -50,7 +50,6 @@ export function AppStateProvider({ children }) {
   // Real Supabase source of truth for saved listings / Smart Match decisions / daily usage
   // (Stage G) — see EngagementProvider. Every save/unsave/Pass/Interested write goes through it.
   const { savedIds, decisions, usage, setSaved, recordDecision } = useEngagement()
-  const [propertyReports, setPropertyReportsState] = useState(() => getPropertyReports())
   const [propertyFilters, setPropertyFiltersState] = useState(defaultPropertyFilters)
   const [toast, setToast] = useState(null)
 
@@ -64,10 +63,9 @@ export function AppStateProvider({ children }) {
     const merged = [...myListings, ...publicListings.filter((property) => !ownListingIds.has(property.id))]
     return merged.map((property) => ({
       ...property,
-      localReport: propertyReports[property.id] || null,
       match: calculatePropertyMatch(tenantProfile, property),
     }))
-  }, [myListings, publicListings, ownListingIds, propertyReports, tenantProfile])
+  }, [myListings, publicListings, ownListingIds, tenantProfile])
 
   const activeProperties = useMemo(() => properties.filter((property) => ['published', 'active'].includes(property.listingStatus)), [properties])
   const discoveryProperties = useMemo(
@@ -91,14 +89,9 @@ export function AppStateProvider({ children }) {
   // Always the real authenticated user's own listings (get_my_listings(), RLS-scoped server-side
   // to auth.uid()).
   const landlordProperties = useMemo(
-    () => myListings.map((property) => ({ ...property, localReport: propertyReports[property.id] || null, match: calculatePropertyMatch(tenantProfile, property) })),
-    [myListings, propertyReports, tenantProfile],
+    () => myListings.map((property) => ({ ...property, match: calculatePropertyMatch(tenantProfile, property) })),
+    [myListings, tenantProfile],
   )
-
-  const persistPropertyReports = (next) => {
-    setPropertyReports(next)
-    setPropertyReportsState(next)
-  }
 
   const value = {
     tenantProfile,
@@ -152,23 +145,13 @@ export function AppStateProvider({ children }) {
       }
       return true
     },
-    // Local-only safety annotation, deliberately decoupled from the real listings array: it
-    // never touches listings/listing_images (no backend moderation-report table exists yet),
-    // and it must survive regardless of whether propertyId belongs to a real or (still-mocked)
-    // fixture property.
-    reportListing(propertyId, reason) {
-      const property = properties.find((item) => item.id === propertyId)
-      if (!property || !String(reason || '').trim()) return
-      const next = { ...propertyReports, [propertyId]: { reason: String(reason).trim(), reportedAt: new Date().toISOString() } }
-      persistPropertyReports(next)
-      setToast({ type: 'success', message: 'Report saved locally on this device.' })
-    },
     // Listing create/edit/lifecycle/photo writes go directly through useListings() from
     // CreateListing.jsx and LandlordProperties.jsx (Stage C); application writes go through
     // useApplications() (Stage D); real conversation/message/block writes go through
     // useMessaging() (Stage E); real viewing writes go through useViewings() (Stage F); real
-    // saved/Smart Match writes go through useEngagement() (Stage G) — this context stays a read-
-    // composition layer.
+    // saved/Smart Match writes go through useEngagement() (Stage G); real listing reports go
+    // through services/listingReportsService.js directly from PropertyDetailsModal (Stage J1) —
+    // this context stays a read-composition layer.
   }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>

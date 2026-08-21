@@ -170,6 +170,27 @@ export function AccountProfileProvider({ children }) {
     [user],
   )
 
+  // The only write path for fair_housing_acknowledged_at — it is deliberately absent from
+  // updateLandlordProfile/mapLandlordProfileFieldsToRow so it can never be set through the
+  // generic landlord_profiles update path (see the Stage J1 migration's own column comment).
+  const acknowledgeFairHousingPolicy = useCallback(async () => {
+    if (DEV_AUTH_BYPASS_ENABLED) {
+      setState((current) => ({
+        ...current,
+        landlordProfile: current.landlordProfile
+          ? { ...current.landlordProfile, fairHousingAcknowledgedAt: current.landlordProfile.fairHousingAcknowledgedAt || new Date().toISOString() }
+          : current.landlordProfile,
+      }))
+      return { error: null }
+    }
+    const { error } = await supabase.rpc('acknowledge_fair_housing_policy')
+    if (error) return { error: error.message }
+    const { data, error: readError } = await supabase.from('landlord_profiles').select('*').eq('profile_id', user.id).maybeSingle()
+    if (readError) return { error: readError.message }
+    setState((current) => ({ ...current, landlordProfile: mapLandlordProfileRowToFields(data) }))
+    return { error: null }
+  }, [user])
+
   const updateDisplayName = useCallback(
     async (name) => {
       if (DEV_AUTH_BYPASS_ENABLED) {
@@ -211,6 +232,7 @@ export function AccountProfileProvider({ children }) {
       updateTenantProfile,
       createLandlordProfile,
       updateLandlordProfile,
+      acknowledgeFairHousingPolicy,
       updateDisplayName,
     }),
     [
@@ -225,6 +247,7 @@ export function AccountProfileProvider({ children }) {
       updateTenantProfile,
       createLandlordProfile,
       updateLandlordProfile,
+      acknowledgeFairHousingPolicy,
       updateDisplayName,
     ],
   )
