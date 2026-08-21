@@ -246,6 +246,7 @@ export default async function globalSetup(config) {
     )
   }
 
+
   const runId = Date.now()
   const baseURL = config.projects[0].use.baseURL
 
@@ -282,24 +283,40 @@ export default async function globalSetup(config) {
   // Stage K — one fixed, real, persistent moderator account (created once, promoted once via
   // direct DB access, never through this file). Signed into, not signed up, every run. Still
   // needs a real landlord_profiles row + last_active_role like every other identity — ProfileGate
-  // gates every route on having one, including /moderator, regardless of platform_role — so an
-  // upsert (not insert) is used since this identity, unlike every throwaway one above, persists
-  // across runs and would otherwise hit a duplicate-key conflict on the second run onward.
-  const moderatorSignIn = await signIn(
-    url, anonKey, 'gafflo-e2e-stable-moderator@example.com', 'E2e-Stable-Moderator-Pass-9f3a2c!',
-  )
-  const moderatorUserId = moderatorSignIn.user.id
-  const moderatorAccessToken = moderatorSignIn.access_token
-  await restInsertIfMissing(url, anonKey, moderatorAccessToken, 'landlord_profiles', {
-    profile_id: moderatorUserId, display_name: 'Stable Moderator',
-  })
-  await restSetActiveRole(url, anonKey, moderatorAccessToken, moderatorUserId, 'landlord')
-  identities.moderatorStable = await (async () => {
-    const [storageKey, storageValue] = await captureSessionStorage(
-      url, anonKey, moderatorAccessToken, moderatorSignIn.refresh_token,
+  // gates every route on having one, including /moderator, regardless of platform_role — so
+  // restInsertIfMissing (not restInsert) is used since this identity, unlike every throwaway one
+  // above, persists across runs and would otherwise hit a duplicate-key conflict on the second
+  // run onward.
+  //
+  // Its password is real and permanent (unlike every throwaway identity above), so it is never a
+  // literal in this file and never lives in .env.local — only a real process env var, supplied
+  // inline for the one invocation that needs it (dev/test-only account, gafflo-dev project only).
+  // Every other e2e spec's own setup must keep working without this var set at all, so a missing
+  // var here is a clear, loud skip — not a thrown error that would break every unrelated test
+  // file's own global setup. e2e/moderator-workspace.spec.js itself is what fails clearly if this
+  // identity ends up missing when actually used.
+  const moderatorPassword = process.env.GAFFLO_E2E_MODERATOR_PASSWORD
+  if (!moderatorPassword) {
+    console.warn(
+      '[global-setup] GAFFLO_E2E_MODERATOR_PASSWORD not set — skipping the stable moderator ' +
+        'identity. Fine for every spec except e2e/moderator-workspace.spec.js, which needs it: ' +
+        'run with GAFFLO_E2E_MODERATOR_PASSWORD=... npx playwright test e2e/moderator-workspace.spec.js',
     )
-    return { storageKey, storageValue }
-  })()
+  } else {
+    const moderatorSignIn = await signIn(url, anonKey, 'gafflo-e2e-stable-moderator@example.com', moderatorPassword)
+    const moderatorUserId = moderatorSignIn.user.id
+    const moderatorAccessToken = moderatorSignIn.access_token
+    await restInsertIfMissing(url, anonKey, moderatorAccessToken, 'landlord_profiles', {
+      profile_id: moderatorUserId, display_name: 'Stable Moderator',
+    })
+    await restSetActiveRole(url, anonKey, moderatorAccessToken, moderatorUserId, 'landlord')
+    identities.moderatorStable = await (async () => {
+      const [storageKey, storageValue] = await captureSessionStorage(
+        url, anonKey, moderatorAccessToken, moderatorSignIn.refresh_token,
+      )
+      return { storageKey, storageValue }
+    })()
+  }
 
   writeFileSync(identitiesPath, JSON.stringify(identities))
 }

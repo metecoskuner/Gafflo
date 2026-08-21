@@ -13,6 +13,14 @@ import { expect, test } from '@playwright/test'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const identities = JSON.parse(readFileSync(path.join(__dirname, '.auth', 'identities.json'), 'utf8'))
 
+if (!identities.moderatorStable) {
+  throw new Error(
+    'moderatorStable identity is missing from e2e/.auth/identities.json — global-setup.js skips ' +
+      'building it when GAFFLO_E2E_MODERATOR_PASSWORD is not set. Run with ' +
+      'GAFFLO_E2E_MODERATOR_PASSWORD=... npx playwright test e2e/moderator-workspace.spec.js',
+  )
+}
+
 function loadEnvLocal() {
   const raw = readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8')
   const values = {}
