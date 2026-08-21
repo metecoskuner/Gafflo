@@ -46,7 +46,7 @@ export function AppStateProvider({ children }) {
   // Real Supabase source of truth for listings/photos (Stage C) — see ListingsProvider. This
   // provider only reads from it; every listing write (create/edit/lifecycle/photos) goes through
   // useListings() directly from CreateListing.jsx/LandlordProperties.jsx, never through here.
-  const { myListings, publicListings } = useListings()
+  const { myListings, publicListings, loading: listingsLoading } = useListings()
   // Real Supabase source of truth for saved listings / Smart Match decisions / daily usage
   // (Stage G) — see EngagementProvider. Every save/unsave/Pass/Interested write goes through it.
   const { savedIds, decisions, usage, setSaved, recordDecision } = useEngagement()
@@ -98,6 +98,7 @@ export function AppStateProvider({ children }) {
     landlordProfile,
     tenantPlan,
     landlordPlan,
+    listingsLoading,
     properties,
     activeProperties,
     discoveryProperties,

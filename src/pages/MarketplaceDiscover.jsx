@@ -24,6 +24,7 @@ export default function MarketplaceDiscover() {
     activeProperties: allActiveProperties,
     discoveryProperties,
     availableProperties,
+    listingsLoading,
     recordSmartMatchInterest,
     passSmartMatchProperty,
     resetPropertyFilters,
@@ -56,6 +57,20 @@ export default function MarketplaceDiscover() {
   }
 
   const activeProperties = viewMode === 'smart' ? rankedSmartMatches : browseProperties
+
+  // Real listings load asynchronously — without this, a genuinely non-empty result set could
+  // flash "No properties available" for a moment before the fetch resolves.
+  if (listingsLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <span
+          className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600"
+          role="status"
+          aria-label="Loading properties"
+        />
+      </div>
+    )
+  }
 
   if (!activeProperties.length && viewMode === 'browse') {
     return (

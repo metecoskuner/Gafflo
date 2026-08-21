@@ -20,7 +20,7 @@ const landlordQuickReplies = [
 export default function Messages() {
   const navigate = useNavigate()
   const { conversationId } = useParams()
-  const { conversations } = useMessaging()
+  const { conversations, loading } = useMessaging()
   const { activeRole: role } = useAccountProfile()
   const [undoToast, setUndoToast] = useState(null)
 
@@ -35,6 +35,21 @@ export default function Messages() {
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [conversations, role],
   )
+
+  // Real conversations load asynchronously — without this, a genuinely non-empty inbox could
+  // flash "No conversations yet" for a moment before the fetch resolves, on both this list and a
+  // deep-linked conversationId (conversations starts as [] until loading is real).
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <span
+          className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600"
+          role="status"
+          aria-label="Loading conversations"
+        />
+      </div>
+    )
+  }
 
   if (conversationId) {
     // Deliberately searched in the full, unscoped `conversations` list, not sortedConversations:

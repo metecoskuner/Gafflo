@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ApplicationStatus, { ApplicationStatusPill } from '../components/ApplicationStatus'
 import Button from '../components/Button'
@@ -13,7 +13,7 @@ import { formatCurrency } from '../utils/formatCurrency'
 
 export default function SavedProperties() {
   const navigate = useNavigate()
-  const { savedProperties, removeSavedProperty, toast, dismissToast } = useAppState()
+  const { savedProperties, removeSavedProperty } = useAppState()
   const { getTenantApplicationForListing } = useApplications()
   const [imageFailures, setImageFailures] = useState({})
 
@@ -25,16 +25,6 @@ export default function SavedProperties() {
   const averageRent = sortedSavedProperties.length
     ? Math.round(sortedSavedProperties.reduce((total, property) => total + property.rent, 0) / sortedSavedProperties.length)
     : 0
-
-  useEffect(() => {
-    if (!toast) return undefined
-
-    const timeoutId = window.setTimeout(() => {
-      dismissToast()
-    }, 2400)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [toast, dismissToast])
 
   if (!sortedSavedProperties.length) {
     return (
@@ -58,17 +48,6 @@ export default function SavedProperties() {
 
   return (
     <div className="space-y-4">
-      {toast ? (
-        <div className="card-shadow rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-sm font-medium text-emerald-900">
-          <div className="flex items-center justify-between gap-3">
-            <span>{toast.message}</span>
-            <button type="button" onClick={dismissToast} className="text-emerald-700 hover:text-emerald-800">
-              Dismiss
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <section className="card-surface card-shadow overflow-hidden rounded-[30px]">
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 px-5 py-5 text-white">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Saved properties</p>

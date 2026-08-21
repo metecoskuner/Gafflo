@@ -98,7 +98,7 @@ function AppLayout() {
   const shouldRenderPropertyDetailsRoutes = Boolean(backgroundLocation) || /^\/(properties|rooms)\/[^/]+$/.test(location.pathname)
   const isLandingPage = routeLocation.pathname === '/'
   const isAppRoute = !isLandingPage
-  const { activeFilterCount } = useAppState()
+  const { activeFilterCount, toast, dismissToast } = useAppState()
   const { activeRole: role, hasTenantProfile, hasLandlordProfile } = useAccountProfile()
   // Distinct from hasTenantProfile/hasLandlordProfile on purpose: choosing a role in
   // RoleSelection persists last_active_role immediately (real intent) but does not create the
@@ -133,12 +133,41 @@ function AppLayout() {
     document.querySelector('#app-shell-scroll')?.scrollTo({ left: 0 })
   }, [routeLocation.pathname])
 
+  // Stage N — this toast used to render only inside SavedProperties.jsx, even though
+  // saveProperty()/removeSavedProperty()/recordSmartMatchInterest() (MarketplaceState.jsx) are
+  // all reachable from PropertyDetailsModal and MarketplaceDiscover too — a save or Smart Match
+  // action from either of those produced zero visible feedback. Rendered here, once, at the top
+  // level, it now appears regardless of which page triggered it.
+  useEffect(() => {
+    if (!toast) return undefined
+    const timeoutId = window.setTimeout(() => dismissToast(), 2400)
+    return () => window.clearTimeout(timeoutId)
+  }, [toast, dismissToast])
+
   if (!hasSelectedRole) return <RoleSelection />
   if (role === 'tenant' && !hasTenantProfile) return <TenantOnboarding />
   if (role === 'landlord' && !hasLandlordProfile) return <LandlordOnboarding />
 
   return (
     <>
+      {toast ? (
+        <div className="fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[200] mx-auto w-full max-w-[420px] px-4">
+          {/* 'info' covers both a neutral confirmation (e.g. "Removed from saved properties")
+              and a genuine error (see MarketplaceState.jsx's own setToast calls) — the two
+              aren't distinguishable from `type` alone, so this keeps the one neutral style
+              already used for both before this toast became visible outside SavedProperties.jsx,
+              rather than guessing at which is which and mislabeling a normal action as an error. */}
+          <div className="card-shadow rounded-[22px] border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-sm font-medium text-emerald-900">
+            <div className="flex items-center justify-between gap-3">
+              <span>{toast.message}</span>
+              <button type="button" onClick={dismissToast} className="text-emerald-700 hover:text-emerald-800">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {isAppRoute ? (
         <div className="page-shell relative mx-auto h-[100dvh] w-full min-w-0 max-w-[560px] overflow-hidden overscroll-x-none md:max-w-[620px]">
           <AppHeader
