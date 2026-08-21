@@ -521,10 +521,10 @@ function AccountSection() {
 }
 
 const legalProfileLinks = [
-  { to: '/legal/terms', label: 'Terms of Service' },
-  { to: '/legal/privacy', label: 'Privacy Policy' },
-  { to: '/legal/fair-housing', label: 'Fair Housing Policy' },
-  { to: '/legal/acceptable-use', label: 'Acceptable Use' },
+  { to: '/terms', label: 'Terms of Service' },
+  { to: '/privacy', label: 'Privacy Policy' },
+  { to: '/fair-housing', label: 'Fair Housing Policy' },
+  { to: '/acceptable-use', label: 'Acceptable Use' },
 ]
 
 function LegalLinksSection() {

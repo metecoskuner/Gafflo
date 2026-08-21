@@ -77,21 +77,44 @@ async function pickListing(viewerUserId, accessToken) {
   return candidate
 }
 
-test.describe('Stage J1 — legal, trust, and safety', () => {
-  test('all four legal pages are reachable and render real content', async ({ page }) => {
-    await seedSession(page, 'tenantWaterford')
-    await page.goto('/legal/terms')
-    await expect(page.getByRole('heading', { name: 'Terms of Service' })).toBeVisible({ timeout: 10000 })
+test.describe('Stage J1 — signed out', () => {
+  // playwright.config.js seeds a real authenticated session into every test by default (see its
+  // own comment) — this override is what actually makes "signed out" true here, exactly like
+  // e2e/auth.spec.js's own "signed out" describe block already does.
+  test.use({ storageState: { cookies: [], origins: [] } })
 
-    await page.goto('/legal/privacy')
+  test('a genuinely logged-out visitor can reach all four legal pages directly', async ({ page }) => {
+    await page.goto('/terms')
+    await expect(page.getByRole('heading', { name: 'Terms of Service' })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole('heading', { name: /welcome to gafflo/i })).toHaveCount(0)
+
+    await page.goto('/privacy')
     await expect(page.getByRole('heading', { name: 'Privacy Policy' })).toBeVisible({ timeout: 10000 })
 
-    await page.goto('/legal/fair-housing')
+    await page.goto('/fair-housing')
     await expect(page.getByRole('heading', { name: 'Fair Housing Policy' })).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Traveller community')).toBeVisible()
 
-    await page.goto('/legal/acceptable-use')
+    await page.goto('/acceptable-use')
     await expect(page.getByRole('heading', { name: 'Acceptable Use / Listing Rules' })).toBeVisible({ timeout: 10000 })
+  })
+
+  test('protected app routes still require real authentication', async ({ page }) => {
+    // Confirms this fix did not widen the gate beyond the four legal paths — each of these must
+    // still show the real sign-in screen, never the app itself, for a truly signed-out visitor.
+    for (const path of ['/dashboard', '/discover', '/profile', '/messages']) {
+      await page.goto(path)
+      await expect(page.getByRole('heading', { name: /welcome to gafflo/i })).toBeVisible({ timeout: 10000 })
+      await expect(page.getByLabel('Email')).toBeVisible()
+    }
+  })
+})
+
+test.describe('Stage J1 — legal, trust, and safety', () => {
+  test('a real authenticated session can still reach the same legal pages', async ({ page }) => {
+    await seedSession(page, 'tenantWaterford')
+    await page.goto('/fair-housing')
+    await expect(page.getByRole('heading', { name: 'Fair Housing Policy' })).toBeVisible({ timeout: 10000 })
   })
 
   test('reporting a listing through the UI creates a real, idempotent backend report', async ({ page }) => {

@@ -26,7 +26,7 @@ export default function TermsOfService() {
           Landlords are responsible for the accuracy and legality of their own listing content, including
           compliance with Ireland's Equal Status Acts and any other applicable housing law. Listings go through a
           review step before becoming publicly visible, but that review does not guarantee accuracy or legality —
-          see our <Link className="font-semibold text-indigo-700 underline" to="/legal/fair-housing">Fair Housing Policy</Link>.
+          see our <Link className="font-semibold text-indigo-700 underline" to="/fair-housing">Fair Housing Policy</Link>.
           Gafflo may reject, remove, or request changes to a listing at its discretion, including in response to a
           report from another user.
         </p>

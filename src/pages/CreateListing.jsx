@@ -455,7 +455,7 @@ export default function CreateListing() {
               checked={fairHousingAcknowledged}
               onChange={handleAcknowledgeFairHousing}
             />
-            <Link to="/legal/fair-housing" className="mt-2 inline-block text-xs font-semibold text-indigo-700 underline">
+            <Link to="/fair-housing" className="mt-2 inline-block text-xs font-semibold text-indigo-700 underline">
               Read the policy
             </Link>
             {fairHousingError ? <p className="mt-2 text-xs font-medium text-rose-500">{fairHousingError}</p> : null}

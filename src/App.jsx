@@ -165,10 +165,6 @@ function AppLayout() {
               <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
-              <Route path="/legal/terms" element={<TermsOfService />} />
-              <Route path="/legal/privacy" element={<PrivacyPolicy />} />
-              <Route path="/legal/fair-housing" element={<FairHousingPolicy />} />
-              <Route path="/legal/acceptable-use" element={<AcceptableUsePolicy />} />
               <Route path="*" element={<Navigate to={homeRoute} replace />} />
             </Routes>
           </main>
@@ -213,10 +209,6 @@ function AppLayout() {
               <Route path="/saved" element={role === 'tenant' ? <SavedProperties /> : <Navigate to="/properties" replace />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:conversationId" element={<Messages />} />
-              <Route path="/legal/terms" element={<TermsOfService />} />
-              <Route path="/legal/privacy" element={<PrivacyPolicy />} />
-              <Route path="/legal/fair-housing" element={<FairHousingPolicy />} />
-              <Route path="/legal/acceptable-use" element={<AcceptableUsePolicy />} />
               <Route path="*" element={<Navigate to={homeRoute} replace />} />
             </Routes>
           </main>
@@ -241,7 +233,7 @@ function AppLayout() {
   )
 }
 
-export default function App() {
+function AuthenticatedApp() {
   return (
     <AuthProvider>
       <AuthGate>
@@ -269,6 +261,25 @@ export default function App() {
       </AuthGate>
     </AuthProvider>
   )
+}
+
+// Stage J1 pre-merge fix: exactly four public routes, checked before AuthProvider/AuthGate ever
+// mount, so they render for a logged-out visitor with zero dependency on any auth/profile state.
+// AuthGate itself is untouched — every other route still goes through the full authenticated
+// tree above unchanged. These four pages are pure static content (no useAuth/useAccountProfile/
+// any provider call), so bypassing the whole authenticated tree for them is safe by construction,
+// not just by convention.
+const publicLegalPages = {
+  '/terms': TermsOfService,
+  '/privacy': PrivacyPolicy,
+  '/fair-housing': FairHousingPolicy,
+  '/acceptable-use': AcceptableUsePolicy,
+}
+
+export default function App() {
+  const location = useLocation()
+  const PublicLegalPage = publicLegalPages[location.pathname]
+  return PublicLegalPage ? <PublicLegalPage /> : <AuthenticatedApp />
 }
 
 function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateListing, onFilterOpen, unreadNotificationCount, onNotificationsOpen }) {
