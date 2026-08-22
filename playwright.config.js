@@ -8,6 +8,11 @@ export default defineConfig({
   // marketplace suite runs behind the real auth boundary by default. Auth-flow tests
   // (e2e/auth.spec.js) explicitly override storageState to start signed out.
   globalSetup: './e2e/global-setup.js',
+  // Cleans up this run's own throwaway identities/data (Stage S) — opt-in via
+  // GAFFLO_E2E_CLEANUP_DB_URL/GAFFLO_E2E_CLEANUP_SERVICE_ROLE_KEY; every run works exactly as
+  // before with neither set, just skipping cleanup with a logged warning. See
+  // e2e/global-teardown.js.
+  globalTeardown: './e2e/global-teardown.js',
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',

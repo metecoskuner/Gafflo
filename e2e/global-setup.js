@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { writeManifest } from './lib/runManifest.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const authDir = path.join(__dirname, '.auth')
@@ -222,7 +223,7 @@ async function buildIdentity(url, anonKey, runId, name, spec) {
   }
 
   const [storageKey, storageValue] = await captureSessionStorage(url, anonKey, accessToken, signup.refresh_token)
-  return { storageKey, storageValue }
+  return { storageKey, storageValue, email }
 }
 
 // The existing marketplace e2e suite predates real auth and exercises the mock marketplace
@@ -275,10 +276,19 @@ export default async function globalSetup(config) {
   // Named marketplace-fixture identities, built sequentially — each does 2-3 real network
   // calls, and running them one at a time keeps failures easy to attribute to a specific
   // identity rather than an opaque Promise.all rejection.
+  //
+  // runManifestEmails collects every real throwaway email this run creates (this loop plus the
+  // default session above) — the one thing e2e/global-teardown.js reads to know what it is safe
+  // to delete afterward. moderatorStable is deliberately never added to it below: that identity
+  // is signed into, not signed up, and must persist across every run.
+  const runManifestEmails = [defaultEmail]
   const identities = {}
   for (const [name, spec] of Object.entries(IDENTITIES)) {
-    identities[name] = await buildIdentity(url, anonKey, runId, name, spec)
+    const identity = await buildIdentity(url, anonKey, runId, name, spec)
+    identities[name] = identity
+    runManifestEmails.push(identity.email)
   }
+  writeManifest(runId, runManifestEmails)
 
   // Stage K — one fixed, real, persistent moderator account (created once, promoted once via
   // direct DB access, never through this file). Signed into, not signed up, every run. Still

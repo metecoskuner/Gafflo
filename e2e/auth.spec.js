@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
+import { appendEmailToManifest } from './lib/runManifest.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const identities = JSON.parse(readFileSync(path.join(__dirname, '.auth', 'identities.json'), 'utf8'))
@@ -46,6 +47,11 @@ test.describe('signed out', () => {
     const response = await otpResponse
 
     if (response.ok()) {
+      // The one real throwaway identity this file creates outside global-setup.js's own batch
+      // (Supabase auto-provisions a new user on first OTP send) — recorded here so
+      // global-teardown.js's manifest-scoped cleanup covers it too, not just the named
+      // IDENTITIES set.
+      appendEmailToManifest(email)
       await expect(page.getByRole('heading', { name: /check your email/i })).toBeVisible()
       await expect(page.getByText(email)).toBeVisible()
     } else {
