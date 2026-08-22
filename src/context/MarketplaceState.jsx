@@ -111,6 +111,7 @@ export function AppStateProvider({ children }) {
     toast,
     activeFilterCount: Object.entries(propertyFilters).filter(([, value]) => value && !['Any', ANY_VALUE].includes(value)).length,
     dismissToast: () => setToast(null),
+    showToast: (nextToast) => setToast(nextToast),
     setPropertyFilters(nextFilters) {
       setPropertyFiltersState((current) => ({ ...current, ...nextFilters }))
     },

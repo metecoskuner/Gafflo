@@ -93,7 +93,7 @@ function createInitialForm() {
 export default function CreateListing() {
   const navigate = useNavigate()
   const { propertyId } = useParams()
-  const { landlordProperties } = useAppState()
+  const { landlordProperties, showToast } = useAppState()
   const { acknowledgeFairHousingPolicy, landlordProfile, profile } = useAccountProfile()
   const fairHousingAcknowledged = Boolean(landlordProfile?.fairHousingAcknowledgedAt)
   const [fairHousingPending, setFairHousingPending] = useState(false)
@@ -332,6 +332,7 @@ export default function CreateListing() {
 
     if (!willRequestReview) {
       setIsSaving(false)
+      if (isDraft) showToast({ type: 'success', message: 'Saved as draft.' })
       navigate('/properties')
       return
     }
@@ -342,6 +343,7 @@ export default function CreateListing() {
       setSaveError(reviewError)
       return
     }
+    showToast({ type: 'success', message: 'Submitted for review. You will be notified once a moderator responds.' })
     navigate('/properties')
   }
 
@@ -474,6 +476,12 @@ export default function CreateListing() {
           Preview listing
         </Button>
 
+        {canRequestReview ? (
+          <p className="px-1 text-xs leading-5 text-slate-500">
+            <strong className="font-semibold text-slate-700">Save draft</strong> keeps this listing private and editable. <strong className="font-semibold text-slate-700">Request review</strong> submits it to a Gafflo moderator — once approved, it becomes visible to renters.
+          </p>
+        ) : null}
+
         <div className={`grid gap-2 rounded-[24px] border border-slate-200 bg-white/96 p-2 shadow-soft ${canRequestReview ? 'grid-cols-[0.9fr_1.1fr]' : 'grid-cols-1'}`}>
           {canRequestReview ? (
             <Button variant="secondary" disabled={isSaving} onClick={(event) => handleSubmit(event, 'draft')}>
@@ -509,9 +517,18 @@ function nullableFormNumber(value) {
 
 function PhotoSection({ error, fallbackImage, isUploading, onChange, onCover, onMove, onRemove, pendingImageId, photos }) {
   const displayPhotos = photos.length ? photos : [{ id: 'fallback', src: fallbackImage, isCover: true }]
+  const photoCount = photos.length
 
   return (
-    <FormSection title="Photos" description="Photos are uploaded and saved to your listing as soon as you add them — no separate save step. At least one photo is required before requesting review.">
+    <FormSection title="Photos" description="Photos are uploaded and saved to your listing as soon as you add them — no separate save step.">
+      <div
+        className={`mb-4 flex items-center justify-between gap-2 rounded-[16px] px-3 py-2 text-xs font-semibold ${
+          photoCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+        }`}
+      >
+        <span>{photoCount} of {MAX_LISTING_PHOTOS} photos added</span>
+        <span>{photoCount > 0 ? 'Meets the minimum for review' : 'At least 1 required to request review'}</span>
+      </div>
       <label className="block">
         <span className="mb-2 block text-sm font-medium text-slate-700">Add photos</span>
         <input
@@ -523,8 +540,15 @@ function PhotoSection({ error, fallbackImage, isUploading, onChange, onCover, on
           className="min-h-12 w-full rounded-[18px] border border-indigo-100 bg-white px-4 py-3 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-emerald-700 disabled:opacity-60"
         />
         {error ? <span className="mt-2 block text-xs font-medium text-rose-500">{error}</span> : null}
-        <span className="mt-2 block text-xs leading-5 text-slate-500">
-          {isUploading ? 'Uploading…' : `JPEG, PNG or WEBP. Up to ${MAX_LISTING_PHOTOS} images. Each image must be under 2 MB.`}
+        <span className="mt-2 flex items-center gap-2 text-xs leading-5 text-slate-500">
+          {isUploading ? (
+            <>
+              <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-emerald-200 border-t-emerald-600" role="status" aria-label="Uploading" />
+              Uploading…
+            </>
+          ) : (
+            `JPEG, PNG or WEBP. Up to ${MAX_LISTING_PHOTOS} images. Each image must be under 2 MB.`
+          )}
         </span>
       </label>
       <div className="mt-4 grid gap-3">
@@ -587,20 +611,20 @@ function PhotoPreview({ alt, src }) {
 
 function BasicsSection({ form, errors, today, updateField }) {
   return (
-    <FormSection title="Listing basics" description="Core details renters need before opening the listing.">
+    <FormSection title="Listing basics" description="Core details renters need before opening the listing. Fields marked * are required before you can request review.">
       <div className="grid gap-4">
-        <FormInput label="Title" placeholder="Bright double room in Rathmines" value={form.title} maxLength={90} error={errors.title} onChange={(event) => updateField('title', event.target.value)} />
+        <FormInput required label="Title" placeholder="Bright double room in Rathmines" value={form.title} maxLength={90} error={errors.title} onChange={(event) => updateField('title', event.target.value)} />
         <div className="grid gap-3 min-[380px]:grid-cols-2">
-          <FormInput label="Monthly rent (€)" type="number" min="1" inputMode="numeric" value={form.rent} error={errors.rent} onChange={(event) => updateField('rent', event.target.value)} />
-          <FormInput label="Deposit (€)" type="number" min="0" inputMode="numeric" value={form.deposit} error={errors.deposit} onChange={(event) => updateField('deposit', event.target.value)} />
+          <FormInput required label="Monthly rent (€)" type="number" min="1" inputMode="numeric" value={form.rent} error={errors.rent} onChange={(event) => updateField('rent', event.target.value)} />
+          <FormInput required label="Deposit (€)" type="number" min="0" inputMode="numeric" value={form.deposit} error={errors.deposit} onChange={(event) => updateField('deposit', event.target.value)} />
         </div>
         <div className="grid gap-3 min-[380px]:grid-cols-2">
           <SelectInput label="City" value={form.city} onChange={(event) => updateField('city', event.target.value)} options={cityOptions.map((item) => ({ label: item, value: item }))} />
-          <FormInput label="Area" placeholder="Rathmines" value={form.area} maxLength={70} error={errors.area} onChange={(event) => updateField('area', event.target.value)} />
+          <FormInput required label="Area" placeholder="Rathmines" value={form.area} maxLength={70} error={errors.area} onChange={(event) => updateField('area', event.target.value)} />
         </div>
         <div className="grid gap-3 min-[380px]:grid-cols-2">
-          <FormInput label="Available from" type="date" min={today} value={form.availableFrom} error={errors.availableFrom} onChange={(event) => updateField('availableFrom', event.target.value)} />
-          <FormInput label="Minimum stay (months)" type="number" min="1" inputMode="numeric" value={form.minStayMonths} error={errors.minStayMonths} onChange={(event) => updateField('minStayMonths', event.target.value)} />
+          <FormInput required label="Available from" type="date" min={today} value={form.availableFrom} error={errors.availableFrom} onChange={(event) => updateField('availableFrom', event.target.value)} />
+          <FormInput required label="Minimum stay (months)" type="number" min="1" inputMode="numeric" value={form.minStayMonths} error={errors.minStayMonths} onChange={(event) => updateField('minStayMonths', event.target.value)} />
         </div>
         <Toggle label="Bills included" checked={Boolean(form.billsIncluded)} onChange={(value) => updateField('billsIncluded', value)} />
       </div>
@@ -612,14 +636,14 @@ function EntirePropertySection({ form, errors, updateField }) {
   return (
     <FormSection title="Property" description="Whole-home attributes are separate from the listing category.">
       <div className="grid gap-3 min-[430px]:grid-cols-2">
-        <SelectInput label="Property type" value={form.propertyType} onChange={(event) => updateField('propertyType', event.target.value)} options={propertyTypeOptions} error={errors.propertyType} />
+        <SelectInput required label="Property type" value={form.propertyType} onChange={(event) => updateField('propertyType', event.target.value)} options={propertyTypeOptions} error={errors.propertyType} />
         {form.propertyType !== 'studio' ? (
-          <FormInput label="Bedrooms" type="number" min="1" inputMode="numeric" value={form.bedrooms} error={errors.bedrooms} onChange={(event) => updateField('bedrooms', event.target.value)} />
+          <FormInput required label="Bedrooms" type="number" min="1" inputMode="numeric" value={form.bedrooms} error={errors.bedrooms} onChange={(event) => updateField('bedrooms', event.target.value)} />
         ) : (
           <div className="rounded-[18px] border border-indigo-100 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600">Studio listings are stored with 0 bedrooms.</div>
         )}
-        <FormInput label="Bathrooms" type="number" min="0.5" step="0.5" inputMode="decimal" value={form.bathrooms} error={errors.bathrooms} onChange={(event) => updateField('bathrooms', event.target.value)} />
-        <FormInput label="Max occupants" type="number" min="1" inputMode="numeric" value={form.maxOccupants} error={errors.maxOccupants} onChange={(event) => updateField('maxOccupants', event.target.value)} />
+        <FormInput required label="Bathrooms" type="number" min="0.5" step="0.5" inputMode="decimal" value={form.bathrooms} error={errors.bathrooms} onChange={(event) => updateField('bathrooms', event.target.value)} />
+        <FormInput required label="Max occupants" type="number" min="1" inputMode="numeric" value={form.maxOccupants} error={errors.maxOccupants} onChange={(event) => updateField('maxOccupants', event.target.value)} />
         <SelectInput label="Furnished" value={form.furnished} onChange={(event) => updateField('furnished', event.target.value)} options={furnishedOptions} />
         <SelectInput label="Parking" value={form.parking} onChange={(event) => updateField('parking', event.target.value)} options={parkingOptions} />
         <SelectInput label="Pets" value={form.petsAllowed} onChange={(event) => updateField('petsAllowed', event.target.value)} options={petPolicyOptions} />
@@ -634,11 +658,19 @@ function RoomSection({ form, errors, updateField }) {
   return (
     <FormSection title={form.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? 'Room in owner-occupied home' : 'Room'} description="Room details stay separate from the parent property type.">
       <div className="grid gap-3 min-[430px]:grid-cols-2">
-        <SelectInput label="Room type" value={form.roomType} onChange={(event) => updateField('roomType', event.target.value)} options={roomTypeOptions} error={errors.roomType} />
+        <SelectInput required label="Room type" value={form.roomType} onChange={(event) => updateField('roomType', event.target.value)} options={roomTypeOptions} error={errors.roomType} />
         <SelectInput label="Parent property" value={form.parentPropertyType} onChange={(event) => updateField('parentPropertyType', event.target.value)} options={roomParentPropertyTypeOptions} />
         <SelectInput label="Furnished" value={form.furnished} onChange={(event) => updateField('furnished', event.target.value)} options={furnishedOptions} />
         <SelectInput label="Bed type" value={form.bedType} onChange={(event) => updateField('bedType', event.target.value)} options={bedTypeOptions} />
-        <SelectInput label="Bathroom arrangement" value={form.bathroomArrangement} onChange={(event) => updateField('bathroomArrangement', event.target.value)} options={bathroomArrangementOptions} error={errors.bathroomArrangement} />
+        <SelectInput
+          required
+          label="Bathroom arrangement"
+          hint="Private: just for this room. Shared: with other tenants. Ensuite: attached directly to the room."
+          value={form.bathroomArrangement}
+          onChange={(event) => updateField('bathroomArrangement', event.target.value)}
+          options={bathroomArrangementOptions}
+          error={errors.bathroomArrangement}
+        />
         <Toggle label="Workspace" checked={Boolean(form.workspace)} onChange={(value) => updateField('workspace', value)} />
         <Toggle label="Wardrobe/storage" checked={Boolean(form.wardrobeStorage)} onChange={(value) => updateField('wardrobeStorage', value)} />
       </div>
@@ -650,11 +682,21 @@ function HouseholdSection({ form, errors, updateField }) {
   return (
     <FormSection title="Parent property and household" description="Practical household context for a shared home.">
       <div className="grid gap-3 min-[430px]:grid-cols-2">
-        <FormInput label="Total bedrooms" type="number" min="1" inputMode="numeric" value={form.totalBedrooms} error={errors.totalBedrooms} onChange={(event) => updateField('totalBedrooms', event.target.value)} />
-        <FormInput label="Total bathrooms" type="number" min="0.5" step="0.5" inputMode="decimal" value={form.bathrooms} error={errors.bathrooms} onChange={(event) => updateField('bathrooms', event.target.value)} />
-        <FormInput label="Current household size" type="number" min={form.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? '1' : '0'} inputMode="numeric" value={form.currentHouseholdSize} error={errors.currentHouseholdSize} onChange={(event) => updateField('currentHouseholdSize', event.target.value)} />
-        <FormInput label="Max household size after move-in" type="number" min="2" inputMode="numeric" value={form.maxHouseholdSize} error={errors.maxHouseholdSize} onChange={(event) => updateField('maxHouseholdSize', event.target.value)} />
-        <SelectInput label="Room occupancy" value={form.maxOccupants} onChange={(event) => updateField('maxOccupants', event.target.value)} options={roomOccupancyOptions} error={errors.maxOccupants} />
+        <FormInput required label="Total bedrooms" type="number" min="1" inputMode="numeric" value={form.totalBedrooms} error={errors.totalBedrooms} onChange={(event) => updateField('totalBedrooms', event.target.value)} />
+        <FormInput required label="Total bathrooms" type="number" min="0.5" step="0.5" inputMode="decimal" value={form.bathrooms} error={errors.bathrooms} onChange={(event) => updateField('bathrooms', event.target.value)} />
+        <FormInput
+          required
+          label="Current household size"
+          hint="How many people already live here today, not counting the new tenant."
+          type="number"
+          min={form.listingCategory === LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM ? '1' : '0'}
+          inputMode="numeric"
+          value={form.currentHouseholdSize}
+          error={errors.currentHouseholdSize}
+          onChange={(event) => updateField('currentHouseholdSize', event.target.value)}
+        />
+        <FormInput required label="Max household size after move-in" type="number" min="2" inputMode="numeric" value={form.maxHouseholdSize} error={errors.maxHouseholdSize} onChange={(event) => updateField('maxHouseholdSize', event.target.value)} />
+        <SelectInput required label="Room occupancy" value={form.maxOccupants} onChange={(event) => updateField('maxOccupants', event.target.value)} options={roomOccupancyOptions} error={errors.maxOccupants} />
       </div>
       <div className="mt-4 rounded-[18px] bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
         Household after move-in: up to {form.maxHouseholdSize || 0} people in a {domainLabel('roomParentPropertyType', form.parentPropertyType)}.
@@ -697,7 +739,7 @@ function TermsSection({ form, errors, roomListing, updateField }) {
           excludes people by family status, disability, race, religion, age, gender, sexual orientation, civil
           status, membership of the Traveller community, or receipt of housing assistance (e.g. HAP).
         </div>
-        <FormInput textarea rows={4} label={roomListing ? 'Room description' : 'Property description'} value={form.description} maxLength={900} error={errors.description} onChange={(event) => updateField('description', event.target.value)} />
+        <FormInput required textarea rows={4} label={roomListing ? 'Room description' : 'Property description'} hint="At least 40 characters." value={form.description} maxLength={900} error={errors.description} onChange={(event) => updateField('description', event.target.value)} />
         {roomListing ? (
           <FormInput textarea rows={3} label="Household summary" value={form.householdSummary} maxLength={500} error={errors.householdSummary} onChange={(event) => updateField('householdSummary', event.target.value)} />
         ) : null}

@@ -22,6 +22,8 @@ export default function GaffloSelect({
   options,
   placeholder = 'Choose an option',
   error,
+  hint,
+  required = false,
   disabled = false,
   className = '',
   id,
@@ -178,8 +180,10 @@ export default function GaffloSelect({
       {label ? (
         <span id={labelId} className="mb-2 block text-sm font-medium text-slate-700">
           {label}
+          {required ? <span className="ml-0.5 text-rose-500" aria-hidden="true">*</span> : null}
         </span>
       ) : null}
+      {hint ? <span className="mb-2 block text-xs leading-5 text-slate-500">{hint}</span> : null}
       <button
         type="button"
         ref={triggerRef}
@@ -192,6 +196,7 @@ export default function GaffloSelect({
         aria-label={!label && ariaLabel ? ariaLabel : undefined}
         aria-invalid={error ? 'true' : undefined}
         aria-describedby={errorId}
+        aria-required={required || undefined}
         onClick={() => (open ? close() : openList())}
         onKeyDown={handleTriggerKeyDown}
         className={`flex min-h-12 w-full items-center justify-between gap-2 rounded-[18px] border px-4 py-3 text-left text-base text-slate-700 outline-none transition focus:border-emerald-400 focus:bg-emerald-50/20 focus:ring-4 focus:ring-emerald-100 md:text-sm ${

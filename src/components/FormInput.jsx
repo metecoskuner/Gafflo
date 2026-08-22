@@ -1,6 +1,8 @@
 export default function FormInput({
   label,
   error,
+  hint,
+  required = false,
   className = '',
   textarea = false,
   ...props
@@ -12,11 +14,15 @@ export default function FormInput({
 
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-slate-700">
+        {label}
+        {required ? <span className="ml-0.5 text-rose-500" aria-hidden="true">*</span> : null}
+      </span>
+      {hint ? <span className="mb-2 block text-xs leading-5 text-slate-500">{hint}</span> : null}
       {textarea ? (
-        <textarea className={baseClassName} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} {...props} />
+        <textarea className={baseClassName} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} aria-required={required || undefined} {...props} />
       ) : (
-        <input className={baseClassName} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} {...props} />
+        <input className={baseClassName} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} aria-required={required || undefined} {...props} />
       )}
       {error ? <span id={describedBy} className="mt-2 block text-xs font-medium text-rose-500">{error}</span> : null}
     </label>

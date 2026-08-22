@@ -82,6 +82,20 @@ set local role service_role;
 update public.profiles set platform_role = 'moderator' where id = 'f0000000-0000-0000-0000-00000000000d';
 reset role;
 
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (platform_status
+-- enforcement). Pre-seed all three landlord fixtures as already-acknowledged, the same way the
+-- moderator role bump above is pre-seeded directly rather than exercised through its own RPC:
+-- this suite is not the place that tests the Fair Housing gate itself (legal_trust_safety_test.sql
+-- is), so every request_listing_review() call below must fail (or succeed) for the reason this
+-- file actually cares about, never because a fixture forgot to acknowledge a policy.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('f0000000-0000-0000-0000-00000000000a', 'Active Landlord', now()),
+  ('f0000000-0000-0000-0000-00000000000b', 'Suspended Landlord', now()),
+  ('f0000000-0000-0000-0000-00000000000c', 'Banned Landlord', now());
+reset role;
+
 -- ---- Build every fixture listing WHILE its owner is still active — is_caller_active() would
 -- block most of this if attempted after suspending/banning, which is exactly the point. ----
 
@@ -146,9 +160,14 @@ select throws_ok(
   '2. a suspended landlord cannot create a new draft listing'
 );
 
-select throws_ok(
+-- throws_like, not just throws_ok: this fixture is Fair-Housing-acknowledged and otherwise
+-- fully ready (see pg_temp.make_ready_draft and the landlord_profiles pre-seed above), so an
+-- assertion that merely checks "throws" cannot distinguish the intended account-status block
+-- from an unrelated readiness/Fair-Housing exception. Asserting the exact message is what
+-- actually proves is_caller_active() is doing the blocking here.
+select throws_like(
   format($$ select public.request_listing_review(%L) $$, :'susp_ready_draft_id'),
-  null::char(5), null,
+  '%Account is not active%',
   '3. a suspended landlord cannot request review, even on an otherwise-ready draft'
 );
 
@@ -193,6 +212,16 @@ select throws_ok(
   '10. a suspended landlord cannot create a new tenant_profiles role surface'
 );
 
+-- Landlord 'b' already has a landlord_profiles row from the Fair Housing pre-seed above (needed
+-- so tests 3-9 fail/succeed for account-status reasons, not a missing acknowledgement). Drop it
+-- here, as service_role, so this specific test still represents its real intent: a suspended
+-- user attempting to become a landlord for the first time, not a pre-key-conflict on an
+-- already-landlord row. Nothing after this point needs landlord 'b' to have the row.
+set local role service_role;
+delete from public.landlord_profiles where profile_id = 'f0000000-0000-0000-0000-00000000000b';
+reset role;
+
+select pg_temp.authenticate_as('f0000000-0000-0000-0000-00000000000b');
 select throws_ok(
   $$ insert into public.landlord_profiles (profile_id, display_name) values ('f0000000-0000-0000-0000-00000000000b', 'Should not be created') $$,
   '42501', null,

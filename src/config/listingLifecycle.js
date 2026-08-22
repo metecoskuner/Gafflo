@@ -6,6 +6,7 @@ export const listingStatusLabels = {
   paused: 'Paused',
   rented: 'Rented',
   rejected: 'Needs changes',
+  removed_by_platform: 'Removed',
 }
 
 const listingTransitions = {

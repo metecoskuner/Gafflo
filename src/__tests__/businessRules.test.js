@@ -442,7 +442,12 @@ describe('listing categories', () => {
     expect(photos[0].label).toBe('Kitchen')
     expect(photos[0].isCover).toBe(true)
     const file = { name: 'notes.txt', type: 'text/plain', size: 10 }
-    expect(validatePhotoFiles([file], []).errors[0]).toBe('notes.txt is not an image.')
+    expect(validatePhotoFiles([file], []).errors[0]).toBe("notes.txt isn't a supported photo format. Use JPEG, PNG, or WEBP.")
+    // Stage O: the accepted set is the exact three mime types the backend allows (Storage bucket
+    // + listing_images_mime_allowed CHECK), not merely image/* — HEIC (common on iPhone), GIF,
+    // etc. must be caught here with a clear message rather than reaching a raw Storage error.
+    const heicFile = { name: 'photo.heic', type: 'image/heic', size: 10 }
+    expect(validatePhotoFiles([heicFile], []).errors[0]).toBe("photo.heic isn't a supported photo format. Use JPEG, PNG, or WEBP.")
   })
 
   it('keeps session object URLs out of durable listing photos', () => {

@@ -2,6 +2,12 @@ import { LISTING_CATEGORIES, isRoomListing, normalizeListingCategory } from './l
 
 export const MAX_LISTING_PHOTOS = 8
 export const MAX_LISTING_PHOTO_BYTES = 2 * 1024 * 1024
+// Must match the input's accept list, the Storage bucket's allowed_mime_types, and the
+// listing_images_mime_allowed CHECK constraint exactly — see the listings/Storage migration.
+// A plain `startsWith('image/')` check here would accept e.g. HEIC (common on iPhone) or GIF
+// client-side, only to have the actual Storage upload reject it with a raw backend error
+// instead of a clear, friendly one.
+export const ACCEPTED_LISTING_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 export const entirePropertyPhotoLabels = ['Cover', 'Living room', 'Kitchen', 'Bedroom', 'Bathroom', 'Exterior', 'Other']
 export const roomPhotoLabels = ['Cover / Room', 'Bathroom', 'Kitchen', 'Shared living area', 'Exterior', 'Other']
@@ -61,8 +67,8 @@ export function validatePhotoFiles(files = [], existingPhotos = []) {
   }
 
   files.slice(0, remaining).forEach((file) => {
-    if (!file.type?.startsWith('image/')) {
-      errors.push(`${file.name || 'One file'} is not an image.`)
+    if (!ACCEPTED_LISTING_PHOTO_TYPES.includes(file.type)) {
+      errors.push(`${file.name || 'One file'} isn't a supported photo format. Use JPEG, PNG, or WEBP.`)
       return
     }
     if (file.size > MAX_LISTING_PHOTO_BYTES) {
