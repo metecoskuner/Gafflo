@@ -94,6 +94,15 @@ insert into auth.users (id, email) values
 -- 004/005 (eventually suspended/banned) deliberately stay active during setup, matching every
 -- earlier suite's fixture ordering.
 
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (saved listings/Smart
+-- Match). Pre-seed the landlord fixture that calls make_published_listing() below as already-
+-- acknowledged. See Stage P.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('50000000-0000-0000-0000-000000000001', 'Saved/Smart Match Landlord A', now());
+reset role;
+
 insert into public.tenant_profiles (profile_id, target_city, looking_for) values
   -- Landlord A also holds a tenant_profiles row — a real dual-role account — specifically so the
   -- own-listing rejection tests below can authenticate as the actual owner of own_listing_id,

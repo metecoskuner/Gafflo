@@ -100,6 +100,15 @@ update public.profiles set platform_status = 'suspended' where id = '80000000-00
 update public.profiles set platform_status = 'banned' where id = '80000000-0000-0000-0000-000000000006';
 reset role;
 
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (listing view analytics).
+-- Pre-seed the landlord fixture that calls make_published_listing() below as already-
+-- acknowledged. See Stage P.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('80000000-0000-0000-0000-000000000001', 'Analytics Landlord A', now());
+reset role;
+
 select pg_temp.authenticate_as('80000000-0000-0000-0000-000000000001');
 select pg_temp.make_published_listing('80000000-0000-0000-0000-000000000001', 'Analytics Listing 1') as listing_1_id \gset
 select pg_temp.publish_listing(:'listing_1_id');

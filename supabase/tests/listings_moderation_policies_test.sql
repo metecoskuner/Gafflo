@@ -57,6 +57,18 @@ set local role service_role;
 update public.profiles set platform_role = 'moderator' where id = 'c0000000-0000-0000-0000-00000000000c';
 reset role;
 
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (listing moderation
+-- policies). Pre-seed landlord A, the only identity that ever calls request_listing_review()
+-- below, as already-acknowledged, so those calls succeed or fail for the reason this file
+-- actually cares about (e.g. the readiness-completeness checks), never because a fixture forgot
+-- to acknowledge a policy. See Stage P. Landlord B never calls request_listing_review() (its
+-- listings are inserted directly by the test-runner), so it needs no pre-seed.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('a0000000-0000-0000-0000-00000000000a', 'Moderation Landlord A', now());
+reset role;
+
 -- A helper that builds one fully review-ready draft owned by whichever user is currently
 -- authenticated, and registers exactly one durable image for it. Used by several tests below
 -- so each one does not have to re-derive "a complete listing" from scratch.

@@ -200,6 +200,11 @@ test.describe('Stage C — real listings + Storage photos', () => {
   })
 
   test('request review: an incomplete listing is rejected with the real backend readiness message; a complete listing with one photo transitions to pending_verification, and the landlord cannot self-publish', async ({ page }) => {
+    // request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+    // account-level prerequisite this test isn't about. Acknowledge it directly via REST first,
+    // the same established pattern e2e/legal-trust-safety.spec.js uses to exercise the RPC
+    // itself, so "Request review" behaves normally below instead of staying disabled. Stage P.
+    await rest('rpc/acknowledge_fair_housing_policy', { method: 'POST', accessToken: sessionFor('landlordDefault').accessToken })
     await seedSession(page, 'landlordDefault')
     await page.goto('/listings/new')
     await page.getByLabel('Title').fill('E2E complete review-ready listing')
@@ -370,6 +375,9 @@ test.describe('Stage C — real listings + Storage photos', () => {
       accessToken: draft.accessToken,
       body: { p_listing_id: draft.id, p_storage_path: path, p_label: 'cover', p_is_cover: true },
     })
+    // request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+    // account-level prerequisite this test isn't about. Stage P.
+    await rest('rpc/acknowledge_fair_housing_policy', { method: 'POST', accessToken: draft.accessToken })
     await rest('rpc/request_listing_review', { method: 'POST', accessToken: draft.accessToken, body: { p_listing_id: draft.id } })
     const submitted = await rest(`listings?id=eq.${draft.id}&select=status`, { accessToken: draft.accessToken })
     expect(submitted.json[0].status).toBe('pending_verification')

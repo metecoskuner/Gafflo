@@ -92,6 +92,18 @@ insert into auth.users (id, email) values
 set local role service_role;
 update public.profiles set platform_role = 'moderator' where id = '30000000-0000-0000-0000-000000000005';
 reset role;
+
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (messaging). Pre-seed every
+-- landlord fixture that calls make_published_listing() below as already-acknowledged. See
+-- Stage P.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('30000000-0000-0000-0000-000000000001', 'Messaging Landlord A', now()),
+  ('30000000-0000-0000-0000-000000000002', 'Messaging Landlord B', now()),
+  ('30000000-0000-0000-0000-000000000008', 'Messaging Suspended Landlord', now());
+reset role;
+
 -- 006, 007 and 008 (the eventually-suspended/banned identities) deliberately stay active here
 -- — each one's conversation is built while they are still active, and the status change is
 -- applied later, in context, right before the specific test that needs it. This matches every

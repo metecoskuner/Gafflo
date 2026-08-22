@@ -110,6 +110,18 @@ insert into auth.users (id, email) values
 set local role service_role;
 update public.profiles set platform_role = 'moderator' where id = '40000000-0000-0000-0000-000000000005';
 reset role;
+
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (viewings). Pre-seed every
+-- landlord fixture that calls make_published_listing() below as already-acknowledged. See
+-- Stage P.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('40000000-0000-0000-0000-000000000001', 'Viewings Landlord A', now()),
+  ('40000000-0000-0000-0000-000000000002', 'Viewings Landlord B', now()),
+  ('40000000-0000-0000-0000-000000000008', 'Viewings Suspended Landlord', now());
+reset role;
+
 -- 006/007/008 (eventually suspended/banned) deliberately stay active here — each one's
 -- application/listing is built while still active, matching every earlier suite's established
 -- fixture ordering, since is_caller_active() would block the setup steps otherwise.

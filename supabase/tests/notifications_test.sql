@@ -102,6 +102,15 @@ set local role service_role;
 update public.profiles set platform_role = 'moderator' where id = '70000000-0000-0000-0000-000000000004';
 reset role;
 
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (notifications). Pre-seed
+-- the landlord fixture that calls make_published_listing() below as already-acknowledged. See
+-- Stage P.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('70000000-0000-0000-0000-000000000001', 'Notifications Landlord A', now());
+reset role;
+
 insert into public.tenant_profiles (profile_id, target_city, looking_for) values
   ('70000000-0000-0000-0000-000000000002', 'Dublin', 'any'),
   ('70000000-0000-0000-0000-000000000003', 'Dublin', 'any');

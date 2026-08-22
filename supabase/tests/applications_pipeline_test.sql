@@ -245,6 +245,19 @@ update public.profiles set platform_role = 'moderator' where id = '20000000-0000
 update public.profiles set platform_status = 'suspended' where id = '20000000-0000-0000-0000-000000000006';
 update public.profiles set platform_status = 'banned' where id = '20000000-0000-0000-0000-000000000007';
 reset role;
+
+-- request_listing_review() also gates on Fair Housing acknowledgement (Stage J1) — a real,
+-- account-level prerequisite unrelated to what this suite is testing (the application pipeline).
+-- Pre-seed every landlord fixture that calls make_published_listing() below as already-
+-- acknowledged, so those calls succeed for the reason this file actually cares about, never
+-- because a fixture forgot to acknowledge a policy. See Stage P.
+set local role service_role;
+insert into public.landlord_profiles (profile_id, display_name, fair_housing_acknowledged_at) values
+  ('20000000-0000-0000-0000-000000000001', 'Applications Landlord A', now()),
+  ('20000000-0000-0000-0000-000000000002', 'Applications Landlord B', now()),
+  ('20000000-0000-0000-0000-000000000008', 'Applications Suspended Landlord', now());
+reset role;
+
 -- identity 008 (the eventually-suspended landlord) is deliberately NOT suspended yet here —
 -- its own listing has to be built while still active, exactly like Phase 1D''s fixtures: below,
 -- make_published_listing() calls request_listing_review() internally, which is itself gated on
