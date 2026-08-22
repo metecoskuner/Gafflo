@@ -32,10 +32,18 @@ async function attachImagesAndOwners(rows) {
   const listingIds = rows.map((row) => row.id)
   const imageRows = await fetchListingImagesForListings(listingIds)
   const paths = imageRows.map((row) => row.storage_path)
-  const [urlMap, ownerMap] = await Promise.all([
+  // allSettled, not all: get_public_profile_summaries is authenticated-only (correctly — see
+  // ListingsProvider's own comment below on why `user` is normally guaranteed non-null). Under
+  // VITE_DEV_BYPASS_AUTH, the real Supabase client is genuinely anon despite the UI rendering
+  // past the auth gate, so this call 401s there — without allSettled that single rejection sinks
+  // signed-URL resolution too and the listing never renders at all, even though its own row data
+  // (title, rent, photos once resolved) has nothing to do with owner names.
+  const [urlResult, ownerResult] = await Promise.allSettled([
     resolveSignedUrls(paths),
     fetchPublicProfileSummaries(rows.map((row) => row.owner_id)),
   ])
+  const urlMap = urlResult.status === 'fulfilled' ? urlResult.value : {}
+  const ownerMap = ownerResult.status === 'fulfilled' ? ownerResult.value : {}
 
   const imagesByListing = new Map()
   imageRows.forEach((row) => {
@@ -62,11 +70,20 @@ async function attachImagesAndOwners(rows) {
 }
 
 async function loadListingsState() {
-  const [publicRows, myRows] = await Promise.all([fetchPublicListings(), fetchMyListings()])
-  const [publicListings, myListings] = await Promise.all([
+  // allSettled for the same reason as attachImagesAndOwners above: get_my_listings requires a
+  // real authenticated landlord and 401s under dev-bypass's genuinely-anon session, but that
+  // failure has nothing to do with whether the public listings (fully anon-readable) can render.
+  const [publicResult, myResult] = await Promise.allSettled([fetchPublicListings(), fetchMyListings()])
+  const publicRows = publicResult.status === 'fulfilled' ? publicResult.value : []
+  const myRows = myResult.status === 'fulfilled' ? myResult.value : []
+
+  const [publicListingsResult, myListingsResult] = await Promise.allSettled([
     attachImagesAndOwners(publicRows),
     attachImagesAndOwners(myRows),
   ])
+  const publicListings = publicListingsResult.status === 'fulfilled' ? publicListingsResult.value : []
+  const myListings = myListingsResult.status === 'fulfilled' ? myListingsResult.value : []
+
   return { publicListings, myListings, loading: false, error: null }
 }
 
