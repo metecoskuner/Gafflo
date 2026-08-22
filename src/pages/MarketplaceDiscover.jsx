@@ -149,7 +149,7 @@ export default function MarketplaceDiscover() {
           onExploreGafflo={() => setShowGaffloPlus(true)}
         />
       ) : (
-        <section className="grid gap-4 md:grid-cols-2">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {browseProperties.map((property) => {
             const application = getTenantApplicationForListing(property.id)
             return (
@@ -512,12 +512,25 @@ function SwipeIntentBadge({ intent, opacity, ready }) {
   )
 }
 
+// Rent is duplicated on every shape's overlay; an entire-property overlay also already states
+// type/beds/area directly, so those three are additionally redundant only in that case.
+const OVERLAY_DUPLICATE_LABELS_ROOM = new Set(['Rent'])
+const OVERLAY_DUPLICATE_LABELS_ENTIRE = new Set(['Rent', 'Type', 'Beds', 'Area'])
+
+function dedupeFactsAgainstOverlay(facts, roomListing) {
+  const duplicateLabels = roomListing ? OVERLAY_DUPLICATE_LABELS_ROOM : OVERLAY_DUPLICATE_LABELS_ENTIRE
+  return facts.filter((fact) => !duplicateLabels.has(fact.label))
+}
+
 function PropertyBrowseCard({ property, isSaved, applicationStatus, onDetails, onInterest, onSave }) {
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
   const isPromoted = isListingPromoted(property)
   const roomListing = isRoomListing(property.listingCategory)
-  const facts = getBrowseFacts(property)
+  // Rent/type/beds/area are already shown once, prominently, in the image overlay below — a
+  // second boxed copy of the same four facts read as clutter rather than confirmation. Only the
+  // facts genuinely absent from the overlay make it onto the card face itself.
+  const facts = dedupeFactsAgainstOverlay(getBrowseFacts(property), roomListing).slice(0, 2)
   const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
 
   return (
@@ -547,9 +560,16 @@ function PropertyBrowseCard({ property, isSaved, applicationStatus, onDetails, o
         </div>
       </button>
       <div className="space-y-3 p-4 min-[390px]:p-5">
-        <div className="grid grid-cols-2 gap-2">
-          {facts.slice(0, 4).map((fact) => <Info key={fact.label} label={fact.label} value={fact.value} />)}
-        </div>
+        {facts.length ? (
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm leading-5 text-slate-600">
+            {facts.map((fact, index) => (
+              <span key={fact.label} className="flex items-center gap-2">
+                {index > 0 ? <span aria-hidden="true" className="text-slate-300">·</span> : null}
+                <span>{fact.value}</span>
+              </span>
+            ))}
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {trustSignal ? <Pill tone="trust">{trustSignal}</Pill> : null}
           {availability ? <Pill tone="green">{availability}</Pill> : null}
