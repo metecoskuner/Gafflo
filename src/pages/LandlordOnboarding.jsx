@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
@@ -62,6 +62,11 @@ export default function LandlordOnboarding() {
               if (error) setError('')
             }}
           />
+          <p className="text-xs leading-5 text-slate-500">
+            Before your first listing goes live, you&rsquo;ll be asked to review and acknowledge Gafflo&rsquo;s{' '}
+            <Link to="/fair-housing" className="font-semibold text-indigo-700 underline">Fair Housing Policy</Link>.
+          </p>
+
           <Button type="submit" className="w-full" isLoading={isSaving} disabled={isSaving}>
             Continue to dashboard
           </Button>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import useAccountProfile from '../context/useAccountProfile'
+import useAuth from '../context/useAuth'
 
 // Which Gafflo marketplace role the signed-in account wants to set up/use next — not a second
 // signup. The real account already exists (Supabase Auth, Stage A); this only sets
@@ -12,8 +13,10 @@ import useAccountProfile from '../context/useAccountProfile'
 // genuinely required fields this screen has no truthful value for yet.
 export default function RoleSelection() {
   const { setActiveRole } = useAccountProfile()
+  const { signOut, user } = useAuth()
   const navigate = useNavigate()
   const [isChoosing, setIsChoosing] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const [error, setError] = useState('')
 
   const chooseRole = async (role) => {
@@ -61,6 +64,23 @@ export default function RoleSelection() {
               Continue as landlord
             </Button>
           </article>
+        </div>
+
+        <div className="border-t border-slate-100 px-4 py-4 text-center md:px-6">
+          <p className="text-xs leading-5 text-slate-500">
+            Signed in as {user?.email}.{' '}
+            <button
+              type="button"
+              disabled={isSigningOut}
+              onClick={async () => {
+                setIsSigningOut(true)
+                await signOut()
+              }}
+              className="font-semibold text-indigo-700 underline hover:text-indigo-800 disabled:opacity-60"
+            >
+              Not you? Sign out
+            </button>
+          </p>
         </div>
       </section>
     </div>

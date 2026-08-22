@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import FormInput from '../components/FormInput'
@@ -10,10 +11,24 @@ function isValidEmail(value) {
 
 function humanizeAuthError(error) {
   const message = error?.message || ''
+  // Supabase's per-request resend cooldown ("For security purposes, you can only request this
+  // after 43 seconds.") is a separate message from its broader "Email rate limit exceeded" —
+  // both are real 429s, but only the second one matched below until now, so the far more common
+  // cooldown case fell through to a generic "something went wrong," reading as a failure rather
+  // than "you just tried this, wait a bit."
+  const cooldownMatch = message.match(/only request this after (\d+) ?seconds?/i)
+  if (cooldownMatch) return `Please wait ${cooldownMatch[1]} seconds and try again.`
   if (/rate limit|too many/i.test(message)) return 'Too many attempts. Wait a moment and try again.'
   if (/email/i.test(message) && /invalid/i.test(message)) return 'Enter a valid email address.'
   return 'Something went wrong sending your sign-in link. Please try again.'
 }
+
+const legalAuthLinks = [
+  { to: '/terms', label: 'Terms' },
+  { to: '/privacy', label: 'Privacy' },
+  { to: '/fair-housing', label: 'Fair Housing' },
+  { to: '/acceptable-use', label: 'Acceptable Use' },
+]
 
 // The real authentication entry point. Signed-out visitors land here (see AuthGate) and never
 // see the marketplace until Supabase confirms a session — this screen itself never claims a
@@ -66,7 +81,7 @@ export default function Auth() {
             <div className="space-y-4">
               <p className="text-sm leading-6 text-slate-600">
                 We sent a sign-in link to <span className="font-semibold text-slate-950">{email.trim()}</span>.
-                Open it on this device to continue.
+                Open it on this device to continue — it can take a minute or two to arrive, so check spam if you don&rsquo;t see it.
               </p>
               <Button type="button" variant="secondary" className="w-full" onClick={editEmail}>
                 Use a different email
@@ -101,6 +116,17 @@ export default function Auth() {
           )}
         </div>
       </section>
+
+      <div className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-1 px-2 text-center">
+        {legalAuthLinks.map((link, index) => (
+          <span key={link.to} className="flex items-center gap-x-3">
+            <Link to={link.to} className="text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline">
+              {link.label}
+            </Link>
+            {index < legalAuthLinks.length - 1 ? <span aria-hidden="true" className="text-xs text-slate-300">·</span> : null}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

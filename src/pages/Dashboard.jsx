@@ -126,6 +126,7 @@ function TenantDashboard() {
 
 function LandlordDashboard() {
   const navigate = useNavigate()
+  const { landlordProperties } = useAppState()
   const { landlordApplications } = useApplications()
   const { conversations } = useMessaging()
   const { viewings } = useViewings()
@@ -154,6 +155,22 @@ function LandlordDashboard() {
           </Button>
         </div>
       </section>
+
+      {!landlordProperties.length ? (
+        <section className="card-surface card-shadow rounded-[22px] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-950">Create your first listing</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Add a property to start receiving enquiries from renters.
+              </p>
+            </div>
+            <Button variant="secondary" className="shrink-0" onClick={() => navigate('/listings/new')}>
+              Create listing
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       <AttentionSummary
         newInterest={newInterest}

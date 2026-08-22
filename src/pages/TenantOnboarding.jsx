@@ -75,7 +75,7 @@ export default function TenantOnboarding() {
           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Quick setup</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">Let&rsquo;s find your matches</h1>
           <p className="mt-1.5 text-sm leading-6 text-indigo-100">
-            Two quick questions — everything else can wait.
+            Two quick questions to see your first matches. Add budget, move-in date and household details anytime from your profile.
           </p>
         </div>
 
