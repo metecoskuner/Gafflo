@@ -147,7 +147,7 @@ test.describe('Stage C — real listings + Storage photos', () => {
     // before any network call. (setInputFiles bypasses the OS picker's own filtering, so this
     // genuinely exercises the app's validation, not the browser's file dialog.)
     await fileInput.setInputFiles({ name: 'not-a-photo.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') })
-    await expect(page.getByText(/is not an image|not an image/i)).toBeVisible()
+    await expect(page.getByText(/supported photo format/i)).toBeVisible()
 
     // Oversized (>2 MiB) — real bytes, real client-side size check.
     await fileInput.setInputFiles({ name: 'too-big.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(2.5 * 1024 * 1024) })
