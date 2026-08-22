@@ -186,7 +186,14 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
         className={`relative flex h-[100dvh] max-w-full items-stretch justify-center overflow-x-hidden ${standalone ? 'bg-slate-50' : 'p-0 md:p-6'}`}
       >
         <div
-          className={`card-surface card-shadow relative flex h-[100dvh] w-full max-w-full min-w-0 flex-col overflow-hidden bg-white ${standalone ? 'max-w-4xl' : 'md:h-auto md:max-h-[90vh] md:max-w-2xl md:rounded-[32px]'}`}
+          // The bare `max-w-4xl` this branch used to set here loses the cascade tie against the
+          // base `max-w-full` a few classes earlier (both are unprefixed, same specificity, and
+          // Tailwind's generated order between two bare max-w-* utilities isn't something to rely
+          // on) — confirmed live: the standalone modal was rendering edge-to-edge at full
+          // viewport width on desktop instead of capping at 4xl. `md:`-prefixed utilities always
+          // cascade after their bare counterparts, which is exactly why the non-standalone branch
+          // right after it was never affected by the same base class.
+          className={`card-surface card-shadow relative flex h-[100dvh] w-full max-w-full min-w-0 flex-col overflow-hidden bg-white ${standalone ? 'md:max-w-4xl' : 'md:h-auto md:max-h-[90vh] md:max-w-2xl md:rounded-[32px]'}`}
         >
           <div data-property-details-scroll className="min-h-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [touch-action:pan-y]">
             <PropertyImageGallery property={property} isSaved={isSaved} isPreview={Boolean(previewProperty)} onClose={close} />
@@ -470,7 +477,7 @@ function PropertyImageGallery({ property, isSaved, isPreview, onClose }) {
 
   return (
     <>
-      <div className="relative h-[20rem] max-w-full overflow-hidden bg-slate-200 min-[390px]:h-[24rem] md:h-[30rem]">
+      <div className="relative h-[18rem] max-w-full overflow-hidden bg-slate-200 min-[390px]:h-[21rem] md:h-[25rem]">
         {activeImageFailed ? (
           <div className="flex h-full w-full items-center justify-center bg-slate-200 text-sm font-medium text-slate-500">
             Gafflo property preview
@@ -522,14 +529,12 @@ function PropertyImageGallery({ property, isSaved, isPreview, onClose }) {
                 Saved
               </span>
             ) : null}
+            {/* Bills/available-from used to repeat here too — removed: they're the very next
+                thing visible, zero scroll away, in the fact tiles right below this image. Rent
+                stays: unlike those two, it's genuinely useful while still browsing photos, before
+                the price header below has scrolled into view. */}
             <span className="rounded-full border border-white/15 bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
               {formatCurrency(property.rent)}/mo
-            </span>
-            <span className="rounded-full border border-white/15 bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
-              {property.billsIncluded ? 'Bills included' : 'Bills separate'}
-            </span>
-            <span className="rounded-full border border-white/15 bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
-              {formatDate(property.availableFrom)}
             </span>
           </div>
         </div>

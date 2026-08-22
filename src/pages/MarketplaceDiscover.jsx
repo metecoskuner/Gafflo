@@ -346,7 +346,7 @@ function SmartMatchDeck({
           <div
             aria-hidden="true"
             data-testid="smart-match-backplate"
-            className="card-shadow pointer-events-none absolute inset-x-3 top-4 -z-10 h-[23rem] rounded-[32px] border border-slate-200/70 bg-white min-[390px]:h-[24rem]"
+            className="card-shadow pointer-events-none absolute inset-x-3 top-4 -z-10 h-72 rounded-[32px] border border-slate-200/70 bg-white min-[390px]:h-80"
             style={{
               transform: `translateY(${18 - dragRatio * 11}px) scale(${0.958 + dragRatio * 0.03})`,
             }}
@@ -440,7 +440,7 @@ function PropertyDeckFace({ property, applicationStatus, isSaved, highlight = nu
             : ''
       }`}
     >
-      <div data-smart-swipe-zone="true" className="relative h-[23rem] min-[390px]:h-[24rem]">
+      <div data-smart-swipe-zone="true" className="relative h-72 min-[390px]:h-80">
         <ImageWithSkeleton src={property.images[0]} alt={property.title} draggable={false} />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/86 via-slate-950/20 to-transparent" />
         <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
