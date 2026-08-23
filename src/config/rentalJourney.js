@@ -107,8 +107,20 @@ export function getTenantProfileCompleteness(profile) {
   }
 }
 
-// True once the tenant has provided the match-driving facts that first-run onboarding
-// deliberately skips (budget, move-in date, household size). Used to show a restrained,
+// The subset of match-driving facts that first-run onboarding deliberately skips (budget,
+// move-in date, household size) still genuinely missing, in display order. Dashboard's nudge
+// (Stage Z) names only what's actually missing here — a flexible ("No minimum"/"No maximum")
+// budget must never appear in this list once it's complete, or the nudge would ask the tenant to
+// "add budget" right after Profile already told them it's done.
+export function getMissingCoreMatchFacts(profile = {}) {
+  const missing = []
+  if (!isBudgetComplete(profile)) missing.push('budget')
+  if (!profile.moveInDate) missing.push('move-in date')
+  if (!(Number(profile.householdSize) >= 1)) missing.push('household size')
+  return missing
+}
+
+// True once the tenant has provided all of the above. Used to show a restrained,
 // dismissable-feeling nudge after they've already seen real matches — never to block anything.
 //
 // Shares isBudgetComplete() with getTenantProfileCompleteness() above rather than re-deriving its
@@ -118,6 +130,6 @@ export function getTenantProfileCompleteness(profile) {
 // never calls this function — it has its own, already-correct, independent handling of an unknown
 // or one-sided budget — so this change has no effect on scoring/ranking at all.
 export function hasCoreMatchFacts(profile = {}) {
-  return isBudgetComplete(profile) && Boolean(profile.moveInDate) && Number(profile.householdSize) >= 1
+  return getMissingCoreMatchFacts(profile).length === 0
 }
 import { canListingReceiveEnquiry } from './listingLifecycle'

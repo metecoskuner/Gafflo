@@ -72,9 +72,11 @@ export function calculatePropertyMatch(tenantProfile, property) {
   const hasBudgetMin = isKnownNumber(tenantProfile.budgetMin)
   const hasBudgetMax = isKnownNumber(tenantProfile.budgetMax)
   if (!hasBudgetMin && !hasBudgetMax) {
-    // Budget was never provided (e.g. skipped during onboarding) — this is unknown, not a €0
-    // budget, so it must never be scored or treated as a mismatch.
-    warnings.push('Budget is not set yet, so rent fit is not scored.')
+    // Neither side given — could be "never touched" or a deliberate "No minimum/No maximum"
+    // choice (Stage Y/Y2 treat these as the same real, complete answer elsewhere in the app), so
+    // this must never be scored or treated as a mismatch. The message says "flexible," not "not
+    // set yet," so it doesn't read as an outstanding task when Profile already calls it complete.
+    warnings.push('Your budget is flexible, so rent fit is not scored.')
   } else {
     const budgetMin = hasBudgetMin ? Number(tenantProfile.budgetMin) : 0
     const budgetMax = hasBudgetMax ? Number(tenantProfile.budgetMax) : Infinity

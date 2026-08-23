@@ -67,7 +67,7 @@ import {
 } from '../config/entitlements'
 import { LANDLORD_PLAN, pricingPlans, TENANT_PLAN } from '../config/pricingPlans'
 import { sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
-import { getTenantProfileCompleteness, getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
+import { getMissingCoreMatchFacts, getTenantProfileCompleteness, getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
@@ -243,7 +243,7 @@ describe('matching and dates', () => {
   it('never treats a skipped budget as a €0 maximum — unknown budget is unscored, not a hard stop', () => {
     const skippedBudget = { ...tenant, budgetMin: null, budgetMax: null }
     const result = calculatePropertyMatch(skippedBudget, property)
-    expect(result.warnings).toContain('Budget is not set yet, so rent fit is not scored.')
+    expect(result.warnings).toContain('Your budget is flexible, so rent fit is not scored.')
     expect(result.hardStops).toHaveLength(0)
     expect(result.reasons).not.toContain('The monthly rent is within your budget.')
     expect(result.reasons).not.toContain('The monthly rent is below your stated minimum budget.')
@@ -251,10 +251,10 @@ describe('matching and dates', () => {
 
     // undefined and '' must be treated the same as null.
     expect(calculatePropertyMatch({ ...tenant, budgetMin: undefined, budgetMax: undefined }, property).warnings).toContain(
-      'Budget is not set yet, so rent fit is not scored.',
+      'Your budget is flexible, so rent fit is not scored.',
     )
     expect(calculatePropertyMatch({ ...tenant, budgetMin: '', budgetMax: '' }, property).warnings).toContain(
-      'Budget is not set yet, so rent fit is not scored.',
+      'Your budget is flexible, so rent fit is not scored.',
     )
   })
 
@@ -272,7 +272,7 @@ describe('matching and dates', () => {
     const minimalProfile = { targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null }
     const result = calculatePropertyMatch(minimalProfile, property)
     expect(result.warnings).toContain('Move-in timing is incomplete, so date fit is not scored.')
-    expect(result.warnings).toContain('Budget is not set yet, so rent fit is not scored.')
+    expect(result.warnings).toContain('Your budget is flexible, so rent fit is not scored.')
     expect(result.hardStops).toHaveLength(0)
     expect(result.score).toBeGreaterThan(58)
   })
@@ -776,6 +776,19 @@ describe('frontend integrity helpers', () => {
     // A genuinely invalid range (min above max) still does not count, even with everything else
     // in place — an actual data contradiction is not the same thing as "flexible."
     expect(hasCoreMatchFacts({ ...readyExceptFlexibleBudget, budgetMin: 2000, budgetMax: 1200 })).toBe(false)
+  })
+
+  it('names only the core match facts actually still missing, so the Dashboard nudge never asks for a flexible budget that is already complete', () => {
+    // Both budget sides unset is flexible, not missing (Stage Y2) — only move-in date and
+    // household size are genuinely absent here.
+    const skipped = { targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null }
+    expect(getMissingCoreMatchFacts(skipped)).toEqual(['move-in date', 'household size'])
+    expect(getMissingCoreMatchFacts({ ...skipped, moveInDate: '2030-01-01', householdSize: 1 })).toEqual([])
+    expect(getMissingCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800 })).toEqual(['move-in date', 'household size'])
+    expect(getMissingCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01' })).toEqual(['household size'])
+
+    // An invalid range (min above max) is a real, still-missing budget gap, unlike flexible.
+    expect(getMissingCoreMatchFacts({ ...skipped, budgetMin: 2000, budgetMax: 1200, moveInDate: '2030-01-01', householdSize: 1 })).toEqual(['budget'])
   })
 
   it('counts a fresh onboarding-only tenant\'s target city and looking-for, and treats a flexible ("No minimum/No maximum") budget as complete, not missing', () => {

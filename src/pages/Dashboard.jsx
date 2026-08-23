@@ -3,7 +3,7 @@ import BrandLogo from '../components/BrandLogo'
 import Button from '../components/Button'
 import MatchBadge from '../components/MatchBadge'
 import { filterConversationsByRole } from '../config/messageAdapter'
-import { hasCoreMatchFacts } from '../config/rentalJourney'
+import { getMissingCoreMatchFacts } from '../config/rentalJourney'
 import useAccountProfile from '../context/useAccountProfile'
 import useAppState from '../context/useAppState'
 import useApplications from '../context/useApplications'
@@ -23,6 +23,8 @@ function TenantDashboard() {
   const { tenantApplications } = useApplications()
   const { viewings } = useViewings()
   const topProperty = [...activeProperties].sort((a, b) => b.match.score - a.match.score)[0]
+  const missingCoreMatchFacts = getMissingCoreMatchFacts(tenantProfile)
+  const missingCoreMatchFactsList = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(missingCoreMatchFacts)
 
   // Only ever pending/confirmed (see config/viewingAdapter.js's "at most one open proposal per
   // application" invariant) — a declined/cancelled proposal's application has already reverted to
@@ -105,13 +107,13 @@ function TenantDashboard() {
         </section>
       ) : null}
 
-      {!hasCoreMatchFacts(tenantProfile) ? (
+      {missingCoreMatchFacts.length ? (
         <section className="card-surface card-shadow rounded-[22px] p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-950">Make your matches more accurate</h2>
               <p className="mt-1 text-sm leading-6 text-slate-600">
-                Add your budget, move-in date and household size to sharpen your Rental Fit scores.
+                Add your {missingCoreMatchFactsList} to sharpen your Rental Fit scores.
               </p>
             </div>
             <Button variant="secondary" className="shrink-0" onClick={() => navigate('/profile')}>
