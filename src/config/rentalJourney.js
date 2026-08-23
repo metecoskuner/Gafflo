@@ -61,6 +61,11 @@ export function isNewProperty(property, now = new Date()) {
 export function getTenantProfileCompleteness(profile) {
   const budgetReady = Number(profile.budgetMin) >= 0 && Number(profile.budgetMax) > 0 && Number(profile.budgetMin) <= Number(profile.budgetMax)
   const checks = [
+    // Onboarding's own two required questions (see TenantOnboarding.jsx) — a tenant who has
+    // done nothing but onboarding already gave two real, meaningful answers, so this score
+    // shouldn't read 0% until they come back and fill in everything else too.
+    { id: 'targetCity', label: 'Target city', complete: Boolean(String(profile.targetCity || '').trim()) },
+    { id: 'lookingFor', label: 'Looking for', complete: Boolean(profile.lookingFor) },
     { id: 'budget', label: 'Budget range', complete: budgetReady },
     { id: 'preferredAreas', label: 'Preferred areas', complete: Array.isArray(profile.preferredAreas) ? profile.preferredAreas.length > 0 : Boolean(String(profile.preferredAreas || '').trim()) },
     { id: 'moveInDate', label: 'Move-in date', complete: Boolean(profile.moveInDate) },

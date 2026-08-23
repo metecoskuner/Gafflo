@@ -4,7 +4,7 @@ import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import GaffloPlusPreview from '../components/GaffloPlusPreview'
 import MatchBadge from '../components/MatchBadge'
-import { DEV_AUTH_BYPASS_ENABLED } from '../config/devAuthBypass'
+import { DEV_AUTH_BYPASS_ENABLED, friendlyWriteError } from '../config/devAuthBypass'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, LISTING_CATEGORIES } from '../config/listingCategories'
 import { formatFreshness, getBrowseFacts, getSmartMatchFacts } from '../config/listingPresentation'
@@ -31,6 +31,7 @@ export default function MarketplaceDiscover() {
     resetPropertyFilters,
     saveProperty,
     savedPropertyIds,
+    showToast,
     smartMatchUsage,
   } = useAppState()
   const { getTenantApplicationForListing, applyToListing } = useApplications()
@@ -54,7 +55,13 @@ export default function MarketplaceDiscover() {
       navigate(`/properties/${propertyId}`)
       return
     }
-    await applyToListing(propertyId)
+    // Unlike the details modal's own Apply button, this one had no error/success feedback at
+    // all — a failed attempt (e.g. no real session in dev-bypass) looked identical to a
+    // successful one, since only the card's own re-render (once the underlying application list
+    // actually changes) ever showed anything, and that never happens on failure.
+    const { error } = await applyToListing(propertyId)
+    if (error) showToast({ type: 'info', message: friendlyWriteError(error) })
+    else showToast({ type: 'success', message: 'Application sent.' })
   }
 
   const activeProperties = viewMode === 'smart' ? rankedSmartMatches : browseProperties
@@ -430,8 +437,11 @@ function PropertyDeckFace({ property, applicationStatus, isSaved, highlight = nu
   // Same principle as Browse's card face: the badge already states room/property type, and the
   // overlay text below already states rent + available-from, so those don't need a second copy
   // here too.
-  const facts = dedupeFactsByValue(
-    dedupeFactsAgainstOverlay(getSmartMatchFacts(property), roomListing ? SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ROOM : SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ENTIRE),
+  const facts = dedupeOwnerOccupiedFact(
+    dedupeFactsByValue(
+      dedupeFactsAgainstOverlay(getSmartMatchFacts(property), roomListing ? SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ROOM : SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ENTIRE),
+    ),
+    property,
   ).slice(0, 5)
   const updated = formatFreshness(property.updatedAt)
   const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
@@ -532,6 +542,15 @@ function dedupeFactsAgainstOverlay(facts, duplicateLabels) {
   return facts.filter((fact) => !duplicateLabels.has(fact.label))
 }
 
+// Both cards' overlays render their own "Owner lives here" line, but only for owner-occupied
+// rooms specifically (see the conditional right next to each overlay's JSX below) — not a plain
+// label to always exclude, since a non-owner-occupied private room's "Owner" fact ("Shared home")
+// is never shown anywhere else and stays genuinely useful there.
+function dedupeOwnerOccupiedFact(facts, property) {
+  if (property.listingCategory !== LISTING_CATEGORIES.OWNER_OCCUPIED_ROOM) return facts
+  return facts.filter((fact) => fact.label !== 'Owner')
+}
+
 // Backstop for facts with different labels but the same rendered text — the concrete case this
 // exists for: an ensuite room's roomType ("Ensuite") and its bathroomArrangement ("Ensuite") are
 // two genuinely different fields that happen to share a display value for that one combination,
@@ -553,8 +572,11 @@ function PropertyBrowseCard({ property, isSaved, applicationStatus, onDetails, o
   // Rent/type/beds/area/available-from are already shown once, prominently, in the badge and
   // image overlay below — a second copy of the same facts reads as clutter, not confirmation.
   // Only what's genuinely absent from the overlay makes it onto the card face itself.
-  const facts = dedupeFactsByValue(
-    dedupeFactsAgainstOverlay(getBrowseFacts(property), roomListing ? BROWSE_OVERLAY_DUPLICATE_LABELS_ROOM : BROWSE_OVERLAY_DUPLICATE_LABELS_ENTIRE),
+  const facts = dedupeOwnerOccupiedFact(
+    dedupeFactsByValue(
+      dedupeFactsAgainstOverlay(getBrowseFacts(property), roomListing ? BROWSE_OVERLAY_DUPLICATE_LABELS_ROOM : BROWSE_OVERLAY_DUPLICATE_LABELS_ENTIRE),
+    ),
+    property,
   ).slice(0, 3)
   const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
 
