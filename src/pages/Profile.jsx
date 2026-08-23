@@ -39,6 +39,45 @@ const lookingForChoices = [
   { value: 'any', label: 'Either' },
 ]
 
+// A step ladder, not a free-typed number — "0" never appears as a real, selectable value, and
+// the unset ends are explicit ("No minimum"/"No maximum") rather than an empty box that reads as
+// unfinished. Stored value stays the exact same empty-string-means-unset contract the rest of
+// this form (validateField, submit) already relies on — this only changes how the value is
+// chosen, never what gets saved for "not answered."
+const BUDGET_STEPS = [600, 800, 1000, 1200, 1500, 1800, 2000, 2500, 3000]
+const budgetMinOptions = [
+  { label: 'No minimum', value: '' },
+  ...BUDGET_STEPS.map((amount) => ({ label: `€${amount.toLocaleString('en-IE')}`, value: String(amount) })),
+]
+const budgetMaxOptions = [
+  { label: 'No maximum', value: '' },
+  ...BUDGET_STEPS.map((amount, index) => ({
+    label: index === BUDGET_STEPS.length - 1 ? `€${amount.toLocaleString('en-IE')}+` : `€${amount.toLocaleString('en-IE')}`,
+    value: String(amount),
+  })),
+]
+
+// GaffloSelect matches its current value by strict equality against each option's string value —
+// an existing saved budget can arrive here as a real number (a Postgres numeric column, read back
+// as a JS number) rather than the string a <select> naturally works in, so this normalizes either
+// shape to the one string form the options list uses. A literal 0 (a real value at least one
+// existing tenant profile has — see e2e/global-setup.js's tenantBudgetMinZero fixture) is treated
+// the same as unset: this UI's whole point is that a shown "0" reads as broken, not as "any price."
+function budgetSelectValue(value) {
+  const numeric = Number(value)
+  return value === null || value === undefined || value === '' || !Number.isFinite(numeric) || numeric <= 0 ? '' : String(numeric)
+}
+
+// A saved budget from before this step ladder existed (or just not one of the round steps) must
+// still display as itself, not silently snap to "unset" — inserted in sorted position rather than
+// dropped, so an existing preference is never misrepresented back to the tenant who set it.
+function withCurrentBudgetValue(baseOptions, currentValue) {
+  const selected = budgetSelectValue(currentValue)
+  if (!selected || baseOptions.some((option) => option.value === selected)) return baseOptions
+  const extra = { label: `€${Number(selected).toLocaleString('en-IE')}`, value: selected }
+  return [...baseOptions, extra].sort((a, b) => (a.value === '' ? -1 : b.value === '' ? 1 : Number(a.value) - Number(b.value)))
+}
+
 const employmentOptions = ['Full-time', 'Part-time', 'Student', 'Remote worker', 'Self-employed']
 const contactOptions = ['In-app message', 'Email', 'Phone']
 
@@ -233,9 +272,27 @@ function TenantProfile() {
           </Section>
 
           <Section title="Rental needs">
-            <div className="grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
-              <FormInput id="tenant-budget-min" label="Budget min (€)" type="number" min="0" inputMode="numeric" value={form.budgetMin ?? ''} error={errors.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} />
-              <FormInput id="tenant-budget-max" label="Budget max (€)" type="number" min="0" inputMode="numeric" value={form.budgetMax ?? ''} error={errors.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} />
+            <div>
+              <span className="mb-2 block text-sm font-medium text-slate-700">Monthly budget</span>
+              <div className="grid grid-cols-2 gap-3">
+                <SelectInput
+                  label="Minimum"
+                  value={budgetSelectValue(form.budgetMin)}
+                  error={errors.budgetMin}
+                  onChange={(event) => update('budgetMin', event.target.value)}
+                  options={withCurrentBudgetValue(budgetMinOptions, form.budgetMin)}
+                />
+                <SelectInput
+                  label="Maximum"
+                  value={budgetSelectValue(form.budgetMax)}
+                  error={errors.budgetMax}
+                  onChange={(event) => update('budgetMax', event.target.value)}
+                  options={withCurrentBudgetValue(budgetMaxOptions, form.budgetMax)}
+                />
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">Leave either side as "No minimum/maximum" if you're flexible — it won't count against a match.</p>
+            </div>
+            <div className="mt-4 grid gap-3 min-[430px]:grid-cols-2 md:grid-cols-3">
               <FormInput id="tenant-move-in" label="Move-in date" type="date" min={today} value={isPastIsoDate(form.moveInDate, today) ? '' : form.moveInDate || ''} error={errors.moveInDate} onChange={(event) => update('moveInDate', event.target.value)} />
               <SelectInput label="Lease length" value={form.leaseLength || '12'} onChange={(event) => update('leaseLength', event.target.value)} options={leasePreferenceOptions} />
               <FormInput id="tenant-household-size" label={form.lookingFor === 'room' ? 'Room applicants' : 'Household size'} type="number" min="1" inputMode="numeric" value={form.householdSize ?? ''} error={errors.householdSize} onChange={(event) => update('householdSize', event.target.value)} />

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/Button'
+import EmptyState from '../components/EmptyState'
 import FormInput from '../components/FormInput'
 import PropertyDetailsModal from '../components/PropertyDetailsModal'
 import SelectInput from '../components/SelectInput'
 import Toggle from '../components/Toggle'
+import { DEV_AUTH_BYPASS_ENABLED } from '../config/devAuthBypass'
 import {
   bathroomArrangementOptions,
   bedTypeOptions,
@@ -348,6 +350,24 @@ export default function CreateListing() {
   }
 
   if (draftError) {
+    // The real failure here is always the same guarded insert being rejected — RLS requires a
+    // real owner_id from a real session, which local inspection mode deliberately never has (see
+    // devAuthBypass.js). That's expected, not broken, so it gets its own calm explanation instead
+    // of the raw, alarming-looking failure message a genuine real-auth error still shows below.
+    // The bypass banner already covers "what dev-bypass is" — this only covers the one concrete
+    // consequence a landlord would hit here, without re-explaining the whole mode from scratch.
+    if (DEV_AUTH_BYPASS_ENABLED) {
+      return (
+        <div className="mx-auto max-w-lg py-10">
+          <EmptyState
+            eyebrow="Local preview mode"
+            title="Creating a listing needs a real sign-in"
+            description="This screen is running in local inspection mode, so new listings can't be saved from here. Sign in with a real account to create and manage listings."
+            actions={<Button onClick={() => navigate('/properties')}>Back to properties</Button>}
+          />
+        </div>
+      )
+    }
     return (
       <div className="mx-auto max-w-lg py-10 text-center">
         <p className="text-sm font-medium text-rose-600">{draftError}</p>
