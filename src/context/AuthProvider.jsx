@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { DEV_AUTH_BYPASS_ENABLED, DEV_BYPASS_USER, warnDevAuthBypassActive } from '../config/devAuthBypass'
+import { DEV_AUTH_BYPASS_ENABLED, DEV_BYPASS_USER, clearDevBypassProfileState, warnDevAuthBypassActive } from '../config/devAuthBypass'
 import AuthContext from './AuthContext'
 
 // The one canonical session/auth state for the app. Supabase itself owns session persistence
@@ -63,6 +63,7 @@ export function AuthProvider({ children }) {
       },
       async signOut() {
         if (DEV_AUTH_BYPASS_ENABLED) {
+          clearDevBypassProfileState()
           setSession(null)
           return
         }

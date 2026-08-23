@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ANY_VALUE } from '../config/domainOptions'
+import { friendlyWriteError } from '../config/devAuthBypass'
 import { propertyMatchesFilters } from '../config/discoveryFilters'
 import { filterAvailableSmartMatchCandidates } from '../config/engagementAdapter'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
@@ -120,15 +121,15 @@ export function AppStateProvider({ children }) {
     },
     async saveProperty(propertyId) {
       const { error } = await setSaved(propertyId, true)
-      setToast(error ? { type: 'info', message: error } : { type: 'success', message: 'Saved privately.' })
+      setToast(error ? { type: 'info', message: friendlyWriteError(error) } : { type: 'success', message: 'Saved privately.' })
     },
     async removeSavedProperty(propertyId) {
       const { error } = await setSaved(propertyId, false)
-      setToast(error ? { type: 'info', message: error } : { type: 'info', message: 'Removed from saved properties.' })
+      setToast(error ? { type: 'info', message: friendlyWriteError(error) } : { type: 'info', message: 'Removed from saved properties.' })
     },
     async passSmartMatchProperty(propertyId) {
       const { error } = await recordDecision(propertyId, 'pass')
-      if (error) setToast({ type: 'info', message: error })
+      if (error) setToast({ type: 'info', message: friendlyWriteError(error) })
     },
     // Decoupled from Applications as of Stage G: this only ever records a real, private Smart
     // Match "interested" decision — it never applies on the tenant's behalf. Applying remains a
@@ -142,7 +143,7 @@ export function AppStateProvider({ children }) {
       }
       const { error } = await recordDecision(propertyId, 'interested')
       if (error) {
-        setToast({ type: 'info', message: error })
+        setToast({ type: 'info', message: friendlyWriteError(error) })
         return false
       }
       return true

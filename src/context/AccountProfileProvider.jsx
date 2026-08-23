@@ -8,7 +8,7 @@ import {
   mapTenantProfileRowToFields,
 } from '../config/accountProfile'
 import { supabase } from '../lib/supabase'
-import { DEV_AUTH_BYPASS_ENABLED, createDevBypassProfileState } from '../config/devAuthBypass'
+import { DEV_AUTH_BYPASS_ENABLED, loadDevBypassProfileState, saveDevBypassProfileState } from '../config/devAuthBypass'
 import useAuth from './useAuth'
 import AccountProfileContext from './AccountProfileContext'
 
@@ -44,7 +44,15 @@ async function fetchProfileState(userId) {
 // one) as defense in depth, not because RLS needs the help.
 export function AccountProfileProvider({ children }) {
   const { user } = useAuth()
-  const [state, setState] = useState(() => (DEV_AUTH_BYPASS_ENABLED ? createDevBypassProfileState() : emptyState))
+  const [state, setState] = useState(() => (DEV_AUTH_BYPASS_ENABLED ? loadDevBypassProfileState() : emptyState))
+
+  // Mirrors every dev-bypass state change into sessionStorage so a direct URL/reload keeps
+  // whatever role/onboarding progress was already made in this tab — see devAuthBypass.js for
+  // why this is safe (tab-scoped, cleared on sign-out, never a real persisted account).
+  useEffect(() => {
+    if (!DEV_AUTH_BYPASS_ENABLED) return
+    saveDevBypassProfileState(state)
+  }, [state])
 
   // AccountProfileProvider only ever mounts inside AuthGate's authenticated branch — `user` is
   // guaranteed non-null for this component's entire lifetime, since AuthGate itself unmounts

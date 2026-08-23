@@ -4,6 +4,7 @@ import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import GaffloPlusPreview from '../components/GaffloPlusPreview'
 import MatchBadge from '../components/MatchBadge'
+import { DEV_AUTH_BYPASS_ENABLED } from '../config/devAuthBypass'
 import { domainLabel } from '../config/domainOptions'
 import { isRoomListing, LISTING_CATEGORIES } from '../config/listingCategories'
 import { formatFreshness, getBrowseFacts, getSmartMatchFacts } from '../config/listingPresentation'
@@ -116,8 +117,8 @@ export default function MarketplaceDiscover() {
           </div>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <UsageTile label="Cards today" value={smartMatchUsage ? `${smartMatchUsage.cardsRemaining} left` : '…'} />
-          <UsageTile label="Interest" value={smartMatchUsage ? `${smartMatchUsage.interestsRemaining} left` : '…'} />
+          <UsageTile label="Cards today" value={smartMatchUsage ? `${smartMatchUsage.cardsRemaining} left` : DEV_AUTH_BYPASS_ENABLED ? 'Local preview' : '…'} />
+          <UsageTile label="Interest" value={smartMatchUsage ? `${smartMatchUsage.interestsRemaining} left` : DEV_AUTH_BYPASS_ENABLED ? 'Local preview' : '…'} />
           <UsageTile label="Browse" value="Open" />
         </div>
       </section>
@@ -426,7 +427,12 @@ function PropertyDeckFace({ property, applicationStatus, isSaved, highlight = nu
   const trustSignal = getPrimaryTrustSignal(property)
   const isNew = isNewProperty(property)
   const roomListing = isRoomListing(property.listingCategory)
-  const facts = getSmartMatchFacts(property).slice(0, roomListing ? 5 : 5)
+  // Same principle as Browse's card face: the badge already states room/property type, and the
+  // overlay text below already states rent + available-from, so those don't need a second copy
+  // here too.
+  const facts = dedupeFactsByValue(
+    dedupeFactsAgainstOverlay(getSmartMatchFacts(property), roomListing ? SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ROOM : SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ENTIRE),
+  ).slice(0, 5)
   const updated = formatFreshness(property.updatedAt)
   const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
 
@@ -512,14 +518,31 @@ function SwipeIntentBadge({ intent, opacity, ready }) {
   )
 }
 
-// Rent is duplicated on every shape's overlay; an entire-property overlay also already states
-// type/beds/area directly, so those three are additionally redundant only in that case.
-const OVERLAY_DUPLICATE_LABELS_ROOM = new Set(['Rent'])
-const OVERLAY_DUPLICATE_LABELS_ENTIRE = new Set(['Rent', 'Type', 'Beds', 'Area'])
+// Every card overlay states rent + available-from date together, and the top badge states
+// either room type or property type/beds — so those are redundant with a second boxed copy
+// wherever the fact list below also carries that exact label. Browse and Smart Match show
+// different overlay text (Smart Match's badge is room-type-only for rooms, entire-property's
+// overlay omits Area, etc.), so each gets its own set rather than sharing one.
+const BROWSE_OVERLAY_DUPLICATE_LABELS_ROOM = new Set(['Rent', 'Room', 'Available'])
+const BROWSE_OVERLAY_DUPLICATE_LABELS_ENTIRE = new Set(['Rent', 'Type', 'Beds', 'Area', 'Available'])
+const SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ROOM = new Set(['Room', 'Available'])
+const SMART_MATCH_OVERLAY_DUPLICATE_LABELS_ENTIRE = new Set(['Type', 'Beds', 'Available'])
 
-function dedupeFactsAgainstOverlay(facts, roomListing) {
-  const duplicateLabels = roomListing ? OVERLAY_DUPLICATE_LABELS_ROOM : OVERLAY_DUPLICATE_LABELS_ENTIRE
+function dedupeFactsAgainstOverlay(facts, duplicateLabels) {
   return facts.filter((fact) => !duplicateLabels.has(fact.label))
+}
+
+// Backstop for facts with different labels but the same rendered text — the concrete case this
+// exists for: an ensuite room's roomType ("Ensuite") and its bathroomArrangement ("Ensuite") are
+// two genuinely different fields that happen to share a display value for that one combination,
+// which label-based dedupe alone can't catch since "Room" and "Bathroom" are different labels.
+function dedupeFactsByValue(facts) {
+  const seenValues = new Set()
+  return facts.filter((fact) => {
+    if (seenValues.has(fact.value)) return false
+    seenValues.add(fact.value)
+    return true
+  })
 }
 
 function PropertyBrowseCard({ property, isSaved, applicationStatus, onDetails, onInterest, onSave }) {
@@ -527,10 +550,12 @@ function PropertyBrowseCard({ property, isSaved, applicationStatus, onDetails, o
   const isNew = isNewProperty(property)
   const isPromoted = isListingPromoted(property)
   const roomListing = isRoomListing(property.listingCategory)
-  // Rent/type/beds/area are already shown once, prominently, in the image overlay below — a
-  // second boxed copy of the same four facts read as clutter rather than confirmation. Only the
-  // facts genuinely absent from the overlay make it onto the card face itself.
-  const facts = dedupeFactsAgainstOverlay(getBrowseFacts(property), roomListing).slice(0, 2)
+  // Rent/type/beds/area/available-from are already shown once, prominently, in the badge and
+  // image overlay below — a second copy of the same facts reads as clutter, not confirmation.
+  // Only what's genuinely absent from the overlay makes it onto the card face itself.
+  const facts = dedupeFactsByValue(
+    dedupeFactsAgainstOverlay(getBrowseFacts(property), roomListing ? BROWSE_OVERLAY_DUPLICATE_LABELS_ROOM : BROWSE_OVERLAY_DUPLICATE_LABELS_ENTIRE),
+  ).slice(0, 3)
   const availability = formatFreshness(property.availabilityConfirmedAt, 'Availability confirmed')
 
   return (

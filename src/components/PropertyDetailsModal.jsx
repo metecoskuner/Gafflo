@@ -8,6 +8,7 @@ import useMessaging from '../context/useMessaging'
 import useViewings from '../context/useViewings'
 import { domainLabel } from '../config/domainOptions'
 import { isTerminalApplicationStatus } from '../config/applicationStatus'
+import { friendlyWriteError } from '../config/devAuthBypass'
 import { LISTING_CATEGORIES, isRoomListing, listingCategoryLabel } from '../config/listingCategories'
 import { formatFreshness, shouldShowTenantMatch } from '../config/listingPresentation'
 import { canListingReceiveEnquiry } from '../config/rentalJourney'
@@ -143,14 +144,14 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     if (application || !canEnquire || applyPending) return
     setApplyState({ propertyId, pending: true, error: '' })
     const { error } = await applyToListing(property.id)
-    setApplyState({ propertyId, pending: false, error: error || '' })
+    setApplyState({ propertyId, pending: false, error: error ? friendlyWriteError(error) : '' })
   }
 
   const handleWithdraw = async () => {
     if (!application || applicationTerminal || applyPending) return
     setApplyState({ propertyId, pending: true, error: '' })
     const { error } = await withdraw(application.id)
-    setApplyState({ propertyId, pending: false, error: error || '' })
+    setApplyState({ propertyId, pending: false, error: error ? friendlyWriteError(error) : '' })
   }
 
   // Opening the composer never creates anything — start_conversation() only fires once the
@@ -165,7 +166,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     setMessageState({ propertyId, open: true, draft: messageDraft, pending: true, error: '' })
     const { conversationId, error } = await startConversation(property.id, body)
     if (error) {
-      setMessageState({ propertyId, open: true, draft: messageDraft, pending: false, error })
+      setMessageState({ propertyId, open: true, draft: messageDraft, pending: false, error: friendlyWriteError(error) })
       return
     }
     navigate(`/messages/${conversationId}`)
@@ -299,7 +300,10 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
                 </div>
                 <p className="mt-3 text-sm leading-7 text-slate-600">
                   {property.listingTerms ||
-                    `This listing is managed by ${property.ownerName}. Tenants should confirm viewing times, lease terms and required documents before applying.`}
+                    // ownerName can genuinely be empty (e.g. the owner lookup itself failing
+                    // gracefully — see ListingsProvider's Promise.allSettled handling) — a clean
+                    // fallback beats rendering "managed by ." with a visible gap before the period.
+                    `This listing is managed by ${property.ownerName || 'the landlord'}. Tenants should confirm viewing times, lease terms and required documents before applying.`}
                 </p>
               </DetailSection>
 
