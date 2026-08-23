@@ -1,43 +1,68 @@
 # Gafflo
 
-Gafflo is a mobile-first rental marketplace for tenants, landlords and agents in Ireland.
+Gafflo is a mobile-first rental marketplace for tenants and landlords in Ireland: tenant rental
+profiles, Smart Match recommendations, listing creation and review, applications, messaging,
+viewings and a moderator workspace — all backed by a real Supabase project, not mock data.
 
-## Features
+## Architecture
 
-- Tenant rental-fit profile form
-- Property discovery experience
-- Rental-fit match score
-- Saved properties
-- Property details with match reasons
-- Listing creation flow
-- LocalStorage persistence
-- Local fixture data for frontend development
+- **Frontend** — React 19, Vite, Tailwind CSS, React Router.
+- **Backend** — [Supabase](https://supabase.com): Postgres, real email/password Auth, Row Level
+  Security on every table, SECURITY DEFINER RPCs for guarded writes (applications, viewings,
+  moderation, analytics, etc.), and Storage for listing photos.
+- Every real read/write goes through the one shared client in `src/lib/supabase.js` and is subject
+  to RLS — the frontend has no privileged access path. There is no local fixture/mock data layer;
+  all marketplace data is real rows in the connected Supabase project.
+- **Dev-bypass mode** (`VITE_DEV_BYPASS_AUTH=true`, local dev only) skips the real sign-in screen
+  by faking local React profile state so you can click through the app shell without an account.
+  It is **local UI inspection only** — it never touches real Supabase auth, issues no session, and
+  cannot bypass RLS. Real reads/writes still run as a genuine unauthenticated request, so most
+  backend writes will fail while it's on. See [docs/dev-qa.md](docs/dev-qa.md) for the full
+  explanation and how to switch to real-auth testing.
 
-## Tech stack
+## Product areas
 
-- React
-- Vite
-- Tailwind CSS
-- React Router
-- JavaScript
+- **Tenant** — onboarding (target city + what you're looking for), a rental profile (budget,
+  move-in date, household, preferences, application readiness), Discover with **Smart Match**
+  (ranked recommendations with a Rental Fit score and reasons) and **Browse** (the full list),
+  saved listings, application tracking, messaging and viewing scheduling.
+- **Landlord** — onboarding, property management, a listing creation/edit flow with photo upload
+  (JPEG/PNG/WEBP, up to 8 photos per listing, 2 MB max per image), a review pipeline
+  (draft → in review → published, or needs changes), applicants, messaging, viewings, and
+  per-listing analytics (unique views, saves, applications, enquiries, confirmed viewings —
+  aggregate counts only, no viewer identity exposed).
+- **Trust & safety** — legal pages (Terms, Privacy, Fair Housing Policy, Acceptable Use), a
+  required Fair Housing Policy acknowledgment before a landlord's first listing can go live,
+  tenant-side listing reports, and a moderator workspace (reports queue + pending-listings queue)
+  gated by a real `platform_role`/`am_i_moderator()` check.
 
-## How to run
+## Preview-only / not live yet
+
+These exist in the UI so the product shape is visible, but are **not real, purchasable features**:
+
+- **Gafflo+** (tenant, €4.99/mo) and **Landlord Plus** (€19.99/mo) — presentation only. No payment
+  or subscription backend exists yet; every real entitlement check runs against the free plan.
+- **Single Listing Plus, Listing Boost, Extra Listing Slot** — priced but not purchasable; Boost is
+  explicitly shown as disabled/"Coming soon" in the UI.
+- **Fixed-term stays** — deferred pending legal review; not yet in the app.
+
+## Local development
 
 ```bash
 npm install
+cp .env.example .env.local   # then fill in VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
 npm run dev
 npm run build
 ```
 
-## Development Note
+See [docs/dev-qa.md](docs/dev-qa.md) for the full environment variable reference, dev-bypass
+details, testing (unit + e2e) instructions, seed data, and the current production-readiness
+checklist.
 
-This build runs entirely in the browser with fixture data. No real rental listings, payments or sensitive tenant documents are collected.
+## Testing
 
-## Future improvements
-
-- Authentication and role-based accounts
-- Real landlord and agent listings
-- Applicant dashboard
-- Report/block system
-- Real messaging and enquiries
-- Vercel deployment
+```bash
+npm run lint
+npm run test        # unit tests (Vitest)
+npm run test:e2e     # end-to-end (Playwright) — needs real Supabase credentials, see docs/dev-qa.md
+```
