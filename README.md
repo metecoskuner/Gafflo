@@ -66,3 +66,6 @@ npm run lint
 npm run test        # unit tests (Vitest)
 npm run test:e2e     # end-to-end (Playwright) — needs real Supabase credentials, see docs/dev-qa.md
 ```
+
+Lint, unit tests and build run automatically on every pull request and push to `main`
+(`.github/workflows/ci.yml`). e2e is real-auth-heavy (see docs/dev-qa.md) and stays manual for now.

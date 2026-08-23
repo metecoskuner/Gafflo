@@ -9,6 +9,7 @@ import NotificationsPanel from './components/NotificationsPanel'
 import PropertyDetailsModal from './components/PropertyDetailsModal'
 import Button from './components/Button'
 import AuthGate from './components/AuthGate'
+import ErrorBoundary from './components/ErrorBoundary'
 import ProfileGate from './components/ProfileGate'
 import { ANY_VALUE, domainLabel, furnishedOptions, propertyTypeOptions, roomTypeOptions } from './config/domainOptions'
 import { cityOptions } from './config/locationOptions'
@@ -325,7 +326,13 @@ const publicLegalPages = {
 export default function App() {
   const location = useLocation()
   const PublicLegalPage = publicLegalPages[location.pathname]
-  return PublicLegalPage ? <PublicLegalPage /> : <AuthenticatedApp />
+  return PublicLegalPage ? (
+    <PublicLegalPage />
+  ) : (
+    <ErrorBoundary>
+      <AuthenticatedApp />
+    </ErrorBoundary>
+  )
 }
 
 function AppHeader({ activeFilterCount, homeRoute, showCreateAction, onCreateListing, onFilterOpen, unreadNotificationCount, onNotificationsOpen }) {
