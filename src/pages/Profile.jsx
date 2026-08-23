@@ -632,12 +632,13 @@ function ModeratorLinkSection() {
 
   return (
     <section className="surface-line rounded-[24px] bg-white p-4">
-      <div className="text-sm font-semibold text-slate-950">Moderator</div>
+      <div className="text-sm font-semibold text-slate-950">Moderator workspace</div>
+      <p className="mt-1 text-sm leading-6 text-slate-600">Review reports and listing submissions.</p>
       <Link
         to="/moderator"
         className="mt-3 block rounded-[14px] px-1 py-1.5 text-sm font-medium text-indigo-700 hover:underline"
       >
-        Review workspace
+        Open moderator workspace
       </Link>
     </section>
   )

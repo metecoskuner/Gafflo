@@ -111,7 +111,6 @@ function AppLayout() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const { unreadCount: unreadNotificationCount } = useNotifications()
-  const { isModerator, loading: moderatorLoading } = useIsModerator()
   const homeRoute = role === 'landlord' ? '/dashboard' : '/discover'
 
   useEffect(() => {
@@ -194,10 +193,7 @@ function AppLayout() {
               <Route path="/rooms" element={<Navigate to="/properties" replace />} />
               <Route path="/rooms/:propertyId" element={<NavigateToPropertyDetails />} />
               <Route path="/applicants" element={role === 'landlord' ? <Applicants /> : <Navigate to="/discover" replace />} />
-              <Route
-                path="/moderator"
-                element={moderatorLoading ? null : isModerator ? <ModeratorWorkspace /> : <Navigate to={homeRoute} replace />}
-              />
+              <Route path="/moderator" element={<ModeratorRoute homeRoute={homeRoute} />} />
               <Route path="/listings/new" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/listings/:propertyId/edit" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/create" element={<Navigate to="/listings/new" replace />} />
@@ -243,10 +239,7 @@ function AppLayout() {
               <Route path="/rooms" element={<Navigate to="/properties" replace />} />
               <Route path="/rooms/:propertyId" element={<NavigateToPropertyDetails />} />
               <Route path="/applicants" element={role === 'landlord' ? <Applicants /> : <Navigate to="/discover" replace />} />
-              <Route
-                path="/moderator"
-                element={moderatorLoading ? null : isModerator ? <ModeratorWorkspace /> : <Navigate to={homeRoute} replace />}
-              />
+              <Route path="/moderator" element={<ModeratorRoute homeRoute={homeRoute} />} />
               <Route path="/listings/new" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/listings/:propertyId/edit" element={role === 'landlord' ? <CreateListing /> : <Navigate to="/discover" replace />} />
               <Route path="/create" element={<Navigate to="/listings/new" replace />} />
@@ -377,6 +370,29 @@ function HeaderIconButton({ ariaLabel, badge = 0, disabled = false, icon, onClic
       ) : null}
     </button>
   )
+}
+
+// Stage AD — was inline in both route blocks below (`moderatorLoading ? null : ...`), rendering
+// a blank content area for the one real RPC round-trip am_i_moderator() takes. A calm spinner
+// here (matching AuthGate/ProfileGate's own loading treatment) reads as "checking," not "broken,"
+// without changing the settled outcome either test in e2e/moderator-workspace.spec.js asserts on:
+// a non-moderator still ends up redirected off /moderator entirely (not left on a blocked
+// in-place screen — that redirect-away behavior is itself a deliberate Stage K decision, so this
+// stage leaves it unchanged and only improves the brief loading state before it lands).
+function ModeratorRoute({ homeRoute }) {
+  const { isModerator, loading } = useIsModerator()
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <span
+          className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600"
+          role="status"
+          aria-label="Checking moderator access"
+        />
+      </div>
+    )
+  }
+  return isModerator ? <ModeratorWorkspace /> : <Navigate to={homeRoute} replace />
 }
 
 function NavigateToPropertyDetails() {
