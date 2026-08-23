@@ -110,8 +110,14 @@ export function getTenantProfileCompleteness(profile) {
 // True once the tenant has provided the match-driving facts that first-run onboarding
 // deliberately skips (budget, move-in date, household size). Used to show a restrained,
 // dismissable-feeling nudge after they've already seen real matches — never to block anything.
+//
+// Shares isBudgetComplete() with getTenantProfileCompleteness() above rather than re-deriving its
+// own stricter version, specifically so this nudge can never contradict what the Profile page
+// itself says (Stage Y2) — a flexible ("No minimum"/"No maximum") budget is a real, deliberate
+// answer here too, not a gap to nudge about. Smart Match's actual ranking (calculatePropertyMatch)
+// never calls this function — it has its own, already-correct, independent handling of an unknown
+// or one-sided budget — so this change has no effect on scoring/ranking at all.
 export function hasCoreMatchFacts(profile = {}) {
-  const budgetReady = Number(profile.budgetMin) >= 0 && Number(profile.budgetMax) > 0 && Number(profile.budgetMin) <= Number(profile.budgetMax)
-  return budgetReady && Boolean(profile.moveInDate) && Number(profile.householdSize) >= 1
+  return isBudgetComplete(profile) && Boolean(profile.moveInDate) && Number(profile.householdSize) >= 1
 }
 import { canListingReceiveEnquiry } from './listingLifecycle'

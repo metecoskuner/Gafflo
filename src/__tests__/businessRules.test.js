@@ -754,12 +754,28 @@ describe('frontend integrity helpers', () => {
     expect(getTrustStatusLabel('verified', property.trust)).toBe('Not shown')
   })
 
-  it('only reports core match facts complete once budget, move-in date and household size are all real', () => {
+  it('only reports core match facts complete once move-in date and household size are real, and budget is either a real range or genuinely flexible', () => {
     const skipped = { targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, moveInDate: null, householdSize: null }
     expect(hasCoreMatchFacts(skipped)).toBe(false)
     expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800 })).toBe(false)
     expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01' })).toBe(false)
     expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01', householdSize: 1 })).toBe(true)
+
+    // Stage Y2: a still-flexible ("No minimum"/"No maximum") budget must not, by itself, keep
+    // this nudge showing once the two facts that actually matter here (move-in date, household
+    // size) are real — this is the exact contradiction Stage Y found between this helper and
+    // getTenantProfileCompleteness(), now resolved by sharing the same budget-readiness check.
+    const readyExceptFlexibleBudget = { ...skipped, budgetMin: null, budgetMax: null, moveInDate: '2030-01-01', householdSize: 1 }
+    expect(hasCoreMatchFacts(readyExceptFlexibleBudget)).toBe(true)
+    expect(hasCoreMatchFacts({ ...readyExceptFlexibleBudget, budgetMin: '', budgetMax: '' })).toBe(true)
+
+    // A one-sided preference is equally a real, deliberate answer.
+    expect(hasCoreMatchFacts({ ...readyExceptFlexibleBudget, budgetMin: 1200, budgetMax: '' })).toBe(true)
+    expect(hasCoreMatchFacts({ ...readyExceptFlexibleBudget, budgetMin: '', budgetMax: 2000 })).toBe(true)
+
+    // A genuinely invalid range (min above max) still does not count, even with everything else
+    // in place — an actual data contradiction is not the same thing as "flexible."
+    expect(hasCoreMatchFacts({ ...readyExceptFlexibleBudget, budgetMin: 2000, budgetMax: 1200 })).toBe(false)
   })
 
   it('counts a fresh onboarding-only tenant\'s target city and looking-for, and treats a flexible ("No minimum/No maximum") budget as complete, not missing', () => {

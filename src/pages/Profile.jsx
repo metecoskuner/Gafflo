@@ -68,6 +68,15 @@ function budgetSelectValue(value) {
   return value === null || value === undefined || value === '' || !Number.isFinite(numeric) || numeric <= 0 ? '' : String(numeric)
 }
 
+// validateField's budgetMin/budgetMax checks used to only skip validation for the select's own ''
+// sentinel, missing the genuinely-untouched null/undefined a fresh tenant profile has before the
+// budget selector is ever opened — Number(undefined) is NaN, so that state tripped "cannot be
+// negative" and silently blocked the whole form. Shares budgetSelectValue()'s unset definition
+// rather than re-deriving it, so this can't drift from what the selector itself treats as unset.
+function isBudgetValueUnset(value) {
+  return budgetSelectValue(value) === ''
+}
+
 // A saved budget from before this step ladder existed (or just not one of the round steps) must
 // still display as itself, not silently snap to "unset" — inserted in sorted position rather than
 // dropped, so an existing preference is never misrepresented back to the tenant who set it.
@@ -120,14 +129,21 @@ function TenantProfile() {
     const maxBudget = Number(field === 'budgetMax' ? value : nextForm.budgetMax)
     const validators = {
       name: () => (String(value || '').length > 80 ? 'Keep your name under 80 characters.' : ''),
+      // A budget side is "unset" as either the select's own '' sentinel or a genuinely untouched
+      // null/undefined (e.g. a fresh tenant profile that never had budgetMin/budgetMax written at
+      // all) — only householdSize handled both forms before this fix; budgetMin/budgetMax checked
+      // only for '', so Number(undefined) = NaN tripped the "cannot be negative" branch and
+      // silently blocked saving the entire form for anyone who'd never touched the budget selector.
       budgetMin: () => {
-        if (value !== '' && (!Number.isFinite(minBudget) || minBudget < 0)) return 'Minimum budget cannot be negative.'
-        if (nextForm.budgetMax !== '' && value !== '' && minBudget > maxBudget) return 'Minimum budget cannot be higher than maximum budget.'
+        if (isBudgetValueUnset(value)) return ''
+        if (!Number.isFinite(minBudget) || minBudget < 0) return 'Minimum budget cannot be negative.'
+        if (!isBudgetValueUnset(nextForm.budgetMax) && minBudget > maxBudget) return 'Minimum budget cannot be higher than maximum budget.'
         return ''
       },
       budgetMax: () => {
-        if (value !== '' && (!Number.isFinite(maxBudget) || maxBudget < 0)) return 'Maximum budget cannot be negative.'
-        if (nextForm.budgetMin !== '' && value !== '' && minBudget > maxBudget) return 'Maximum budget must be at least the minimum budget.'
+        if (isBudgetValueUnset(value)) return ''
+        if (!Number.isFinite(maxBudget) || maxBudget < 0) return 'Maximum budget cannot be negative.'
+        if (!isBudgetValueUnset(nextForm.budgetMin) && minBudget > maxBudget) return 'Maximum budget must be at least the minimum budget.'
         return ''
       },
       moveInDate: () => (isPastIsoDate(value, today) ? 'Move-in date cannot be in the past.' : ''),
