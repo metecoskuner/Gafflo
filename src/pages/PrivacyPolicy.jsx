@@ -1,6 +1,9 @@
+import { Link } from 'react-router-dom'
 import LegalPageLayout, { LegalSection } from '../components/LegalPageLayout'
+import { getSupportEmail } from '../config/support'
 
 export default function PrivacyPolicy() {
+  const supportEmail = getSupportEmail()
   return (
     <LegalPageLayout eyebrow="Legal" title="Privacy Policy" updated="21 August 2026">
       <LegalSection title="Who we are">
@@ -50,9 +53,21 @@ export default function PrivacyPolicy() {
       <LegalSection title="Your rights">
         <p>
           Under GDPR you have the right to access, correct, or request deletion of your personal data, and to
-          request a copy of it. Gafflo does not yet offer automated self-service export or deletion — email us and
-          we will action your request directly. This is a genuine, responsive process, not a placeholder; we
-          expect to offer self-service tooling as Gafflo grows.
+          request a copy of it. Gafflo does not yet offer automated self-service export or deletion
+          {supportEmail ? (
+            <>
+              {' '}— email{' '}
+              <a href={`mailto:${supportEmail}`} className="font-semibold text-indigo-700 underline">{supportEmail}</a>{' '}
+              and we will action your request directly. This is a genuine, responsive process, not a placeholder;
+              we expect to offer self-service tooling as Gafflo grows.
+            </>
+          ) : (
+            <>
+              . A dedicated contact address for these requests is being finalized ahead of public launch — see our{' '}
+              <Link className="font-semibold text-indigo-700 underline" to="/contact">Contact</Link> page for the
+              current way to reach us.
+            </>
+          )}
         </p>
       </LegalSection>
 
@@ -65,7 +80,18 @@ export default function PrivacyPolicy() {
       </LegalSection>
 
       <LegalSection title="Contact">
-        <p>Questions about this policy or a data request can be sent to our support address from within the app.</p>
+        <p>
+          Questions about this policy or a data request can be sent to{' '}
+          {supportEmail ? (
+            <a href={`mailto:${supportEmail}`} className="font-semibold text-indigo-700 underline">{supportEmail}</a>
+          ) : (
+            <>
+              the address on our <Link className="font-semibold text-indigo-700 underline" to="/contact">Contact</Link>{' '}
+              page, once it&rsquo;s finalized
+            </>
+          )}
+          .
+        </p>
       </LegalSection>
     </LegalPageLayout>
   )

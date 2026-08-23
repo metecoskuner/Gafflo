@@ -11,6 +11,7 @@ Copy `.env.example` to `.env.local` (never commit `.env.local` — `.gitignore` 
 | --- | --- | --- |
 | `VITE_SUPABASE_URL` | Yes | The Supabase project URL. Client-safe, bundled into the frontend. |
 | `VITE_SUPABASE_ANON_KEY` | Yes | The publishable anon key — safe to ship, never the `service_role` key. |
+| `VITE_SUPPORT_EMAIL` | No (required before public launch) | Public support contact address, shown on `/contact` and the Privacy Policy. Not a secret — see "Support contact" below. |
 | `VITE_DEV_BYPASS_AUTH` | No | `true` to enable dev-bypass mode locally (see below). Leave unset for real auth. |
 | `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` | No | Placeholders only — not used yet, no Edge Functions exist. |
 
@@ -188,6 +189,37 @@ does not scale and has no audit trail. Production needs a deliberate, documented
 procedure — at minimum, a controlled way to grant/revoke `platform_role` with a record of who did it
 and when, before relying on it beyond a small, trusted team.
 
+## Support contact (Stage AE)
+
+Every place the app says or implies "contact support" now reads from one source of truth:
+`getSupportEmail()` in `src/config/support.js`, which returns `VITE_SUPPORT_EMAIL` (trimmed) or
+`null` — never a fabricated address.
+
+**This is public config, not a secret.** Like `VITE_SUPABASE_URL`, any `VITE_`-prefixed variable
+is inlined into the shipped client bundle and visible to anyone who opens dev tools. Set it as a
+plain environment variable wherever the app is deployed (e.g. a Vercel project setting) — it never
+belongs in anything treated as sensitive.
+
+**Unset today** (`gafflo-dev`'s `.env.local` has no `VITE_SUPPORT_EMAIL`), so right now:
+- `/contact` (linked from Footer, Profile's Legal section, and the sign-in screen) shows a
+  professional "being finalized ahead of public launch" message instead of a fake address.
+- The Privacy Policy's "Your rights" and "Contact" sections point to `/contact` instead of
+  promising an email that doesn't exist — the GDPR rights themselves are stated identically either
+  way; only *how to actually invoke them* changes based on whether an address is configured.
+- The generic "Contact support if this seems wrong" copy shown when a suspended account can't take
+  an action (`src/config/{application,messaging,viewing,engagement}Errors.js`) doesn't name a
+  channel either way, so it's already honest — `/contact` is reachable from Footer regardless.
+
+**Once a real address is configured** (`VITE_SUPPORT_EMAIL=...`), all of the above automatically
+switch to showing a real `mailto:` link — no further code change needed.
+
+**Beta checklist:**
+- [ ] Decide on a real support inbox and set `VITE_SUPPORT_EMAIL` in the deployment platform's env
+      vars (e.g. Vercel project settings) — not in this repo, not in `.env.local`.
+- [ ] Reload `/contact` and confirm it shows the real address as a working `mailto:` link.
+- [ ] Reload `/privacy` and confirm "Your rights" and "Contact" both show the real address.
+- [ ] Click the `mailto:` links to confirm they open correctly and go to a monitored inbox.
+
 ## Production readiness — still pending
 
 This app is real Supabase-backed (not a mock/demo build), but the following still need to happen
@@ -201,13 +233,9 @@ before a genuine production launch:
   check; cannot be confirmed or fixed from this repo.
 - **A deliberate moderator admin/bootstrap procedure** — see "Moderator access" above. Today,
   granting `platform_role` is a manual, out-of-band DB operation with no audit trail.
-- **A real support/contact channel.** `src/pages/PrivacyPolicy.jsx` (the "Your rights" section,
-  and the closing "Contact" section) tells users to "email us" / use "our support address from
-  within the app" for GDPR access/correction/deletion/export requests — but no support email,
-  contact page, or mailto link exists anywhere in the app today (verified: nothing in `src/`
-  matches a support address). This is a real promise-vs-reality gap, not yet a fake placeholder —
-  a real address/route needs to be decided on and wired in before beta, and until then this page
-  is telling users to do something they currently have no way to do.
+- **A real support email, set via `VITE_SUPPORT_EMAIL`** — see "Support contact" above and its
+  beta checklist. The app itself no longer promises a channel that doesn't exist, but a real
+  address still needs to be decided on and configured before launch.
 - **Real payment/subscription infrastructure** before Gafflo+, Landlord Plus, or any listing
   product (Boost, Single Listing Plus, Extra Listing Slot) can actually be sold.
 - **Legal review** before fixed-term stays can ship.

@@ -31,10 +31,11 @@ viewings and a moderator workspace — all backed by a real Supabase project, no
   (draft → in review → published, or needs changes), applicants, messaging, viewings, and
   per-listing analytics (unique views, saves, applications, enquiries, confirmed viewings —
   aggregate counts only, no viewer identity exposed).
-- **Trust & safety** — legal pages (Terms, Privacy, Fair Housing Policy, Acceptable Use), a
+- **Trust & safety** — legal pages (Terms, Privacy, Fair Housing Policy, Acceptable Use, Contact), a
   required Fair Housing Policy acknowledgment before a landlord's first listing can go live,
   tenant-side listing reports, and a moderator workspace (reports queue + pending-listings queue)
-  gated by a real `platform_role`/`am_i_moderator()` check.
+  gated by a real `platform_role`/`am_i_moderator()` check. The support address on `/contact` is
+  configurable (`VITE_SUPPORT_EMAIL`, unset by default) — see docs/dev-qa.md.
 
 ## Preview-only / not live yet
 

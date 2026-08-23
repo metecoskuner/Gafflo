@@ -28,6 +28,7 @@ const legalAuthLinks = [
   { to: '/privacy', label: 'Privacy' },
   { to: '/fair-housing', label: 'Fair Housing' },
   { to: '/acceptable-use', label: 'Acceptable Use' },
+  { to: '/contact', label: 'Contact' },
 ]
 
 // The real authentication entry point. Signed-out visitors land here (see AuthGate) and never

@@ -48,6 +48,7 @@ import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import FairHousingPolicy from './pages/FairHousingPolicy'
 import AcceptableUsePolicy from './pages/AcceptableUsePolicy'
+import Contact from './pages/Contact'
 
 const emptyPropertyFilters = {
   priceMin: '',
@@ -303,24 +304,26 @@ function AuthenticatedApp() {
   )
 }
 
-// Stage J1 pre-merge fix: exactly four public routes, checked before AuthProvider/AuthGate ever
-// mount, so they render for a logged-out visitor with zero dependency on any auth/profile state.
-// AuthGate itself is untouched — every other route still goes through the full authenticated
-// tree above unchanged. These four pages are pure static content (no useAuth/useAccountProfile/
-// any provider call), so bypassing the whole authenticated tree for them is safe by construction,
-// not just by convention.
-const publicLegalPages = {
+// Stage J1 pre-merge fix, extended Stage AE to include /contact: public routes, checked before
+// AuthProvider/AuthGate ever mount, so they render for a logged-out visitor with zero dependency
+// on any auth/profile state. AuthGate itself is untouched — every other route still goes through
+// the full authenticated tree above unchanged. Every page here is pure static content (no
+// useAuth/useAccountProfile/any provider call), so bypassing the whole authenticated tree for
+// them is safe by construction, not just by convention — Contact included, even though it isn't
+// a legal document itself, since it needs the exact same "reachable while signed out" treatment.
+const publicStaticPages = {
   '/terms': TermsOfService,
   '/privacy': PrivacyPolicy,
   '/fair-housing': FairHousingPolicy,
   '/acceptable-use': AcceptableUsePolicy,
+  '/contact': Contact,
 }
 
 export default function App() {
   const location = useLocation()
-  const PublicLegalPage = publicLegalPages[location.pathname]
-  return PublicLegalPage ? (
-    <PublicLegalPage />
+  const PublicStaticPage = publicStaticPages[location.pathname]
+  return PublicStaticPage ? (
+    <PublicStaticPage />
   ) : (
     <ErrorBoundary>
       <AuthenticatedApp />

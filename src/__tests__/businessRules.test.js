@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mapApplicationRowToApplication } from '../config/applicationAdapter'
+import { normalizeSupportEmail } from '../config/support'
 import { describeApplicationError } from '../config/applicationErrors'
 import { filterConversationsByRole, isTenantWaitingForLandlordReply, mapConversationRowToConversation } from '../config/messageAdapter'
 import { describeMessagingError } from '../config/messagingErrors'
@@ -1568,5 +1569,19 @@ describe('Stage K — moderator workspace adapter', () => {
     expect(listingSummaryLabel({ title: 'Bright room', city: 'Dublin', area: 'Rathmines' })).toBe('Bright room — Rathmines, Dublin')
     expect(listingSummaryLabel({ title: 'Bright room', city: '', area: '' })).toBe('Bright room')
     expect(listingSummaryLabel(null)).toBe('Listing')
+  })
+})
+
+describe('Stage AE — support contact email normalization', () => {
+  it('returns null, never a fabricated address, for every genuinely unset shape', () => {
+    expect(normalizeSupportEmail(undefined)).toBeNull()
+    expect(normalizeSupportEmail(null)).toBeNull()
+    expect(normalizeSupportEmail('')).toBeNull()
+    expect(normalizeSupportEmail('   ')).toBeNull()
+  })
+
+  it('trims a real configured address but otherwise passes it through unchanged', () => {
+    expect(normalizeSupportEmail('support@example.com')).toBe('support@example.com')
+    expect(normalizeSupportEmail('  support@example.com  ')).toBe('support@example.com')
   })
 })

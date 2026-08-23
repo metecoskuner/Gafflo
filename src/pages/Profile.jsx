@@ -602,6 +602,7 @@ const legalProfileLinks = [
   { to: '/privacy', label: 'Privacy Policy' },
   { to: '/fair-housing', label: 'Fair Housing Policy' },
   { to: '/acceptable-use', label: 'Acceptable Use' },
+  { to: '/contact', label: 'Contact' },
 ]
 
 function LegalLinksSection() {
