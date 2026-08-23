@@ -58,15 +58,37 @@ export function isNewProperty(property, now = new Date()) {
   return ageDays >= 0 && ageDays <= 14
 }
 
+// A budget side counts as genuinely "set" only when it's a real positive number — matching
+// Profile.jsx's own budgetSelectValue(), where a literal 0 (a real value at least one existing
+// tenant profile has) already displays as "No minimum," not as a distinct real value.
+function isBudgetSideSet(value) {
+  const numeric = Number(value)
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(numeric) && numeric > 0
+}
+
+// "No minimum" / "No maximum" (Stage V's budget selector) is a real, deliberate, complete answer
+// — flexible, not unanswered — so it must never read as an incomplete profile. We have no way to
+// tell "chose flexible on purpose" apart from "never touched this field" (same stored state
+// either way), and Stage Y's product decision is to not invent that distinction: both count as
+// complete. A one-sided preference (only min or only max genuinely set) is equally a real,
+// deliberate answer. The one state that's still genuinely incomplete is a real contradiction —
+// both sides set to actual numbers with min above max — which normal use can't reach (Profile.jsx
+// blocks saving it) but stays checked here since the shape itself can still represent it.
+function isBudgetComplete(profile) {
+  const minSet = isBudgetSideSet(profile.budgetMin)
+  const maxSet = isBudgetSideSet(profile.budgetMax)
+  if (minSet && maxSet) return Number(profile.budgetMin) <= Number(profile.budgetMax)
+  return true
+}
+
 export function getTenantProfileCompleteness(profile) {
-  const budgetReady = Number(profile.budgetMin) >= 0 && Number(profile.budgetMax) > 0 && Number(profile.budgetMin) <= Number(profile.budgetMax)
   const checks = [
     // Onboarding's own two required questions (see TenantOnboarding.jsx) — a tenant who has
     // done nothing but onboarding already gave two real, meaningful answers, so this score
     // shouldn't read 0% until they come back and fill in everything else too.
     { id: 'targetCity', label: 'Target city', complete: Boolean(String(profile.targetCity || '').trim()) },
     { id: 'lookingFor', label: 'Looking for', complete: Boolean(profile.lookingFor) },
-    { id: 'budget', label: 'Budget range', complete: budgetReady },
+    { id: 'budget', label: 'Budget preference', complete: isBudgetComplete(profile) },
     { id: 'preferredAreas', label: 'Preferred areas', complete: Array.isArray(profile.preferredAreas) ? profile.preferredAreas.length > 0 : Boolean(String(profile.preferredAreas || '').trim()) },
     { id: 'moveInDate', label: 'Move-in date', complete: Boolean(profile.moveInDate) },
     { id: 'householdSize', label: 'Household size', complete: Number(profile.householdSize) >= 1 },

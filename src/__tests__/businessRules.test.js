@@ -67,7 +67,7 @@ import {
 } from '../config/entitlements'
 import { LANDLORD_PLAN, pricingPlans, TENANT_PLAN } from '../config/pricingPlans'
 import { sortBySmartMatchScore, sortForBrowseExposure } from '../config/promotion'
-import { getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
+import { getTenantProfileCompleteness, getTrustSignals, getTrustStatusLabel, hasCoreMatchFacts } from '../config/rentalJourney'
 import { normalizeTenantProfileForState, normalizeTenantProfileForStorage } from '../config/tenantProfile'
 import { getVisibleMvpMockProperties } from '../config/fixtureFilters'
 import { calculatePropertyMatch } from '../utils/calculatePropertyMatch'
@@ -760,6 +760,41 @@ describe('frontend integrity helpers', () => {
     expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800 })).toBe(false)
     expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01' })).toBe(false)
     expect(hasCoreMatchFacts({ ...skipped, budgetMin: 1200, budgetMax: 1800, moveInDate: '2030-01-01', householdSize: 1 })).toBe(true)
+  })
+
+  it('counts a fresh onboarding-only tenant\'s target city and looking-for, and treats a flexible ("No minimum/No maximum") budget as complete, not missing', () => {
+    const freshFromOnboarding = { targetCity: 'Dublin', lookingFor: 'any', budgetMin: null, budgetMax: null, preferredAreas: [] }
+    const completeness = getTenantProfileCompleteness(freshFromOnboarding)
+    expect(completeness.missing.map((item) => item.id)).not.toContain('targetCity')
+    expect(completeness.missing.map((item) => item.id)).not.toContain('lookingFor')
+    expect(completeness.missing.map((item) => item.id)).not.toContain('budget')
+    expect(completeness.total).toBe(11)
+    expect(completeness.completed).toBeGreaterThanOrEqual(2)
+
+    // The empty-string sentinel Profile.jsx's budget selector actually stores for "No minimum"/
+    // "No maximum" behaves identically to never having touched the field at all — Stage Y's
+    // product decision is not to invent a distinction between the two.
+    const explicitlyFlexible = { ...freshFromOnboarding, budgetMin: '', budgetMax: '' }
+    expect(getTenantProfileCompleteness(explicitlyFlexible).missing.map((item) => item.id)).not.toContain('budget')
+
+    // A literal 0 (a real value at least one existing tenant profile has) is likewise "no
+    // preference," matching Profile.jsx's own budgetSelectValue() treatment of 0.
+    const zeroBudget = { ...freshFromOnboarding, budgetMin: 0, budgetMax: 0 }
+    expect(getTenantProfileCompleteness(zeroBudget).missing.map((item) => item.id)).not.toContain('budget')
+  })
+
+  it('still counts a real numeric budget range as complete', () => {
+    const base = { targetCity: 'Dublin', lookingFor: 'any' }
+    expect(getTenantProfileCompleteness({ ...base, budgetMin: 1200, budgetMax: 1800 }).missing.map((item) => item.id)).not.toContain('budget')
+    // A one-sided preference (only one side genuinely set) is equally a real, deliberate answer.
+    expect(getTenantProfileCompleteness({ ...base, budgetMin: 1200, budgetMax: '' }).missing.map((item) => item.id)).not.toContain('budget')
+    expect(getTenantProfileCompleteness({ ...base, budgetMin: '', budgetMax: 2000 }).missing.map((item) => item.id)).not.toContain('budget')
+  })
+
+  it('still flags a genuinely invalid budget range (min above max) as incomplete', () => {
+    const base = { targetCity: 'Dublin', lookingFor: 'any' }
+    const invalid = getTenantProfileCompleteness({ ...base, budgetMin: 2000, budgetMax: 1200 })
+    expect(invalid.missing.map((item) => item.id)).toContain('budget')
   })
 
   it('hides agent fixtures from the current visible MVP property set', () => {
