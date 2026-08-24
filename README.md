@@ -57,8 +57,9 @@ npm run build
 ```
 
 See [docs/dev-qa.md](docs/dev-qa.md) for the full environment variable reference, dev-bypass
-details, testing (unit + e2e) instructions, seed data, and the current production-readiness
-checklist.
+details, testing (unit + e2e) instructions, and seed data. See
+[docs/production-readiness.md](docs/production-readiness.md) for the full closed-beta and
+public-launch checklist.
 
 ## Testing
 

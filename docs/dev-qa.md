@@ -1,7 +1,13 @@
 # Development & QA guide
 
 Detail behind the top-level [README.md](../README.md): environment variables, dev-bypass mode,
-testing, seed data, and what's still pending before production.
+testing, and seed data — everything needed to run and test Gafflo locally.
+
+For anything about taking Gafflo toward a real beta or public launch — the auth redirect
+checklist, prod/dev Supabase separation, moderator bootstrap, support-email rollout, security
+headers, GDPR runbook, and the full closed-beta/public-launch gate — see
+[docs/production-readiness.md](production-readiness.md), the single source of truth for that.
+This file stays focused on local developer workflow.
 
 ## Environment variables
 
@@ -76,63 +82,15 @@ npm run test:e2e
   deleted without deleting anything. `e2e/global-teardown.js` never throws — a cleanup failure is
   logged and safely skipped, never reported as a test failure.
 
-## Supabase Auth redirect / Site URL checklist (Stage AC)
+## Supabase Auth redirect / Site URL, and prod/dev separation
 
-Real sign-in is a magic link: `signInWithEmail()` (`src/context/AuthProvider.jsx`) calls
-`supabase.auth.signInWithOtp()` with `emailRedirectTo: window.location.origin` — that's already
-portable (it always points at whatever origin the app is actually running on), so **the code needs
-no change here**. What has to be correct is Supabase's own side: it will only honor a redirect to
-an origin that's on the project's allow-list.
-
-**Important — `supabase/config.toml` is not necessarily what governs this.** That file (`site_url
-= "http://127.0.0.1:3000"`, `additional_redirect_urls = ["https://127.0.0.1:3000"]`) is the config
-for a fully local `supabase start` stack. This project's `.env.local` points `VITE_SUPABASE_URL` at
-a **hosted** project (`https://abktlxyyfqkizlxfzziv.supabase.co`, i.e. `gafflo-dev`), so local
-dev already talks to the hosted project directly — `config.toml`'s `[auth]` block only applies if
-someone runs `supabase start` locally, which this workflow doesn't require. Whether it's ever been
-pushed to the hosted project (`supabase config push`) is not something this repo can confirm.
-Also note the `127.0.0.1:3000` value doesn't match this app's actual dev port anyway — Vite serves
-on `5173` (`http://localhost:5173`), not `3000`.
-
-**This cannot be verified or fixed from the repo — it requires a manual dashboard check.** Exact
-steps for whoever has access to the `gafflo-dev` (and later, production) Supabase project:
-
-1. Open **Supabase Dashboard → Authentication → URL Configuration** for the project.
-2. **Site URL** should be set to the app's primary origin:
-   - Local dev: `http://localhost:5173`
-   - Production: *(placeholder — set once a real domain exists, e.g. `https://app.gafflo.ie`)*
-3. **Redirect URLs** (the allow-list magic-link callbacks are checked against) needs every real
-   origin testers/users will actually open the link from — at minimum local dev and the production
-   domain above.
-4. **Vercel preview-URL caveat:** every PR/branch on Vercel gets its own unique
-   `https://gafflo-<hash>-<team>.vercel.app` preview URL. Supabase's redirect allow-list can't
-   practically track a new URL per PR, so a magic link sent while testing on a preview deployment
-   will not redirect back correctly unless that exact preview URL is added first. Until there's a
-   stable staging domain, verify real-auth flows either on local dev or on the production domain
-   itself — not on ad-hoc preview URLs.
-5. Re-confirm this checklist any time the production domain changes (custom domain setup, moving
-   off the default Vercel domain, etc.).
-
-## Production vs. development Supabase separation
-
-`gafflo-dev` (the project `.env.local` points at today) is a **development project — it is not,
-and must never silently become, production.** Checklist before any public launch:
-
-- **A separate Supabase project is required for production.** Do not point a production deployment
-  at `gafflo-dev`.
-- **Separate `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`** — production's values are configured
-  as the deployment platform's own env vars (e.g. Vercel project settings), never copied from
-  `.env.local` or committed anywhere in this repo.
-- **Separate Storage bucket state** — the production `listing-photos` bucket must start empty, not
-  inherit any images uploaded during dev/QA/e2e runs against `gafflo-dev`.
-- **Seed/test data must not be copied blindly.** The seed landlord and seed listings (see below)
-  and every e2e throwaway identity are dev fixtures for local QA — none of it is real inventory or
-  real users, and none of it belongs in a production database.
-- **`service_role` / `SUPABASE_DB_URL` are server-side or CI-only**, and already treated that way
-  in this codebase (`e2e/global-teardown.js`'s optional cleanup is the only place either is read,
-  both via plain process env vars, never `.env.local` — see `docs/dev-qa.md`'s own testing section
-  above). That discipline must hold for production the same way: neither value is ever bundled into
-  the frontend or exposed to a browser.
+Both moved to [docs/production-readiness.md](production-readiness.md) (the "Authentication" and
+"Environment separation" sections) as of Stage AF, alongside the rest of the launch checklist —
+kept here before only because no dedicated launch doc existed yet. Short version for local dev:
+real sign-in is a magic link (`signInWithEmail()` in `src/context/AuthProvider.jsx`, using
+`emailRedirectTo: window.location.origin` — already portable, no code change ever needed there);
+what has to be correct is Supabase's own Authentication → URL Configuration allow-list, which is a
+dashboard setting this repo cannot confirm or fix.
 
 ## Seed / dev data
 
@@ -184,10 +142,9 @@ above). Its password is a real secret and is never written down in this repo, in
 `.env.local` — only ever supplied as a one-off process env var for the single test run that needs
 it.
 
-**Before public launch:** the current "email/Slack a trusted admin, they run a DB update" process
-does not scale and has no audit trail. Production needs a deliberate, documented admin/bootstrap
-procedure — at minimum, a controlled way to grant/revoke `platform_role` with a record of who did it
-and when, before relying on it beyond a small, trusted team.
+**Before public launch:** see [docs/production-readiness.md](production-readiness.md)'s
+"Moderation / admin operations" section for the severity assessment and the smallest recommended
+next step (a narrow, audited grant/revoke RPC pair) — not built in this stage.
 
 ## Support contact (Stage AE)
 
@@ -211,39 +168,14 @@ belongs in anything treated as sensitive.
   channel either way, so it's already honest — `/contact` is reachable from Footer regardless.
 
 **Once a real address is configured** (`VITE_SUPPORT_EMAIL=...`), all of the above automatically
-switch to showing a real `mailto:` link — no further code change needed.
+switch to showing a real `mailto:` link — no further code change needed. Full rollout checklist:
+[docs/production-readiness.md](production-readiness.md)'s closed-beta gate, item 3.
 
-**Beta checklist:**
-- [ ] Decide on a real support inbox and set `VITE_SUPPORT_EMAIL` in the deployment platform's env
-      vars (e.g. Vercel project settings) — not in this repo, not in `.env.local`.
-- [ ] Reload `/contact` and confirm it shows the real address as a working `mailto:` link.
-- [ ] Reload `/privacy` and confirm "Your rights" and "Contact" both show the real address.
-- [ ] Click the `mailto:` links to confirm they open correctly and go to a monitored inbox.
+## Production readiness
 
-## Production readiness — still pending
-
-This app is real Supabase-backed (not a mock/demo build), but the following still need to happen
-before a genuine production launch:
-
-- **Secrets rotation** — every key currently used for local development must be rotated before
-  going live; nothing used during development should carry into production as-is.
-- **Production Supabase project / environment separation** — see the checklist above.
-  `gafflo-dev` is a development project and must never become production by default.
-- **Auth redirect / Site URL configuration** — see the checklist above. Needs a manual dashboard
-  check; cannot be confirmed or fixed from this repo.
-- **A deliberate moderator admin/bootstrap procedure** — see "Moderator access" above. Today,
-  granting `platform_role` is a manual, out-of-band DB operation with no audit trail.
-- **A real support email, set via `VITE_SUPPORT_EMAIL`** — see "Support contact" above and its
-  beta checklist. The app itself no longer promises a channel that doesn't exist, but a real
-  address still needs to be decided on and configured before launch.
-- **Real payment/subscription infrastructure** before Gafflo+, Landlord Plus, or any listing
-  product (Boost, Single Listing Plus, Extra Listing Slot) can actually be sold.
-- **Legal review** before fixed-term stays can ship.
-- **Privacy/GDPR** — self-service account deletion and data export still need to be built; today
-  the Privacy Policy is honest that this is a manual, request-by-request process, not automated.
-- **Monitoring / error reporting** — a top-level `ErrorBoundary` (Stage AC) now shows a calm
-  fallback instead of a blank screen on a render crash, and CI now runs lint/test/build on every
-  PR (Stage AC) — but there is still no production error-tracking/crash-reporting service (e.g.
-  Sentry) or uptime monitoring wired up.
-- **Final real-auth manual QA** — a full manual pass with real Supabase Auth (dev-bypass mode off)
-  across both tenant and landlord paths before launch.
+Everything about taking Gafflo toward a real beta or public launch — secrets rotation, Supabase
+project separation, auth redirect config, migration reproducibility, the RLS/RPC security audit,
+storage, the GDPR data-subject-request runbook, moderator bootstrap, deployment/CSP headers,
+CI/E2E strategy, and the full closed-beta vs. public-launch gate — now lives entirely in
+[docs/production-readiness.md](production-readiness.md), produced by Stage AF's full-repository
+audit. This file no longer duplicates that checklist.
