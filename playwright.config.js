@@ -23,6 +23,14 @@ export default defineConfig({
     command: 'npm run dev -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
+    // This suite seeds real, authenticated Supabase sessions (global-setup.js) and asserts
+    // against real signed-in behavior — it must not depend on whatever VITE_DEV_BYPASS_AUTH a
+    // developer's own .env.local happens to have set for separate manual UI testing, or every
+    // frontend-touching spec silently runs as the fake dev-bypass identity instead of the real
+    // seeded session (confirmed live: the app rendered RoleSelection under
+    // "Signed in as dev-bypass@localhost" instead of the real tenant's property page). Same fix
+    // already applied to playwright.smoke.config.js's webServer for the same reason.
+    env: { VITE_DEV_BYPASS_AUTH: 'false' },
   },
   projects: [
     {
