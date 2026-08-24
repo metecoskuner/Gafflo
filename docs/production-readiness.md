@@ -76,9 +76,9 @@ Required before open, unlimited sign-ups.
 17. `[DEFERRED]` A dedicated production error-tracking/monitoring service (e.g. Sentry) — not
     added in this stage per its own explicit non-goals. `ErrorBoundary` + CI are the current
     baseline; revisit once a P0 issue or real user-reported incident makes the gap costly.
-18. `[DEFERRED]` E2E test-fixture architecture rework (fewer real signups per run, deterministic
-    reset) — see "CI / E2E" below for the exact Stage AG recommendation. Not attempted in this
-    stage per its explicit instruction not to touch E2E architecture.
+18. `[DONE-STAGE-AG]` E2E test-fixture architecture rework — see "CI / E2E" below. Smoke tests now
+    run with zero Supabase Auth signups, and the full integration setup uses stable fixture
+    accounts plus five throwaway signups per run after one-time stable-account provisioning.
 
 ---
 
@@ -95,7 +95,7 @@ Required before open, unlimited sign-ups.
 | **Security** | No `grant execute ... to public/anon` on any function; no `create extension` dependency beyond Postgres core `gen_random_uuid()` | — | — | — |
 | **Privacy** | Terms/Privacy/Fair Housing/Acceptable Use/Contact all real, honest, GDPR-appropriate copy | — | — | Solicitor review (LEGAL), company registration details (LEGAL) |
 | **Moderation** | Real `am_i_moderator()`/`is_caller_moderator()` gating, every moderator RPC independently enforces its own check server-side | — | — | Admin UI to grant/revoke `platform_role` (currently manual DB operation) |
-| **Testing** | 158 Vitest unit tests, 11 pgTAP suites across 14 migrations, 12 Playwright e2e specs (~3,930 lines), CI runs lint+test+build on every PR | — | E2E needs real Supabase creds + creates ~21 real Auth signups per run | Deterministic/lower-cost E2E fixture architecture (Stage AG) |
+| **Testing** | 158 Vitest unit tests, 11 pgTAP suites across 14 migrations, 12 Playwright e2e specs (~3,930 lines), CI runs lint+test+build on every PR | Zero-signup smoke Playwright config; integration setup reduced from 21 to 5 setup signups per run after stable-account provisioning | Full integration E2E still needs real Supabase creds and still creates a small number of real Auth users | Add smoke E2E to CI first; run reduced integration subset on schedule/manual trigger, not every push |
 | **Observability** | `console.error` on caught render crashes (dev and prod both) | — | — | Real error-tracking/monitoring service (deliberately deferred) |
 | **Operations** | This document; `docs/dev-qa.md` for local dev | — | — | Data Subject Request rehearsal, moderator bootstrap procedure |
 
@@ -543,12 +543,19 @@ not a "giant admin system."
   violations, all 158 Vitest assertions, and a real production build failure — everything that
   doesn't require live Supabase credentials or create real Auth traffic. `npm audit` run this
   stage: **zero vulnerabilities at any severity.**
-- **Deliberately not added to CI this stage:** the real-Supabase Playwright E2E suite. Confirmed
-  why, from source: `e2e/global-setup.js` performs **21 real Supabase Auth signups** (20 named
-  fixture identities + 1 default session) sequentially, every single run, regardless of which spec
-  file is targeted (Playwright's `globalSetup` runs unconditionally for the whole config). Adding
-  this to CI on every push would multiply real signup volume against `gafflo-dev` and risk the
-  documented 429 rate-limit behavior this project has already hit before.
+- **E2E split as of Stage AG:** `npm run test:e2e:smoke` uses `playwright.smoke.config.js`, has no
+  Playwright global setup, and runs signed-out public-route/auth-gate checks with **zero** Supabase
+  Auth signups. `npm run test:e2e` / `npm run test:e2e:integration` remains the real-Supabase
+  integration suite.
+- **Integration fixture volume as of Stage AG:** `e2e/global-setup.js` now signs into stable,
+  reusable fixture accounts and resets their own profile rows in place via anon-key authenticated
+  requests using process-only `GAFFLO_E2E_STABLE_PASSWORD` (not `.env.local`, not committed). The
+  old setup performed **21 real Supabase Auth signups per run** (20 named fixture identities + 1
+  default session). After one-time stable-account provisioning, the new setup performs **5 real
+  setup signups per run** (the four genuinely fresh onboarding accounts plus the
+  Fair-Housing/listing-owner account whose acknowledgement state is intentionally one-way). The
+  auth spec can still create one additional magic-link user inside its real OTP test when Supabase
+  accepts that request.
 - **Cleanup:** opt-in only (`GAFFLO_E2E_CLEANUP_DB_URL`/`_SERVICE_ROLE_KEY`), never automatic —
   confirmed this remains a deliberate, safe default (never destructive without an explicit env var)
   rather than a gap; `global-teardown.js` never throws, so a cleanup failure can never be reported
@@ -557,23 +564,13 @@ not a "giant admin system."
   gated behind `GAFFLO_E2E_MODERATOR_PASSWORD` — a real, permanent secret never written to any file
   in this repo, confirmed via a fresh grep this stage.
 
-**Stage AG recommendation** (design only — not built in this stage, per its explicit instruction
-not to rebuild E2E architecture here): the real fix is reducing how much real Auth traffic a single
-E2E run generates, not adding more CI usage of the current architecture. Concretely:
-1. **Split "local smoke" from "full integration."** A small subset of specs (e.g. the four public
-   legal pages, basic routing) need zero real signups at all and could run in CI safely today.
-2. **Reuse fixture identities instead of creating them fresh per run**, where a test doesn't
-   specifically need pristine state — most of the 20 named `IDENTITIES` exist to cover a specific,
-   fixed data shape (a given budget, a given household size) that doesn't need to be re-created
-   from scratch every single invocation; a controlled, idempotent "ensure this fixture exists and
-   is in this state" reset is cheaper than 20 fresh signups.
-3. **Keep genuinely destructive/mutating tests** (the account-mutation-heavy specs, sign-out tests)
-   on their own dedicated, deliberately-provisioned identities, separate from read-mostly specs.
-4. Only once (1)-(3) meaningfully reduce real Auth volume per run does adding *some* E2E coverage
-   to CI (on a schedule, or manually triggered, not every push) become reasonable without repeatedly
-   hitting rate limits.
-
-This is a design recommendation for a dedicated Stage AG, not a change made here.
+**CI recommendation after Stage AG:** add `npm run test:e2e:smoke` to CI first if live Supabase
+credentials are available in the CI environment; it is safe for every PR/push from an Auth-volume
+perspective because it creates no accounts. Keep the full integration suite off every-push CI.
+Once the stable fixture accounts have been provisioned in `gafflo-dev`, a reduced integration
+subset can reasonably run on a schedule or manual workflow with `GAFFLO_E2E_STABLE_PASSWORD` stored
+as a CI secret, but not on every push: five real setup signups plus the auth spec's possible OTP
+user is a large reduction, not zero.
 
 ---
 

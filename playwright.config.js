@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: ['smoke.spec.js', '**/*.test.js'],
   fullyParallel: true,
   reporter: 'list',
   // Seeds one real, throwaway, authenticated Supabase session (see e2e/global-setup.js) so the

@@ -13,8 +13,8 @@ dist-ssr
 test-results
 *.local
 
-# Generated per-run e2e auth fixture (real, throwaway Supabase session tokens) — see
-# e2e/global-setup.js. Never commit; regenerated fresh on every `npm run test:e2e`.
+# Generated per-run e2e auth fixture (real Supabase session tokens) — see e2e/global-setup.js.
+# Never commit; regenerated fresh on every `npm run test:e2e`.
 /e2e/.auth/
 
 # Environment files — never commit real secrets. .env.example is the only tracked exception.

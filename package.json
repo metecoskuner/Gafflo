@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --config=playwright.smoke.config.js",
+    "test:e2e:integration": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {

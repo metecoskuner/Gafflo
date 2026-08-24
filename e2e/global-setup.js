@@ -51,10 +51,9 @@ const TENANT_BASE_ROW = {
   parking_needed: false,
 }
 
-// Every distinct tenant_profiles/landlord_profiles shape e2e/frontend-integrity.spec.js needs.
-// Each is a small, fixed, purpose-built fixture created once per full test run (never mutated
-// during the run itself) — not a "batch" of disposable users, and never sent any OTP/magic-link
-// email (signup with email+password on this project, same as Stage A, does not trigger one).
+// Every distinct tenant_profiles/landlord_profiles shape the e2e suite needs. Most are stable
+// fixture accounts reset in place per run; THROWAWAY_IDENTITY_NAMES below documents the few that
+// still need genuinely fresh state. None of this path sends OTP/magic-link email.
 const IDENTITIES = {
   tenantDefault: { role: 'tenant', tenant: TENANT_BASE_ROW },
   landlordDefault: { role: 'landlord', landlord: { display_name: 'Test Landlord Co' } },
@@ -95,6 +94,18 @@ const IDENTITIES = {
   landlordListingOwnerB: { role: 'landlord', landlord: { display_name: 'Listing Owner B' } },
 }
 
+// These cannot be reset honestly with only the public anon key and the app's own grants:
+// onboarding tests need genuinely missing tenant/landlord profile rows, while
+// fair_housing_acknowledged_at is intentionally one-way and RPC-only. Keep this list small and
+// auditable; every other fixture identity below is stable and reset in place per run.
+const THROWAWAY_IDENTITY_NAMES = new Set([
+  'freshForTenantOnboarding',
+  'freshForOnboardingValidation',
+  'freshForOnboardingViewport',
+  'freshForLandlordOnboarding',
+  'landlordListingOwnerA',
+])
+
 async function signUp(url, anonKey, email, password) {
   const response = await fetch(`${url}/auth/v1/signup`, {
     method: 'POST',
@@ -125,6 +136,17 @@ async function signIn(url, anonKey, email, password) {
     throw new Error(`sign-in failed (HTTP ${response.status}): ${JSON.stringify(body)}`)
   }
   return body
+}
+
+async function signInOrCreateStable(url, anonKey, name, password) {
+  const email = `gafflo-e2e-stable-${name}@example.com`
+  try {
+    const signin = await signIn(url, anonKey, email, password)
+    return { auth: signin, email, created: false }
+  } catch (error) {
+    const signup = await signUp(url, anonKey, email, password)
+    return { auth: signup, email, created: true, signInError: error.message }
+  }
 }
 
 async function restInsert(url, anonKey, accessToken, table, row) {
@@ -165,6 +187,22 @@ async function restInsertIfMissing(url, anonKey, accessToken, table, row) {
   }
 }
 
+async function restUpdateOwn(url, anonKey, accessToken, table, userId, row) {
+  const response = await fetch(`${url}/rest/v1/${table}?profile_id=eq.${userId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(row),
+  })
+  if (!response.ok) {
+    throw new Error(`update ${table} failed (HTTP ${response.status}): ${await response.text()}`)
+  }
+}
+
 async function restSetActiveRole(url, anonKey, accessToken, userId, role) {
   const response = await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
     method: 'PATCH',
@@ -179,6 +217,18 @@ async function restSetActiveRole(url, anonKey, accessToken, userId, role) {
   if (!response.ok) {
     throw new Error(`setting last_active_role failed (HTTP ${response.status}): ${await response.text()}`)
   }
+}
+
+async function ensureConfiguredProfile(url, anonKey, accessToken, userId, spec) {
+  if (spec.tenant) {
+    await restInsertIfMissing(url, anonKey, accessToken, 'tenant_profiles', { profile_id: userId, ...spec.tenant })
+    await restUpdateOwn(url, anonKey, accessToken, 'tenant_profiles', userId, spec.tenant)
+  }
+  if (spec.landlord) {
+    await restInsertIfMissing(url, anonKey, accessToken, 'landlord_profiles', { profile_id: userId, ...spec.landlord })
+    await restUpdateOwn(url, anonKey, accessToken, 'landlord_profiles', userId, spec.landlord)
+  }
+  await restSetActiveRole(url, anonKey, accessToken, userId, spec.role || null)
 }
 
 // Uses the real @supabase/supabase-js persistence code (via a captured in-memory storage
@@ -226,18 +276,26 @@ async function buildIdentity(url, anonKey, runId, name, spec) {
   return { storageKey, storageValue, email }
 }
 
-// The existing marketplace e2e suite predates real auth and exercises the mock marketplace
-// directly. Rather than weaken those tests to skip the new auth/profile boundary, this creates
-// one fresh, real, throwaway Supabase session per test run for the default authenticated state
-// (via the public signup endpoint, same publishable anon key the app itself uses — never
-// service_role), plus a small fixed set of named identities pre-configured with exactly the
-// real tenant_profiles/landlord_profiles shapes the marketplace suite's fixtures need (see
-// IDENTITIES above) — created once here, read-only for the rest of the run, so no test-time
-// mutation race is possible under fullyParallel.
+async function buildStableIdentity(url, anonKey, name, spec, password) {
+  const stable = await signInOrCreateStable(url, anonKey, name, password)
+  const userId = stable.auth.user.id
+  const accessToken = stable.auth.access_token
+
+  await ensureConfiguredProfile(url, anonKey, accessToken, userId, spec)
+
+  const [storageKey, storageValue] = await captureSessionStorage(url, anonKey, accessToken, stable.auth.refresh_token)
+  return { storageKey, storageValue, email: stable.email, stable: true, created: stable.created }
+}
+
+// The e2e suite predates real auth in a few places, but it still runs behind the real
+// auth/profile boundary. Stable identities are signed into and reset with normal authenticated
+// anon-key requests; the small throwaway set is still created through public signup, never
+// service_role.
 export default async function globalSetup(config) {
   const env = { ...loadEnvLocal(), ...process.env }
   const url = env.VITE_SUPABASE_URL
   const anonKey = env.VITE_SUPABASE_ANON_KEY
+  const stablePassword = process.env.GAFFLO_E2E_STABLE_PASSWORD
 
   if (!url || !anonKey) {
     throw new Error(
@@ -246,21 +304,27 @@ export default async function globalSetup(config) {
         'gafflo-dev project values, then re-run.',
     )
   }
+  if (!stablePassword) {
+    throw new Error(
+      'integration e2e tests need GAFFLO_E2E_STABLE_PASSWORD set as a process env var so the ' +
+        'stable fixture accounts can be signed into or provisioned. Do not put this in .env.local.',
+    )
+  }
 
 
   const runId = Date.now()
   const baseURL = config.projects[0].use.baseURL
 
   // Default session (unconfigured role/profile) — playwright.config.js's global default
-  // storageState, and e2e/auth.spec.js's "signed in" describe block.
-  const defaultEmail = `gafflo-e2e-${runId}@example.com`
-  const defaultPassword = `E2e-Test-Pass-${runId}!`
-  const defaultSignup = await signUp(url, anonKey, defaultEmail, defaultPassword)
+  // storageState. Stable across runs and reset to no active role; it is not added to the
+  // teardown manifest because it is deliberately persistent fixture infrastructure.
+  const defaultStable = await signInOrCreateStable(url, anonKey, 'default', stablePassword)
+  await restSetActiveRole(url, anonKey, defaultStable.auth.access_token, defaultStable.auth.user.id, null)
   const [defaultStorageKey, defaultStorageValue] = await captureSessionStorage(
     url,
     anonKey,
-    defaultSignup.access_token,
-    defaultSignup.refresh_token,
+    defaultStable.auth.access_token,
+    defaultStable.auth.refresh_token,
   )
 
   mkdirSync(authDir, { recursive: true })
@@ -273,20 +337,22 @@ export default async function globalSetup(config) {
     }),
   )
 
-  // Named marketplace-fixture identities, built sequentially — each does 2-3 real network
-  // calls, and running them one at a time keeps failures easy to attribute to a specific
-  // identity rather than an opaque Promise.all rejection.
+  // Named marketplace-fixture identities, built sequentially so failures are easy to attribute.
+  // Most identities are persistent accounts signed into and reset in place. Only
+  // THROWAWAY_IDENTITY_NAMES are fresh signups per run.
   //
-  // runManifestEmails collects every real throwaway email this run creates (this loop plus the
-  // default session above) — the one thing e2e/global-teardown.js reads to know what it is safe
-  // to delete afterward. moderatorStable is deliberately never added to it below: that identity
-  // is signed into, not signed up, and must persist across every run.
-  const runManifestEmails = [defaultEmail]
+  // runManifestEmails collects only real throwaway emails this run creates — the one thing
+  // e2e/global-teardown.js reads to know what it is safe to delete afterward. Stable identities
+  // and moderatorStable are deliberately never added to it: those identities are infrastructure
+  // and must persist across every run.
+  const runManifestEmails = []
   const identities = {}
   for (const [name, spec] of Object.entries(IDENTITIES)) {
-    const identity = await buildIdentity(url, anonKey, runId, name, spec)
+    const identity = THROWAWAY_IDENTITY_NAMES.has(name)
+      ? await buildIdentity(url, anonKey, runId, name, spec)
+      : await buildStableIdentity(url, anonKey, name, spec, stablePassword)
     identities[name] = identity
-    runManifestEmails.push(identity.email)
+    if (THROWAWAY_IDENTITY_NAMES.has(name)) runManifestEmails.push(identity.email)
   }
   writeManifest(runId, runManifestEmails)
 

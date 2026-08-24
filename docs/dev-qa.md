@@ -21,6 +21,11 @@ Copy `.env.example` to `.env.local` (never commit `.env.local` — `.gitignore` 
 | `VITE_DEV_BYPASS_AUTH` | No | `true` to enable dev-bypass mode locally (see below). Leave unset for real auth. |
 | `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` | No | Placeholders only — not used yet, no Edge Functions exist. |
 
+Process-only E2E secrets are supplied inline or through CI secret storage, not `.env.local`.
+`GAFFLO_E2E_STABLE_PASSWORD` is required for the integration Playwright setup to sign into or
+one-time provision stable fixture accounts. `GAFFLO_E2E_MODERATOR_PASSWORD` is required only for
+`e2e/moderator-workspace.spec.js`.
+
 Any variable exposed to the browser **must** be prefixed `VITE_` — Vite inlines every `VITE_`
 value into the shipped client bundle, so a server-only secret must never carry that prefix.
 
@@ -63,18 +68,29 @@ npm run build  # production build
 
 ```bash
 npm run test:e2e
+npm run test:e2e:smoke
+npm run test:e2e:integration
 ```
 
-- Needs real Supabase credentials in `.env.local` (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
-  for the `gafflo-dev` project) — `e2e/global-setup.js` creates real, throwaway signups (via the
-  public signup endpoint, same anon key the app itself uses — never `service_role`) to seed
-  authenticated sessions and a fixed set of named tenant/landlord fixture identities.
+- `npm run test:e2e:smoke` uses `playwright.smoke.config.js` and runs only signed-out public-route
+  checks. It has no Playwright global setup and creates **zero** Supabase Auth signups.
+- `npm run test:e2e` / `npm run test:e2e:integration` needs real Supabase credentials in
+  `.env.local` (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` for the `gafflo-dev` project) plus
+  process env `GAFFLO_E2E_STABLE_PASSWORD`. `e2e/global-setup.js` signs into stable fixture
+  identities and resets their own profile rows in place through the same anon-key/authenticated
+  grants the app uses. Only five identities remain throwaway per full integration run: the four
+  genuinely fresh onboarding accounts plus the Fair-Housing/listing-owner account whose
+  acknowledgement state is intentionally one-way.
+- First run against a clean `gafflo-dev` may still provision the stable accounts once through the
+  public signup endpoint. After those accounts exist, a full integration setup drops from the old
+  **21 setup signups per run** to **5 setup signups per run**. `e2e/auth.spec.js` can still create
+  one additional magic-link user inside its real OTP test when Supabase accepts the request.
 - One test file (`e2e/moderator-workspace.spec.js`) needs a real, persistent moderator account;
   run it with `GAFFLO_E2E_MODERATOR_PASSWORD=... npx playwright test e2e/moderator-workspace.spec.js`.
   Every other spec runs fine without this set.
-- Because these are real signups against Supabase Auth, running the full suite back-to-back too
-  quickly (or in tight CI loops) can hit Supabase's own auth rate limits — if a run fails with
-  signup errors, wait a bit and retry rather than assuming the app is broken.
+- Because the remaining fresh accounts are still real signups against Supabase Auth, running the
+  full integration suite back-to-back too quickly can still hit Supabase's own auth rate limits —
+  if a run fails with signup errors, wait a bit and retry rather than assuming the app is broken.
 - **Cleanup is opt-in, not automatic.** By default, throwaway identities and their data are left in
   the database after a run — every other part of the suite works fine without cleanup. To actually
   delete them, set `GAFFLO_E2E_CLEANUP_DB_URL` (and `GAFFLO_E2E_CLEANUP_SERVICE_ROLE_KEY` to also
