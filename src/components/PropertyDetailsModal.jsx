@@ -32,6 +32,7 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
   const { propertyId } = useParams()
   const {
     properties,
+    listingsLoading,
     savedPropertyIds,
     saveProperty,
     removeSavedProperty,
@@ -107,6 +108,25 @@ export default function PropertyDetailsModal({ standalone = false, previewProper
     recordedViewIds.current.add(property.id)
     recordListingView(property.id)
   }, [access.allowed, previewProperty, property?.id, property?.listingStatus, recordListingView])
+
+  // A route-based property (previewProperty is null) is only findable once ListingsProvider's
+  // own fetch has actually landed — on a cold, direct navigation straight to this route (a
+  // shared link, a bookmark, this exact page reloaded) there is no earlier Discover/Browse visit
+  // that already warmed `properties`, so `property` is legitimately still unresolved for the
+  // fetch's own duration. Showing "Property not available" during that window (rather than
+  // waiting for listingsLoading to actually settle) misreports a normal loading gap as a genuine
+  // 404 — this is exactly the race a cold e2e/listing-analytics.spec.js navigation exposed.
+  if (!previewProperty && !property && listingsLoading) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 px-4">
+        <span
+          className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600"
+          role="status"
+          aria-label="Loading property details"
+        />
+      </div>
+    )
+  }
 
   if (!property || !access.allowed) {
     return (
